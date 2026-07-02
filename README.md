@@ -23,6 +23,15 @@ Nur das Physikmodell (ohne GUI) testen:
 python microphone_capsule.py
 ```
 
+## Beispielprojekte
+
+`examples/u87_k67_projekt.json` — recherchierter und modellvalidierter
+Parametersatz einer Neumann-K67/K870-Kapsel (U87Ai, Nierenmodus): 26-mm-
+Membran (6 µm Mylar), 60 µm Spalt, 60 V, Membranresonanz ≈ 1,15 kHz.
+Über „Projekt laden" in der Seitenleiste importierbar. Das rückseitige
+Netzwerk ist eine Ersatz-Näherung für die passive Rückmembran der
+Doppelmembran-Kapsel.
+
 ## Projektdateien
 
 Projekte werden als menschenlesbares JSON gespeichert
