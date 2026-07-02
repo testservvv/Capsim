@@ -94,12 +94,23 @@ class MicrophoneCapsule:
                                       Gegentakt-Wandlung).
         n_through_holes, through_hole_diameter
             Anzahl/Durchmesser der Durchgangslöcher in der Backplate.
+            Die Durchgangslöcher sind der einzige Weg von der Membran-
+            rückseite in die dahinterliegende Struktur: ``0`` verschließt
+            die Backplate — die Kapsel ist dann hermetisch dicht
+            (Druckempfänger), egal was dahinter montiert ist.
         n_blind_holes, blind_hole_diameter, blind_hole_depth
             Anzahl/Durchmesser/Tiefe der Blindlöcher (Sacklöcher) auf der
             Membranseite der Backplate. ``blind_hole_depth=None`` ->
             halbe Backplate-Dicke.
 
     Akustische Netzwerke & Rückseite
+        rear_network_enabled : bool
+            ``True``: hinter der Backplate sitzt die rückwärtige Baugruppe
+            (Gewebe -> Laufzeitglied -> Hohlraum -> Einlasslöcher).
+            ``False``: keine Baugruppe — die Durchgangslöcher der Backplate
+            münden (durch das rückwärtige Gewebe) DIREKT ins rückwärtige
+            Schallfeld; die Kapsel wird zum einfachen Gradientenempfänger
+            mit der äußeren Wegdifferenz Spalt + Backplate-Dicke.
         delay_length : float
             Länge des akustischen Laufzeitglieds hinter der Membran [m].
             Modelliert als (schwach verlustbehaftete) akustische Leitung;
@@ -162,6 +173,7 @@ class MicrophoneCapsule:
         blind_hole_diameter=1.2e-3,
         blind_hole_depth=None,
         # --- Akustische Netzwerke & Rückseite -------------------------------
+        rear_network_enabled=True,
         delay_length=3e-3,
         cavity_length=12e-3,
         cavity_wall_thickness=1.5e-3,
@@ -213,8 +225,16 @@ class MicrophoneCapsule:
 
         self.n_th = int(n_through_holes)
         self.r_th = 0.5 * float(through_hole_diameter)
-        if self.n_th < 1 or self.r_th <= 0:
-            raise ValueError("Mindestens ein Durchgangsloch mit d > 0 erforderlich.")
+        if self.n_th < 0:
+            raise ValueError("Anzahl der Durchgangslöcher darf nicht negativ sein.")
+        if self.n_th > 0 and self.r_th <= 0:
+            raise ValueError("Durchgangslochdurchmesser muss > 0 sein.")
+        if self.n_th == 0 and self.architecture == "dual":
+            raise ValueError(
+                "Dual-Architektur ohne Durchgangslöcher: die vordere "
+                "Backplate würde die Membran vollständig vom Schallfeld "
+                "isolieren."
+            )
 
         self.n_bh = int(n_blind_holes)
         self.r_bh = 0.5 * float(blind_hole_diameter)
@@ -225,6 +245,7 @@ class MicrophoneCapsule:
             raise ValueError("Blindlochtiefe muss zwischen 0 und Backplate-Dicke liegen.")
 
         # ------------------ Akustische Netzwerke & Rückseite ----------------
+        self.rear_network_enabled = bool(rear_network_enabled)
         self.l_delay = float(delay_length)
         self.l_cav = float(cavity_length)
         self.t_cav_wall = float(cavity_wall_thickness)
@@ -342,13 +363,22 @@ class MicrophoneCapsule:
         # Bemerkenswert: R_gap hängt nicht vom Zellradius ab, nur von h und q.
         # Die (kleine) Masse der lateral bewegten Spaltluft wird vernachlässigt.
         # ------------------------------------------------------------------
-        q = self.n_th * self.r_th**2 / self.a_bp**2
-        if not (0.0 < q < 1.0):
-            raise ValueError(
-                f"Lochflächenanteil q={q:.3f} der Durchgangslöcher muss in (0, 1) liegen."
-            )
-        B_q = q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0
-        self.R_A_gap = 12.0 * MU_AIR / (self.n_th * np.pi * self.h_gap**3) * B_q
+        if self.n_th > 0:
+            q = self.n_th * self.r_th**2 / self.a_bp**2
+            if not (0.0 < q < 1.0):
+                raise ValueError(
+                    f"Lochflächenanteil q={q:.3f} der Durchgangslöcher "
+                    "muss in (0, 1) liegen."
+                )
+            B_q = q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0
+            self.R_A_gap = (12.0 * MU_AIR
+                            / (self.n_th * np.pi * self.h_gap**3) * B_q)
+        else:
+            # Geschlossene Backplate: es existiert kein Strömungspfad zu
+            # Löchern, also auch keine laterale Škvor-Strömung (die Formel
+            # divergiert für q -> 0). Das Spaltvolumen wirkt als reine
+            # Nachgiebigkeit direkt an der Membran.
+            self.R_A_gap = None
 
         # ------------------------------------------------------------------
         # NACHGIEBIGKEIT DES SPALTVOLUMENS
@@ -363,8 +393,19 @@ class MicrophoneCapsule:
         V_blind = self.n_bh * np.pi * self.r_bh**2 * self.d_bh
         self.C_A_blind = V_blind / P_ATM if self.n_bh > 0 else 0.0
 
-        # Ist die Rückseite offen (Gradientenempfänger)?
-        self.rear_open = self.n_ch > 0 and self.r_ch > 0
+        # Ist die Rückseite akustisch offen (Gradientenempfänger)?
+        # Die Durchgangslöcher sind der einzige Weg durch die Backplate:
+        if self.n_th == 0:
+            # Backplate geschlossen -> hermetisch dicht, unabhängig von
+            # allem, was dahinter montiert ist.
+            self.rear_open = False
+        elif not self.rear_network_enabled:
+            # Keine rückwärtige Baugruppe: die Durchgangslöcher münden
+            # direkt ins rückwärtige Schallfeld.
+            self.rear_open = True
+        else:
+            # Baugruppe vorhanden: offen nur über deren Einlasslöcher.
+            self.rear_open = self.n_ch > 0 and self.r_ch > 0
 
         # ------------------------------------------------------------------
         # ÄUSSERE WEGDIFFERENZ FÜR DIE RICHTWIRKUNG
@@ -374,11 +415,13 @@ class MicrophoneCapsule:
         # Rückeinlass (Beugung um den Kapselkörper wird in dieser
         # 1.-Ordnung-Näherung vernachlässigt).
         # ------------------------------------------------------------------
-        d = self.h_gap + self.t_bp + self.l_delay
-        if self.cavity_hole_position == "circumference":
-            d += self.x_ch
-        else:
-            d += self.l_cav + self.t_cav_wall
+        d = self.h_gap + self.t_bp
+        if self.rear_network_enabled:
+            d += self.l_delay
+            if self.cavity_hole_position == "circumference":
+                d += self.x_ch
+            else:
+                d += self.l_cav + self.t_cav_wall
         if self.architecture == "dual":
             # vordere Backplate verschiebt den vorderen Einlass nach vorn
             d += self.h_gap + self.t_bp
@@ -567,7 +610,8 @@ class MicrophoneCapsule:
     # ======================================================================
     # Netzwerk-Zusammenbau
     # ======================================================================
-    def _backplate_gap_abcd(self, omega, outside_to_membrane):
+    def _backplate_gap_abcd(self, omega, outside_to_membrane,
+                            holes_radiate=False):
         """Kettenmatrix des Backplate/Luftspalt-Netzwerks.
 
         Topologie von der Membran aus gesehen:
@@ -575,13 +619,24 @@ class MicrophoneCapsule:
             --[Shunt: C_gap]--[Serie: Durchgangslöcher]-- außen
         ``outside_to_membrane=True`` liefert die umgekehrte Kettenrichtung
         (für die vordere Backplate der Dual-Architektur).
+        ``holes_radiate=True``: die Durchgangslöcher münden direkt ins
+        Freifeld (keine rückwärtige Baugruppe) -> Strahlungswiderstand.
+
+        Sonderfall geschlossene Backplate (n_th = 0): kein Strömungspfad
+        durch die Platte und keine laterale Škvor-Strömung — Spaltvolumen
+        und Blindlöcher wirken als reine Shunt-Nachgiebigkeiten an der
+        Membran; die Kette endet dahinter blockiert.
         """
-        Z_holes = self._hole_impedance(
-            omega, self.r_th, self.t_bp, self.n_th, end_correction=True
-        )
         mats = []  # Reihenfolge: Membranseite -> Außenseite
         if self.n_bh > 0:
             mats.append(self._abcd_shunt(1.0 / self._blind_hole_impedance(omega), omega))
+        if self.n_th == 0:
+            mats.append(self._abcd_shunt(1j * omega * self.C_A_gap, omega))
+            return reduce(self._mmul, mats)
+        Z_holes = self._hole_impedance(
+            omega, self.r_th, self.t_bp, self.n_th,
+            end_correction=True, radiates=holes_radiate,
+        )
         mats.append(self._abcd_series(self.R_A_gap, omega))
         mats.append(self._abcd_shunt(1j * omega * self.C_A_gap, omega))
         mats.append(self._abcd_series(Z_holes, omega))
@@ -615,11 +670,33 @@ class MicrophoneCapsule:
         T_mem = self._abcd_series(self._membrane_impedance(omega), omega)
 
         # ------------- hinterer Zweig: Membran -> rückwärtiger Port --------
-        rear = [
-            self._backplate_gap_abcd(omega, outside_to_membrane=False),
-            # Gewebe hinter der Backplate (überspannt die Backplate-Fläche)
-            self._abcd_series(self.rayl_rear / self.S_bp, omega),
-        ]
+        # Die Durchgangslöcher der Backplate sind der Zugang zur Rückseite.
+        # Drei Fälle:
+        #   n_th = 0                  -> hermetisch dicht direkt am Spalt
+        #   keine rückwärtige Baugruppe -> Löcher münden (durchs Gewebe)
+        #                                direkt ins rückwärtige Schallfeld
+        #   Baugruppe vorhanden       -> Gewebe -> Laufzeitglied -> Hohlraum
+        vents_directly = self.n_th > 0 and not self.rear_network_enabled
+        rear = [self._backplate_gap_abcd(omega, outside_to_membrane=False,
+                                         holes_radiate=vents_directly)]
+
+        if self.n_th == 0:
+            # geschlossene Backplate: Port unmittelbar blockiert
+            # (Gewebe/Laufzeitglied/Hohlraum sind akustisch unerreichbar)
+            T_rear = reduce(self._mmul, rear)
+            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
+            return T_total, T_rear
+
+        # Gewebe hinter der Backplate (überspannt die Backplate-Fläche,
+        # liegt auch im Direktbelüftungsfall über den Öffnungen)
+        rear.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
+
+        if vents_directly:
+            # kein Laufzeitglied/Hohlraum: Port = rückwärtiges Schallfeld
+            T_rear = reduce(self._mmul, rear)
+            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
+            return T_total, T_rear
+
         # Laufzeitglied als akustische Leitung (tau = L/c)
         if self.l_delay > 0.0:
             rear.append(self._abcd_line(omega, self.l_delay, self.a_bp))
@@ -797,9 +874,12 @@ class MicrophoneCapsule:
             f"Resonanz (Modell):            {self.f_res:9.1f} Hz",
             f"Resonanz aus Vorspannung/E:   {self.f_res_from_tension:9.1f} Hz",
             f"Ruhekapazität C0 (je BP):     {self.C_elec_0 * 1e12:9.2f} pF",
-            f"Squeeze-Film-Widerst. R_gap:  {self.R_A_gap:9.3e} Pa·s/m³",
+            ("Squeeze-Film-Widerst. R_gap:  "
+             + (f"{self.R_A_gap:9.3e} Pa·s/m³" if self.R_A_gap is not None
+                else "        — (Backplate geschlossen)")),
             f"Nachgiebigkeit Spalt C_gap:   {self.C_A_gap:9.3e} m³/Pa",
             f"Nachgiebigkeit Blindl. C_bh:  {self.C_A_blind:9.3e} m³/Pa",
+            f"rückwärtige Baugruppe:        {self.rear_network_enabled}",
             f"Rückseite offen (Gradient):   {self.rear_open}",
             f"äußere Wegdifferenz d_ext:    {self.d_ext * 1e3:9.2f} mm",
             f"Empfindlichkeit @ 1 kHz:      {abs(sens) * 1e3:9.2f} mV/Pa "
@@ -904,5 +984,26 @@ if __name__ == "__main__":
     print(f"Dual-Backplate @100 Hz: {e_d:.2f} dB re 1 V/Pa "
           f"(single: {e_s:.2f} dB) — Gegentakt-Gewinn "
           f"{e_d - e_s:+.2f} dB  OK")
+
+    # --------- Gegenprobe 3: Durchgangslöcher & Rückseiten-Baugruppe -------
+    # a) Ohne rückwärtige Baugruppe münden die Durchgangslöcher direkt ins
+    #    Schallfeld -> Gradientenempfänger mit kurzer Wegdifferenz.
+    vented = MicrophoneCapsule(rear_network_enabled=False)
+    di_v = vented.directivity(frequencies_hz=(500.0,))
+    lin_v = di_v["patterns"][500.0]["linear"]
+    assert lin_v[90] < 0.9 or lin_v[180] < 0.9, \
+        "direkt belüftete Backplate muss Richtwirkung zeigen"
+    # b) Ohne Durchgangslöcher ist die Kapsel hermetisch dicht — auch mit
+    #    montierter Rückseite (die dann akustisch unerreichbar ist).
+    sealed = MicrophoneCapsule(n_through_holes=0)
+    di_s = sealed.directivity(frequencies_hz=(1000.0,))
+    assert np.allclose(di_s["patterns"][1000.0]["linear"], 1.0, atol=1e-9), \
+        "geschlossene Backplate muss Kugel sein"
+    fr_s = sealed.frequency_response(n_points=50)
+    assert np.all(np.isfinite(fr_s["amplitude_db"]))
+    print(f"Belüftete Backplate (ohne Baugruppe): 90°={lin_v[90]:.2f}, "
+          f"180°={lin_v[180]:.2f} — Richtwirkung  OK")
+    print("Geschlossene Backplate (0 Durchgangslöcher): Kugel, "
+          "hermetisch dicht  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

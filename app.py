@@ -201,15 +201,16 @@ def build_capsule(p):
         n_blind_holes=p["n_blind"],
         blind_hole_diameter=p["d_blind_mm"] * 1e-3,
         blind_hole_depth=p["blind_depth_mm"] * 1e-3,
-        # Rückseite deaktiviert -> kein Laufzeitglied, kein Hohlraum,
-        # keine Einlasslöcher: die Kapsel ist unmittelbar hinter der
-        # Backplate hermetisch geschlossen (reiner Druckempfänger).
-        delay_length=p["delay_mm"] * 1e-3 if p["rear_enabled"] else 0.0,
-        cavity_length=p["cavity_length_mm"] * 1e-3 if p["rear_enabled"]
-        else 0.0,
+        # Rückseite deaktiviert -> keine rückwärtige Baugruppe: die
+        # Durchgangslöcher der Backplate münden (durch das rückwärtige
+        # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
+        # nur bei 0 Durchgangslöchern — das entscheidet das Physikmodell.
+        rear_network_enabled=p["rear_enabled"],
+        delay_length=p["delay_mm"] * 1e-3,
+        cavity_length=p["cavity_length_mm"] * 1e-3,
         cavity_wall_thickness=p["cavity_wall_mm"] * 1e-3,
         cavity_hole_position=POS_LABELS[p["hole_position"]],
-        n_cavity_holes=p["n_cavity"] if p["rear_enabled"] else 0,
+        n_cavity_holes=p["n_cavity"],
         cavity_hole_diameter=p["d_cavity_mm"] * 1e-3,
         cavity_hole_axial_position=p["cavity_axial_mm"] * 1e-3,
         fabric_front_rayl=p["fabric_front_rayl"],
@@ -373,8 +374,14 @@ with st.sidebar:
         st.radio("Architektur", list(ARCH_LABELS), key="p_architecture")
 
         st.markdown("**Lochmuster**")
-        st.number_input("Durchgangslöcher — Anzahl", 1, 2000, step=1,
-                        key="p_n_through")
+        st.number_input("Durchgangslöcher — Anzahl", 0, 2000, step=1,
+                        key="p_n_through",
+                        help="Die Durchgangslöcher sind der einzige Weg "
+                             "durch die Backplate. 0 = Backplate "
+                             "geschlossen → Kapsel hermetisch dicht "
+                             "(Druckempfänger), unabhängig von der "
+                             "Rückseite. Bei Dual-Architektur ist "
+                             "mindestens 1 Loch nötig.")
         st.number_input("Durchgangslöcher — Ø [mm]", 0.05, 5.0, step=0.05,
                         key="p_d_through_mm")
         st.number_input("Blindlöcher — Anzahl", 0, 2000, step=1,
@@ -390,13 +397,13 @@ with st.sidebar:
     # ---------------- Rückseite / Laufzeitglied -------------------------
     with st.expander("Rückseite & Laufzeitglied", expanded=True):
         st.toggle("Rückseite aktiv", key="p_rear_enabled",
-                  help="Deaktiviert: Laufzeitglied, Hohlraum und Einlass-"
-                       "löcher entfallen; die Kapsel ist unmittelbar hinter "
-                       "der Backplate hermetisch geschlossen und wird zum "
-                       "reinen Druckempfänger (Kugelcharakteristik). Das "
-                       "kleine eingeschlossene Luftpolster (Spalt + Blind-"
-                       "löcher) wirkt dann als steife Feder — die Empfind-"
-                       "lichkeit sinkt entsprechend.")
+                  help="Deaktiviert: die rückwärtige Baugruppe (Laufzeit-"
+                       "glied, Hohlraum, Einlasslöcher) entfällt — die "
+                       "Durchgangslöcher der Backplate münden dann durch "
+                       "das rückwärtige Gewebe DIREKT ins Schallfeld "
+                       "(einfacher Gradientenempfänger, Wegdifferenz = "
+                       "Spalt + Backplate-Dicke). Hermetisch geschlossen "
+                       "ist die Kapsel nur mit 0 Durchgangslöchern.")
         _rear_on = st.session_state["p_rear_enabled"]
         st.number_input("Laufzeitglied — Länge [mm]", 0.0, 100.0, step=0.5,
                         key="p_delay_mm", disabled=not _rear_on,
