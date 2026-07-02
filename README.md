@@ -26,11 +26,13 @@ python microphone_capsule.py
 ## Beispielprojekte
 
 `examples/u87_k67_projekt.json` — recherchierter und modellvalidierter
-Parametersatz einer Neumann-K67/K870-Kapsel (U87Ai, Nierenmodus): 26-mm-
-Membran (6 µm Mylar), 60 µm Spalt, 60 V, Membranresonanz ≈ 1,15 kHz.
-Über „Projekt laden" in der Seitenleiste importierbar. Das rückseitige
-Netzwerk ist eine Ersatz-Näherung für die passive Rückmembran der
-Doppelmembran-Kapsel.
+Parametersatz einer Neumann-K67/K870-Kapsel (U87Ai, Nierenmodus) in der
+echten Doppelmembran-Bauform: zwei 26-mm-Membranen (6 µm Mylar) außen,
+zwei innenliegende Backplates mit 50-µm-Spacer, 60 V, Membranresonanz
+≈ 1,15 kHz. Die passive Rückmembran bildet das Phasenschiebernetzwerk.
+Validierung gegen Herstellerdaten: Niere (−13 dB @ 180°/1 kHz), flacher
+Frequenzgang 100 Hz–5 kHz, Präsenzanhebung ≈ +7 dB bei ~10 kHz,
+Empfindlichkeit 25 mV/Pa (Leerlauf). Über „Projekt laden" importierbar.
 
 ## Projektdateien
 

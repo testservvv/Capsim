@@ -84,10 +84,12 @@ MATERIAL_LABELS = {
 ARCH_LABELS = {
     "Single Backplate": "single",
     "Dual Symmetrical Backplates": "dual",
+    "Doppelmembran (K67-Bauform)": "dual_diaphragm",
 }
+K67_LABEL = "Doppelmembran (K67-Bauform)"
 POS_LABELS = {"Umfang": "circumference", "Ende (Stirnfläche)": "end"}
 
-DIRECTIVITY_OPTIONS = [50, 100, 200, 500, 1000, 2000,
+DIRECTIVITY_OPTIONS = [50, 100, 125, 250, 500, 1000, 2000, 4000,
                        5000, 8000, 10000, 12500, 16000, 20000]
 
 # (key, Widget-Art, Default) — Gruppen s. Sidebar-Aufbau weiter unten
@@ -105,6 +107,7 @@ DEFAULTS = {
     "bp_thickness_mm": 3.0,
     "bias_v": 60.0,
     "architecture": "Single Backplate",
+    "center_gap_um": 50.0,
     "n_through": 60,
     "d_through_mm": 1.0,
     "n_blind": 30,
@@ -199,6 +202,7 @@ def build_capsule(p):
         backplate_thickness=p["bp_thickness_mm"] * 1e-3,
         bias_voltage=p["bias_v"],
         architecture=ARCH_LABELS[p["architecture"]],
+        center_gap=p["center_gap_um"] * 1e-6,
         n_through_holes=p["n_through"],
         through_hole_diameter=p["d_through_mm"] * 1e-3,
         n_blind_holes=p["n_blind"],
@@ -376,7 +380,18 @@ with st.sidebar:
                         key="p_bp_thickness_mm")
         st.number_input("Polarisationsspannung [V]", 0.5, 400.0, step=1.0,
                         key="p_bias_v")
-        st.radio("Architektur", list(ARCH_LABELS), key="p_architecture")
+        st.radio("Architektur", list(ARCH_LABELS), key="p_architecture",
+                 help="K67-Bauform: zwei Membranen außen, zwei innen-"
+                      "liegende Backplates, getrennt nur durch den "
+                      "Backplate-Spalt. Die passive Rückmembran bildet "
+                      "das Phasenschiebernetzwerk (Niere) — Laufzeitglied "
+                      "und Hohlraum entfallen.")
+        st.number_input("Backplate-Spalt (K67) [µm]", 5.0, 500.0, step=5.0,
+                        key="p_center_gap_um",
+                        disabled=st.session_state["p_architecture"]
+                        != K67_LABEL,
+                        help="Spacer zwischen den beiden Backplate-Hälften "
+                             "der Doppelmembran-Bauform.")
 
         st.markdown("**Lochmuster**")
         st.number_input("Durchgangslöcher — Anzahl", 0, 2000, step=1,
@@ -400,8 +415,14 @@ with st.sidebar:
                         key="p_blind_depth_mm")
 
     # ---------------- Rückseite / Laufzeitglied -------------------------
-    with st.expander("Rückseite & Laufzeitglied", expanded=True):
+    _is_k67 = st.session_state["p_architecture"] == K67_LABEL
+    with st.expander("Rückseite & Laufzeitglied", expanded=not _is_k67):
+        if _is_k67:
+            st.caption("Bei der K67-Bauform übernimmt die passive "
+                       "Rückmembran diese Funktion — die folgenden "
+                       "Parameter sind inaktiv.")
         st.toggle("Rückseite aktiv", key="p_rear_enabled",
+                  disabled=_is_k67,
                   help="Deaktiviert: die rückwärtige Baugruppe (Laufzeit-"
                        "glied, Hohlraum, Einlasslöcher) entfällt — die "
                        "Durchgangslöcher der Backplate münden dann durch "
@@ -409,7 +430,7 @@ with st.sidebar:
                        "(einfacher Gradientenempfänger, Wegdifferenz = "
                        "Spalt + Backplate-Dicke). Hermetisch geschlossen "
                        "ist die Kapsel nur mit 0 Durchgangslöchern.")
-        _rear_on = st.session_state["p_rear_enabled"]
+        _rear_on = st.session_state["p_rear_enabled"] and not _is_k67
         st.number_input("Laufzeitglied — Länge [mm]", 0.0, 100.0, step=0.5,
                         key="p_delay_mm", disabled=not _rear_on,
                         help="Akustische Leitung hinter der Membran; "

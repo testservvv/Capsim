@@ -91,10 +91,21 @@ class MicrophoneCapsule:
         backplate_diameter : float  — Backplate-Durchmesser [m]
         backplate_thickness : float — Backplate-Dicke [m]
         bias_voltage : float        — Polarisationsspannung [V]
-        architecture : str          — ``"single"`` (eine Backplate hinter der
-                                      Membran) oder ``"dual"`` (symmetrische
-                                      Backplates vor UND hinter der Membran,
-                                      Gegentakt-Wandlung).
+        architecture : str
+            ``"single"``          — eine Backplate hinter der Membran;
+            ``"dual"``            — symmetrische Backplates vor UND hinter
+                                    der Membran (Gegentakt-Wandlung);
+            ``"dual_diaphragm"``  — K67-Bauform: ZWEI Membranen außen,
+                                    zwei innenliegende Backplates, nur
+                                    durch ``center_gap`` getrennt. Die
+                                    hintere Membran ist passiv (Nieren-
+                                    modus) und bildet zusammen mit den
+                                    Spalt-/Lochwiderständen das Phasen-
+                                    schiebernetzwerk; Laufzeitglied und
+                                    Hohlraum werden ignoriert.
+        center_gap : float
+            Nur ``"dual_diaphragm"``: Luftspalt zwischen den beiden
+            Backplate-Hälften (Spacer) [m].
         n_through_holes, through_hole_diameter
             Anzahl/Durchmesser der Durchgangslöcher in der Backplate.
             Die Durchgangslöcher sind der einzige Weg von der Membran-
@@ -183,6 +194,7 @@ class MicrophoneCapsule:
         backplate_thickness=3e-3,
         bias_voltage=60.0,
         architecture="single",
+        center_gap=50e-6,
         n_through_holes=60,
         through_hole_diameter=1.0e-3,
         n_blind_holes=30,
@@ -233,14 +245,22 @@ class MicrophoneCapsule:
         self.u_bias = float(bias_voltage)
 
         arch = str(architecture).strip().lower()
-        if arch.startswith("dual"):
+        if arch.startswith(("dual_d", "k67", "doppelmembran")):
+            self.architecture = "dual_diaphragm"
+        elif arch.startswith("dual"):
             self.architecture = "dual"
         elif arch.startswith("single"):
             self.architecture = "single"
         else:
-            raise ValueError("architecture muss 'single' oder 'dual' sein.")
-        # Anzahl der Backplates (Gegentakt bei 'dual')
+            raise ValueError("architecture muss 'single', 'dual' oder "
+                             "'dual_diaphragm' sein.")
+        # Anzahl der wandelnden Backplates (Gegentakt nur bei 'dual';
+        # bei der K67-Bauform ist im Nierenmodus nur die vordere Seite
+        # polarisiert)
         self.n_bp = 2 if self.architecture == "dual" else 1
+        self.h_center = float(center_gap)
+        if self.architecture == "dual_diaphragm" and self.h_center <= 0:
+            raise ValueError("center_gap muss > 0 sein.")
 
         self.n_th = int(n_through_holes)
         self.r_th = 0.5 * float(through_hole_diameter)
@@ -484,12 +504,36 @@ class MicrophoneCapsule:
         V_blind = self.n_bh * np.pi * self.r_bh**2 * self.d_bh
         self.C_A_blind = V_blind / P_ATM if self.n_bh > 0 else 0.0
 
+        # ------------------------------------------------------------------
+        # ZWISCHENSPALT DER K67-BAUFORM ("dual_diaphragm")
+        # Dünne Luftschicht (Spacer, ~50 µm) zwischen den beiden Backplate-
+        # Hälften. Die Strömung tritt durch die Durchgangslöcher der einen
+        # Hälfte ein und durch die der anderen aus — die laterale
+        # Poiseuille-Strömung zwischen den Lochmustern wird wie im
+        # Membranspalt mit der Škvor-Formel (Spalthöhe = center_gap)
+        # modelliert; das Schichtvolumen ist isotherm nachgiebig.
+        # ------------------------------------------------------------------
+        if self.architecture == "dual_diaphragm" and self.n_th > 0:
+            q_c = self.n_th * self.r_th**2 / self.a_bp**2
+            B_qc = q_c / 2.0 - q_c**2 / 8.0 - np.log(q_c) / 4.0 - 3.0 / 8.0
+            self.R_A_center = (12.0 * MU_AIR
+                               / (self.n_th * np.pi * self.h_center**3)
+                               * B_qc)
+            self.C_A_center = self.S_bp * self.h_center / P_ATM
+        else:
+            self.R_A_center = 0.0
+            self.C_A_center = 0.0
+
         # Ist die Rückseite akustisch offen (Gradientenempfänger)?
         # Die Durchgangslöcher sind der einzige Weg durch die Backplate:
         if self.n_th == 0:
             # Backplate geschlossen -> hermetisch dicht, unabhängig von
             # allem, was dahinter montiert ist.
             self.rear_open = False
+        elif self.architecture == "dual_diaphragm":
+            # K67-Bauform: die passive Rückmembran überträgt rückwärtigen
+            # Schall immer; Laufzeitglied/Hohlraum existieren nicht.
+            self.rear_open = True
         elif not self.rear_network_enabled:
             # Keine rückwärtige Baugruppe: die Durchgangslöcher münden
             # direkt ins rückwärtige Schallfeld.
@@ -506,13 +550,17 @@ class MicrophoneCapsule:
         # Rückeinlass (Beugung um den Kapselkörper wird in dieser
         # 1.-Ordnung-Näherung vernachlässigt).
         # ------------------------------------------------------------------
-        d_ax = self.h_gap + self.t_bp
-        if self.rear_network_enabled:
-            d_ax += self.l_delay
-            if self.cavity_hole_position == "circumference":
-                d_ax += self.x_ch
-            else:
-                d_ax += self.l_cav + self.t_cav_wall
+        if self.architecture == "dual_diaphragm":
+            # K67-Bauform: rückwärtiger Einlass = Rückmembran
+            d_ax = 2.0 * (self.h_gap + self.t_bp) + self.h_center
+        else:
+            d_ax = self.h_gap + self.t_bp
+            if self.rear_network_enabled:
+                d_ax += self.l_delay
+                if self.cavity_hole_position == "circumference":
+                    d_ax += self.x_ch
+                else:
+                    d_ax += self.l_cav + self.t_cav_wall
         # axiale Einbautiefe der rückwärtigen Einlässe (für die Beugung)
         self.d_rear_ax = d_ax
         d = d_ax
@@ -520,6 +568,12 @@ class MicrophoneCapsule:
             # vordere Backplate verschiebt den vorderen Einlass nach vorn
             d += self.h_gap + self.t_bp
         self.d_ext = d
+        # Auch der Rückeinlass der K67-Bauform (Rückmembran) wird in der
+        # Beugungsrechnung als Ring bei seiner axialen Einbautiefe
+        # modelliert: die Kapsel ist eine dünne Scheibe, deren Rückseite
+        # nur d_rear_ax (~6 mm) hinter der Front liegt — eine Kalotte am
+        # hinteren Kugelpol würde den effektiven Außenweg auf ~3*R_body
+        # aufblähen und die Richtwirkung zerstören.
 
         # ------------------------------------------------------------------
         # ERSATZ-GEHÄUSE FÜR DIE BEUGUNGSRECHNUNG (starre Kugel)
@@ -754,6 +808,20 @@ class MicrophoneCapsule:
             + 1.0 / (1j * omega * self.C_A_eff)
         )
 
+    def _membrane_impedance_passive(self, omega):
+        """Serienimpedanz der PASSIVEN Rückmembran (K67-Bauform, Niere).
+
+        Im Nierenmodus liegt die Rückmembran auf Backplate-Potential —
+        kein Feld, keine Feder-Erweichung: es gilt die unpolarisierte
+        Nachgiebigkeit C_A_mem (gleiches Material/Tuning wie vorn).
+        """
+        omega = np.asarray(omega, dtype=float)
+        R = np.sqrt(self.M_A_mem / self.C_A_mem) / self._Q_MEMBRANE_INTERNAL
+        return (
+            R + 1j * omega * self.M_A_mem
+            + 1.0 / (1j * omega * self.C_A_mem)
+        )
+
     # ======================================================================
     # Beugung / Druckstau am Kapselkörper
     # ======================================================================
@@ -984,6 +1052,31 @@ class MicrophoneCapsule:
         T_mem = self._abcd_series(self._membrane_impedance(omega), omega)
 
         # ------------- hinterer Zweig: Membran -> rückwärtiger Port --------
+        if self.architecture == "dual_diaphragm":
+            # K67-BAUFORM: vordere Membran -> vorderer Spalt/Backplate ->
+            # Zwischenspalt (Spacer) -> hintere Backplate/Spalt -> PASSIVE
+            # Rückmembran -> Gewebe -> Abstrahlung -> rückwärtiges Feld.
+            # Die Rückmembran ersetzt Laufzeitglied und Hohlraum: ihre
+            # Nachgiebigkeit bildet mit den Spalt-/Lochwiderständen das
+            # Phasenschiebernetzwerk der Niere.
+            rear = [self._backplate_gap_abcd(omega,
+                                             outside_to_membrane=False)]
+            if self.n_th > 0:
+                rear += [
+                    self._abcd_series(0.5 * self.R_A_center, omega),
+                    self._abcd_shunt(1j * omega * self.C_A_center, omega),
+                    self._abcd_series(0.5 * self.R_A_center, omega),
+                    self._backplate_gap_abcd(omega, outside_to_membrane=True),
+                    self._abcd_series(self._membrane_impedance_passive(omega),
+                                      omega),
+                    self._abcd_series(self.rayl_rear / self.S_mem, omega),
+                    self._abcd_series(
+                        self._radiation_impedance_membrane(omega), omega),
+                ]
+            T_rear = reduce(self._mmul, rear)
+            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
+            return T_total, T_rear
+
         # Die Durchgangslöcher der Backplate sind der Zugang zur Rückseite.
         # Drei Fälle:
         #   n_th = 0                  -> hermetisch dicht direkt am Spalt
@@ -1167,11 +1260,15 @@ class MicrophoneCapsule:
     def summary(self):
         """Mehrzeilige Übersicht der abgeleiteten Modellparameter."""
         sens = self.transfer_function(1000.0)[0]
+        arch_note = {
+            "single": "1 Backplate",
+            "dual": "2 Backplates, Gegentakt",
+            "dual_diaphragm": "K67-Bauform, passive Rückmembran",
+        }[self.architecture]
         lines = [
             "MicrophoneCapsule — abgeleitete Parameter",
             "-" * 55,
-            f"Architektur:                  {self.architecture} "
-            f"({self.n_bp} Backplate(s))",
+            f"Architektur:                  {self.architecture} ({arch_note})",
             f"Membranfläche:                {self.S_mem * 1e6:9.2f} mm²",
             f"akust. Masse Membran M_A:     {self.M_A_mem:9.2f} kg/m⁴",
             f"akust. Nachgiebigkeit C_A:    {self.C_A_mem:9.3e} m³/Pa",
@@ -1365,5 +1462,31 @@ if __name__ == "__main__":
     print(f"Pull-in-Gegenprobe: 800 Hz kollabiert bei 60 V (U_PI = "
           f"{soft.U_pullin:.1f} V), stabil bei 20 V mit statischer "
           f"Durchbiegung {soft.w0_static * 1e6:.1f} µm  OK")
+
+    # --------- Gegenprobe 6: K67-Bauform (Doppelmembran) -------------------
+    # Zwei Membranen außen, Backplates innen (center_gap): die passive
+    # Rückmembran bildet das Phasenschiebernetzwerk -> Nierencharakteristik
+    # ohne Laufzeitglied/Hohlraum; die Gegentakt-Mode beider Membranen
+    # gegen das innere Luftpolster erzeugt die K67-typische Präsenz-
+    # anhebung im 10-kHz-Bereich.
+    k67 = MicrophoneCapsule(
+        membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+        membrane_tension=13.7, air_gap=60e-6, backplate_diameter=25e-3,
+        bias_voltage=60.0, architecture="dual_diaphragm", center_gap=50e-6,
+        n_through_holes=60, through_hole_diameter=1.2e-3,
+        n_blind_holes=60, blind_hole_diameter=2.0e-3, blind_hole_depth=2.0e-3,
+        fabric_front_rayl=500.0, fabric_rear_rayl=300.0, body_diameter=34e-3,
+    )
+    di_k = k67.directivity(frequencies_hz=(1000.0,))
+    pk67 = di_k["patterns"][1000.0]["db"]
+    assert pk67[180] < -10.0, "K67-Bauform muss Nierencharakteristik zeigen"
+    fr_k = k67.frequency_response(n_points=150)
+    assert np.all(np.isfinite(fr_k["amplitude_db"]))
+    fk, ak = fr_k["frequency_hz"], fr_k["amplitude_db_norm"]
+    ihf = (fk > 5000) & (fk < 16000)
+    assert 3.0 < np.max(ak[ihf]) < 10.0, "Präsenzanhebung erwartet (~+6 dB)"
+    print(f"K67-Bauform: Niere (180° = {pk67[180]:.1f} dB @1 kHz), "
+          f"Präsenzanhebung +{np.max(ak[ihf]):.1f} dB bei "
+          f"{fk[ihf][np.argmax(ak[ihf])]/1000:.1f} kHz  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
