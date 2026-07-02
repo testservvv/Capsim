@@ -121,6 +121,9 @@ DEFAULTS = {
     "cavity_axial_mm": 6.0,
     "fabric_front_rayl": 10.0,
     "fabric_rear_rayl": 25.0,
+    # Gehäuse & Beugung
+    "diffraction_on": True,
+    "body_diameter_mm": 26.4,
     # Simulation
     "n_points": 400,
     "normalize_1khz": False,
@@ -215,6 +218,8 @@ def build_capsule(p):
         cavity_hole_axial_position=p["cavity_axial_mm"] * 1e-3,
         fabric_front_rayl=p["fabric_front_rayl"],
         fabric_rear_rayl=p["fabric_rear_rayl"],
+        body_diameter=p["body_diameter_mm"] * 1e-3,
+        include_diffraction=p["diffraction_on"],
     )
 
 
@@ -437,6 +442,29 @@ with st.sidebar:
                         key="p_fabric_front_rayl")
         st.number_input("Hinter der Backplate [Rayl]", 0.0, 100000.0,
                         step=5.0, key="p_fabric_rear_rayl")
+
+    # ---------------- Gehäuse & Beugung ----------------------------------
+    with st.expander("Gehäuse & Beugung", expanded=False):
+        st.toggle("Beugung am Gehäuse (Druckstau)", key="p_diffraction_on",
+                  help="Streuung der ebenen Welle am starren Kugel-Ersatz-"
+                       "gehäuse (Morse-Reihe): frontaler Druckstau bis "
+                       "+6 dB, rückwärtige Abschattung und Apertureffekt "
+                       "der Membran. Dadurch richtet auch ein reiner "
+                       "Druckempfänger zu hohen Frequenzen hin — wie in "
+                       "der Realität. Deaktivieren nur zum Vergleich mit "
+                       "dem idealisierten Punktmodell.")
+        _bd_min = max(st.session_state["p_mem_diameter_mm"],
+                      st.session_state["p_bp_diameter_mm"])
+        st.session_state["p_body_diameter_mm"] = max(
+            st.session_state["p_body_diameter_mm"], _bd_min)
+        st.number_input("Gehäusedurchmesser [mm]", _bd_min, 100.0, step=0.5,
+                        key="p_body_diameter_mm",
+                        disabled=not st.session_state["p_diffraction_on"],
+                        help="Durchmesser des kugelförmigen Ersatz-"
+                             "gehäuses; bestimmt, ab welcher Frequenz "
+                             "Druckstau und Abschattung einsetzen: "
+                             "ka = 1 bei f ≈ 109/d Hz (d in m) — für "
+                             "Ø 26 mm also ab ≈ 4 kHz.")
 
     # ---------------- Simulation ---------------------------------------
     with st.expander("Simulation", expanded=False):

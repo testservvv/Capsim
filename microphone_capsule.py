@@ -39,8 +39,11 @@ import numpy as np
 
 try:
     # Für die exakte thermoviskose Rohrimpedanz (Zwikker–Kosten) werden
-    # Besselfunktionen mit komplexem Argument benötigt.
+    # Besselfunktionen mit komplexem Argument benötigt; für die Beugung
+    # am Kapselkörper sphärische Besselfunktionen.
     from scipy.special import jv as _besselj
+    from scipy.special import spherical_jn as _sph_jn
+    from scipy.special import spherical_yn as _sph_yn
 
     _HAS_SCIPY = True
 except ImportError:  # pragma: no cover — Fallback auf Näherungsformeln
@@ -135,6 +138,19 @@ class MicrophoneCapsule:
             Strömungswiderstand des Gewebes VOR der Membran [Pa*s/m] (Rayl).
         fabric_rear_rayl : float
             Strömungswiderstand des Gewebes HINTER der Backplate [Pa*s/m].
+
+    Gehäuse & Beugung (Druckstau)
+        body_diameter : float oder None
+            Durchmesser des kugelförmigen Ersatz-Gehäuses für die Beugungs-
+            rechnung [m]. ``None`` -> 1.2 * max(Membran-, Backplate-Ø).
+        include_diffraction : bool
+            ``True`` (Standard): Druckstau/Abschattung am Kapselkörper wird
+            über die exakte Streuung der ebenen Welle an einer starren
+            Kugel berechnet (s. :meth:`_diffraction_factors`) — dadurch
+            richtet auch ein reiner Druckempfänger zu hohen Frequenzen hin
+            und die Freifeldempfindlichkeit steigt frontal um bis zu +6 dB.
+            ``False``: einfache ebene-Welle-Phasen (nur zu Vergleichs-
+            zwecken; ohne SciPy automatisch dieser Fallback).
     """
 
     # Membranmaterialien: Dichte rho [kg/m^3], E-Modul E [Pa],
@@ -183,6 +199,9 @@ class MicrophoneCapsule:
         cavity_hole_axial_position=6e-3,
         fabric_front_rayl=10.0,
         fabric_rear_rayl=25.0,
+        # --- Gehäuse & Beugung ----------------------------------------------
+        body_diameter=None,
+        include_diffraction=True,
     ):
         # ------------------------- Membran ---------------------------------
         if isinstance(membrane_material, dict):
@@ -265,6 +284,10 @@ class MicrophoneCapsule:
 
         self.rayl_front = float(fabric_front_rayl)
         self.rayl_rear = float(fabric_rear_rayl)
+
+        self.body_diameter = (None if body_diameter is None
+                              else float(body_diameter))
+        self.include_diffraction = bool(include_diffraction)
 
         # ------------------------ abgeleitete Größen ------------------------
         self._derive_parameters()
@@ -415,17 +438,45 @@ class MicrophoneCapsule:
         # Rückeinlass (Beugung um den Kapselkörper wird in dieser
         # 1.-Ordnung-Näherung vernachlässigt).
         # ------------------------------------------------------------------
-        d = self.h_gap + self.t_bp
+        d_ax = self.h_gap + self.t_bp
         if self.rear_network_enabled:
-            d += self.l_delay
+            d_ax += self.l_delay
             if self.cavity_hole_position == "circumference":
-                d += self.x_ch
+                d_ax += self.x_ch
             else:
-                d += self.l_cav + self.t_cav_wall
+                d_ax += self.l_cav + self.t_cav_wall
+        # axiale Einbautiefe der rückwärtigen Einlässe (für die Beugung)
+        self.d_rear_ax = d_ax
+        d = d_ax
         if self.architecture == "dual":
             # vordere Backplate verschiebt den vorderen Einlass nach vorn
             d += self.h_gap + self.t_bp
         self.d_ext = d
+
+        # ------------------------------------------------------------------
+        # ERSATZ-GEHÄUSE FÜR DIE BEUGUNGSRECHNUNG (starre Kugel)
+        # Der Kapselkörper wird für Druckstau/Abschattung als starre Kugel
+        # mit Radius R_body modelliert. Die Membran liegt als Kalotte am
+        # vorderen Pol (Halbwinkel aus a_mem), die rückwärtigen Einlässe
+        # als Ring beim Polarwinkel ihrer axialen Einbautiefe.
+        # ------------------------------------------------------------------
+        if self.body_diameter is None:
+            self.R_body = 1.2 * max(self.a_mem, self.a_bp)
+        else:
+            self.R_body = 0.5 * self.body_diameter
+            if self.R_body < max(self.a_mem, self.a_bp):
+                raise ValueError(
+                    "Gehäusedurchmesser muss mindestens so groß sein wie "
+                    "Membran- und Backplate-Durchmesser."
+                )
+        # cos des Kalotten-Halbwinkels der Membran
+        self._cap_cos = float(np.cos(np.arcsin(
+            min(self.a_mem / self.R_body, 1.0))))
+        # cos des Ring-Polarwinkels der rückwärtigen Einlässe; liegt die
+        # Einbautiefe hinter dem Kugeläquivalent, wird auf den hinteren
+        # Pol geklammert.
+        self._ring_cos = float(np.clip(
+            (self.R_body - self.d_rear_ax) / self.R_body, -1.0, 1.0))
 
     # ======================================================================
     # Elementare akustische Impedanzen
@@ -538,6 +589,105 @@ class MicrophoneCapsule:
             + 1j * omega * self.M_A_mem
             + 1.0 / (1j * omega * self.C_A_eff)
         )
+
+    # ======================================================================
+    # Beugung / Druckstau am Kapselkörper
+    # ======================================================================
+    def _diffraction_factors(self, omega, theta):
+        """Druckfaktoren an Membran und Rückeinlässen inkl. Beugung.
+
+        DRUCKSTAU UND ABSCHATTUNG AM KAPSELKÖRPER
+        -----------------------------------------
+        Sobald die Wellenlänge in die Größenordnung des Gehäuses kommt
+        (ka >~ 1), verändert der Kapselkörper das Schallfeld: frontal
+        staut sich der Druck auf (bis +6 dB an der starren Wand), seitlich
+        und rückwärtig wird abgeschattet. Deshalb richtet JEDES Mikrofon —
+        auch ein idealer Druckempfänger — zu hohen Frequenzen hin immer
+        stärker. Grundlage ist die klassische Reihenlösung der Streuung
+        einer ebenen Welle an der STARREN KUGEL (Morse, "Vibration and
+        Sound"; Konvention e^{-i omega t}):
+
+            p(a, psi)/p0 = i/(ka)^2 * Sum_n (2n+1)(-i)^n P_n(cos psi)
+                                              / h'_n^(1)(ka)
+
+        psi = Winkel zwischen Aufpunktrichtung und Einfallsrichtung
+        (Vereinfachung über die Wronski-Identität j h' - j' h = i/x^2).
+        Die Reihe enthält automatisch:
+          * den Druckstau am vorderen Pol (|p| -> 2 fuer ka -> oo),
+          * die Abschattung inkl. Antipoden-Hellfleck (kriechende Wellen),
+          * die verlaengerte Beugungslaufzeit um den Koerper (fuer ka -> 0
+            wird die effektive Front-Rueck-Distanz 1.5 * 2R — der bekannte
+            Dipol-Streufaktor 3/2 der starren Kugel).
+
+        APERTUREFFEKT DER MEMBRAN: die ausgedehnte Membran mittelt die
+        Druckverteilung über ihre Fläche — bei schrägem Einfall löschen
+        sich Beiträge hoher Frequenzen teilweise aus. Modelliert als
+        flächengemittelte Kugelkalotte am vorderen Pol; die azimutale
+        Mittelung ist über das Legendre-Additionstheorem exakt:
+            <P_n(cos psi)>_Ring    = P_n(cos alpha) * P_n(cos theta)
+            <P_n(cos psi)>_Kalotte = C_n * P_n(cos theta)
+            C_n = [P_{n-1}(u0) - P_{n+1}(u0)] / ((2n+1)(1-u0)),
+            u0 = cos(Kalotten-Halbwinkel)
+
+        Rückgabe: (F_front, F_rear) komplex, Form (len(omega), len(theta)),
+        konjugiert in die hier verwendete e^{+j omega t}-Konvention.
+        """
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        theta = np.atleast_1d(np.asarray(theta, dtype=float))
+        ka = omega * self.R_body / C_AIR
+        n_max = int(np.max(ka)) + 12
+        ct = np.cos(theta)
+
+        # Legendre-Polynome per Aufwärtsrekurrenz:
+        # (n+1) P_{n+1}(x) = (2n+1) x P_n(x) - n P_{n-1}(x)
+        def _legendre_table(x, nmax):
+            x = np.atleast_1d(x)
+            tab = [np.ones_like(x), x.copy()]
+            for n in range(1, nmax):
+                tab.append(((2 * n + 1) * x * tab[n] - n * tab[n - 1])
+                           / (n + 1))
+            return tab
+
+        P_t = _legendre_table(ct, n_max + 1)                # an cos(theta)
+        P_u0 = _legendre_table(np.array([self._cap_cos]), n_max + 2)
+        P_ur = _legendre_table(np.array([self._ring_cos]), n_max + 2)
+        u0 = self._cap_cos
+
+        F_f = np.zeros((omega.size, theta.size), dtype=complex)
+        F_r = np.zeros_like(F_f)
+        for n in range(n_max + 1):
+            if n == 0 or (1.0 - u0) < 1e-9:   # Punktmembran -> C_n = P_n(1)
+                C_n = 1.0
+            else:
+                C_n = float(P_u0[n - 1][0] - P_u0[n + 1][0]) \
+                    / ((2 * n + 1) * (1.0 - u0))
+            h1p = (_sph_jn(n, ka, derivative=True)
+                   + 1j * _sph_yn(n, ka, derivative=True))
+            base = (2 * n + 1) * (-1j) ** n / h1p           # (N_omega,)
+            F_f += np.outer(base, C_n * P_t[n])
+            F_r += np.outer(base, float(P_ur[n][0]) * P_t[n])
+        pref = 1j / ka**2
+        F_f *= pref[:, None]
+        F_r *= pref[:, None]
+        # Konvention e^{-i omega t} -> e^{+j omega t}: konjugieren
+        return np.conj(F_f), np.conj(F_r)
+
+    def _source_pressures(self, omega, theta):
+        """Effektive Quelldrücke p_front/p_rear für Einfallswinkel theta.
+
+        Mit Beugung: Kugelstreufaktoren (s. :meth:`_diffraction_factors`).
+        Ohne (include_diffraction=False oder kein SciPy): ebene Welle mit
+        geometrischer Wegdifferenz d_ext (Verhalten der Vorversionen).
+        Rückgabeform jeweils (len(omega), len(theta)).
+        """
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        theta = np.atleast_1d(np.asarray(theta, dtype=float))
+        if self.include_diffraction and _HAS_SCIPY:
+            return self._diffraction_factors(omega, theta)
+        k = omega / C_AIR
+        p_front = np.ones((omega.size, theta.size), dtype=complex)
+        p_rear = np.exp(-1j * np.outer(k * self.d_ext, np.cos(theta)))
+        return p_front, p_rear
 
     # ======================================================================
     # ABCD-Zweitor-Bausteine (vektorisiert über omega, Form (2, 2, N))
@@ -776,18 +926,17 @@ class MicrophoneCapsule:
     def transfer_function(self, frequencies_hz, angle_deg=0.0):
         """Komplexe Übertragungsfunktion e/p0 [V/Pa] für gegebene Frequenzen.
 
-        angle_deg: Schalleinfallswinkel (0° = frontal).
+        angle_deg: Schalleinfallswinkel (0° = frontal). Referenz ist der
+        ungestörte Freifelddruck p0 = 1 Pa; mit aktiver Beugung ist das
+        Ergebnis also die FREIFELD-Übertragungsfunktion inkl. Druckstau.
         """
         f = np.atleast_1d(np.asarray(frequencies_hz, dtype=float))
         omega = 2.0 * np.pi * f
         T_total, T_rear = self._assemble_network(omega)
-        k = omega / C_AIR
-        theta = np.deg2rad(angle_deg)
-        p_front = np.ones_like(omega, dtype=complex)          # Referenz: 1 Pa
-        # ebene Welle: Rückeinlass wird um d_ext*cos(theta)/c später erreicht
-        p_rear = np.exp(-1j * k * self.d_ext * np.cos(theta))
+        theta = np.array([np.deg2rad(angle_deg)])
+        p_f, p_r = self._source_pressures(omega, theta)
         q_mem = self._membrane_volume_velocity(omega, T_total, T_rear,
-                                               p_front, p_rear)
+                                               p_f[:, 0], p_r[:, 0])
         return self._output_voltage(omega, q_mem)
 
     def frequency_response(self, f_min=10.0, f_max=25000.0, n_points=500,
@@ -819,11 +968,12 @@ class MicrophoneCapsule:
                     n_angles=361):
         """Richtdiagramm für die angegebenen Frequenzen.
 
-        Für jede Frequenz wird das Netzwerk einmal aufgebaut; nur die
-        Phasenlage der rückwärtigen Druckquelle hängt vom Winkel ab:
-            p_rear(theta) = exp(-j*k*d_ext*cos(theta))
-        (1.-Ordnung-Gradientenmodell; Beugung am Kapselkörper und die
-        Richtwirkung der Membran selbst sind vernachlässigt.)
+        Für jede Frequenz wird das Netzwerk einmal aufgebaut; die
+        winkelabhängigen Quelldrücke an Membran und Rückeinlässen liefert
+        :meth:`_source_pressures` — mit aktiver Beugung inklusive
+        Druckstau/Abschattung am Kapselkörper und Apertureffekt der
+        Membran, wodurch auch ein Druckempfänger zu hohen Frequenzen hin
+        richtet.
 
         Rückgabe: dict
             'angles_deg' — Winkelachse 0..360°
@@ -836,17 +986,16 @@ class MicrophoneCapsule:
         for f in frequencies_hz:
             omega = np.array([2.0 * np.pi * float(f)])
             T_total, T_rear = self._assemble_network(omega)
-            k = omega[0] / C_AIR
-            p_rear = np.exp(-1j * k * self.d_ext * np.cos(theta))
+            p_f2, p_r2 = self._source_pressures(omega, theta)
+            p_front, p_rear = p_f2[0], p_r2[0]
             if self.rear_open:
                 A, B = T_total[0, 0][0], T_total[0, 1][0]
-                q_rear = (1.0 - A * p_rear) / B
+                q_rear = (p_front - A * p_rear) / B
                 q_mem = T_rear[1, 0][0] * p_rear + T_rear[1, 1][0] * q_rear
             else:
-                # Druckempfänger: Antwort winkelunabhängig (Kugel)
-                p_end = 1.0 / T_total[0, 0][0]
-                q_mem = np.full_like(theta, T_rear[1, 0][0] * p_end,
-                                     dtype=complex)
+                # Druckempfänger: winkelabhängig nur über den Druckstau
+                # an der Membran (ohne Beugung: exakte Kugel)
+                q_mem = T_rear[1, 0][0] * (p_front / T_total[0, 0][0])
             e = self._output_voltage(np.full_like(theta, omega[0]), q_mem)
             mag = np.abs(e)
             ref = mag[0] if mag[0] > 0 else np.max(mag)
@@ -882,6 +1031,10 @@ class MicrophoneCapsule:
             f"rückwärtige Baugruppe:        {self.rear_network_enabled}",
             f"Rückseite offen (Gradient):   {self.rear_open}",
             f"äußere Wegdifferenz d_ext:    {self.d_ext * 1e3:9.2f} mm",
+            f"Beugung am Gehäuse:           "
+            f"{self.include_diffraction and _HAS_SCIPY}",
+            f"Ersatz-Gehäuseradius R_body:  {self.R_body * 1e3:9.2f} mm "
+            f"(ka=1 bei {C_AIR / (2 * np.pi * self.R_body):.0f} Hz)",
             f"Empfindlichkeit @ 1 kHz:      {abs(sens) * 1e3:9.2f} mV/Pa "
             f"({20 * np.log10(abs(sens)):.1f} dB re 1 V/Pa)",
         ]
@@ -962,11 +1115,12 @@ if __name__ == "__main__":
     print()
 
     # --------- Gegenprobe 1: geschlossene Rückseite -> Kugel ---------------
-    omni = MicrophoneCapsule(n_cavity_holes=0)
+    # (ohne Beugung: exakte Kugel als Netzwerk-Konsistenzprüfung)
+    omni = MicrophoneCapsule(n_cavity_holes=0, include_diffraction=False)
     di_o = omni.directivity(frequencies_hz=(1000.0,))
     lin_o = di_o["patterns"][1000.0]["linear"]
     assert np.allclose(lin_o, 1.0, atol=1e-9), "Druckempfänger muss Kugel sein"
-    print("Gegenprobe geschlossene Rückseite: Kugelcharakteristik  OK")
+    print("Gegenprobe geschlossene Rückseite (ohne Beugung): Kugel  OK")
 
     # --------- Gegenprobe 2: Dual-Backplate (Gegentakt) --------------------
     # Im steifigkeitskontrollierten Bereich (deutlich unterhalb der
@@ -995,7 +1149,7 @@ if __name__ == "__main__":
         "direkt belüftete Backplate muss Richtwirkung zeigen"
     # b) Ohne Durchgangslöcher ist die Kapsel hermetisch dicht — auch mit
     #    montierter Rückseite (die dann akustisch unerreichbar ist).
-    sealed = MicrophoneCapsule(n_through_holes=0)
+    sealed = MicrophoneCapsule(n_through_holes=0, include_diffraction=False)
     di_s = sealed.directivity(frequencies_hz=(1000.0,))
     assert np.allclose(di_s["patterns"][1000.0]["linear"], 1.0, atol=1e-9), \
         "geschlossene Backplate muss Kugel sein"
@@ -1005,5 +1159,28 @@ if __name__ == "__main__":
           f"180°={lin_v[180]:.2f} — Richtwirkung  OK")
     print("Geschlossene Backplate (0 Durchgangslöcher): Kugel, "
           "hermetisch dicht  OK")
+
+    # --------- Gegenprobe 4: Druckstau/Beugung am Kapselkörper -------------
+    # Ein Druckempfänger MIT Beugung muss bei tiefen Frequenzen praktisch
+    # kugelförmig sein, zu hohen Frequenzen hin aber zunehmend richten;
+    # frontal steigt die Freifeldempfindlichkeit durch den Druckstau.
+    omni_d = MicrophoneCapsule(n_through_holes=0)   # Beugung standardmäßig an
+    di_hf = omni_d.directivity(frequencies_hz=(100.0, 4000.0, 16000.0))
+    p100 = di_hf["patterns"][100.0]["linear"]
+    p4k = di_hf["patterns"][4000.0]["linear"]
+    p16k = di_hf["patterns"][16000.0]["linear"]
+    assert abs(p100[135] - 1.0) < 0.03, "100 Hz muss nahezu Kugel sein"
+    assert p16k[135] < p4k[135] < 1.0, \
+        "Richtwirkung muss mit der Frequenz zunehmen"
+    e_lo = abs(omni_d.transfer_function(200.0)[0])
+    e_hi = abs(omni_d.transfer_function(16000.0, angle_deg=0.0)[0])
+    e_hi_nod = abs(MicrophoneCapsule(
+        n_through_holes=0, include_diffraction=False
+    ).transfer_function(16000.0)[0])
+    boost_db = 20 * np.log10(e_hi / e_hi_nod)
+    assert 1.0 < boost_db < 7.0, "Druckstau frontal: erwarte ~+2..6 dB"
+    print(f"Druckstau/Beugung: Kugel @100 Hz, 135°-Pegel "
+          f"{p4k[135]:.2f} (4 kHz) -> {p16k[135]:.2f} (16 kHz), "
+          f"frontaler Druckstau @16 kHz: +{boost_db:.1f} dB  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
