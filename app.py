@@ -504,10 +504,15 @@ m2.metric("Membranresonanz", f"{capsule.f_res:.0f} Hz",
                f"{capsule.f_res_from_tension:.0f} Hz")
 m3.metric("Ruhekapazität C₀", f"{capsule.C_elec_0 * 1e12:.1f} pF",
           help=f"je Backplate · Architektur: {capsule.n_bp} Backplate(s)")
+_upi = (f"{capsule.U_pullin:.0f} V" if np.isfinite(capsule.U_pullin)
+        else "> 20 kV")
 m4.metric("Feder-Erweichung (Bias)",
           f"{capsule.softening_ratio * 100:.1f} %",
           help="Anteil der Membransteifigkeit, den die elektrostatische "
-               "Anziehung aufzehrt; 100 % = Kollaps.")
+               "Anziehung am Arbeitspunkt aufzehrt. Pull-in-Spannung "
+               f"dieser Konfiguration: ≈ {_upi}; statische Durchbiegung "
+               f"{capsule.w0_static * 1e6:.1f} µm (Restspalt Mitte "
+               f"{capsule.h_min_static * 1e6:.1f} µm).")
 
 col_bode, col_polar = st.columns([11, 9], gap="medium")
 with col_bode:

@@ -346,34 +346,102 @@ class MicrophoneCapsule:
             self.f_res = self.f_res_from_tension
 
         # ------------------------------------------------------------------
-        # ELEKTROSTATISCHE FEDER-ERWEICHUNG ("spring softening")
-        # Die Anziehungskraft der geladenen Backplate wächst mit kleiner
-        # werdendem Spalt: F = eps0*A*U0^2 / (2 h^2). Ihre Ableitung wirkt
-        # als NEGATIVE Steifigkeit auf die Membran:
-        #     k_e = eps0 * A_bp * U0^2 / h^3           [N/m]
-        # In der akustischen Domäne (K_A = k / S^2):
-        #     1/C_eff = 1/C_A - n_bp * k_e / S_mem^2
-        # Bei symmetrischen Dual-Backplates wirken beide Seiten (n_bp = 2).
-        # Wird 1/C_eff <= 0, kollabiert die Membran auf die Backplate.
+        # ELEKTROSTATIK: ELEKTRODENGEOMETRIE, ARBEITSPUNKT UND PULL-IN
+        #
+        # Die Backplate wirkt NICHT mit ihrer vollen Fläche als Elektrode:
+        #   * Durchgangslöcher tragen gar kein Feld,
+        #   * über Blindlöchern beträgt der Feldweg h + Tiefe >> h — ihr
+        #     Beitrag zu Kraft und Kapazität ist um (h/(h+d))^2..3 kleiner
+        #     (genau so gehen sie unten in die Integrale ein).
+        # Zusätzlich ist die elektrostatische Last VERTEILT und die Membran
+        # am Rand eingespannt: alle Größen werden mit dem Auslenkungsprofil
+        # phi(r) = 1 - r^2/a^2 (Galerkin-Ansatz, gleiche Mode wie M_A/C_A)
+        # über die Elektrodenfläche integriert.
+        #
+        # Statischer Arbeitspunkt (konstante Spannung — der Bias-Widerstand
+        # hält U0 statisch fest; das Luftpolster entweicht statisch durch
+        # die Löcher und trägt NICHT):
+        #     k_gen * w0 = F_es(w0),  F_es = (eps0 U0^2 / 2) Int phi/g(r)^2
+        # mit lokalem Spalt g(r) = h - w0*phi(r) und der generalisierten
+        # Membransteifigkeit k_gen = S^2/(4 C_A) (konsistent zu C_A).
+        # PULL-IN: existiert keine stabile Lösung (oder ist die tangentiale
+        # Steifigkeit k_gen - dF/dw0 <= 0), kollabiert die Membran — das
+        # passiert bereits VOR dem Kleinsignal-Kriterium am Ruhespalt.
+        #
+        # FEDER-ERWEICHUNG am Arbeitspunkt ("spring softening"):
+        #     k_neg = dF/dw0 = eps0 U0^2 Int phi^2/g(r)^3
+        # akustisch: 1/C_eff = 1/C_A - 4*k_neg/S^2   (w0 -> V_disp: Faktor 2/S)
+        # Bei Dual-Backplates heben sich die statischen Kräfte auf (w0 = 0),
+        # die Erweichung beider Seiten addiert sich.
         # ------------------------------------------------------------------
-        self.k_elec = EPS0 * self.S_bp * self.u_bias**2 / self.h_gap**3
-        inv_C_eff = 1.0 / self.C_A_mem - self.n_bp * self.k_elec / self.S_mem**2
-        if inv_C_eff <= 0.0:
+        self.phi_th = self.n_th * np.pi * self.r_th**2 / self.S_bp
+        self.phi_bh = self.n_bh * np.pi * self.r_bh**2 / self.S_bp
+        if self.phi_th + self.phi_bh >= 0.9:
             raise ValueError(
-                "Elektrostatischer Kollaps: Polarisationsspannung zu hoch "
-                "für Spalt/Membransteifigkeit."
+                "Durchgangs- und Blindlöcher bedecken >= 90 % der "
+                "Backplate — keine wirksame Elektrode mehr."
             )
+        # Elektrodenrand in Modenkoordinate u = r^2/a_mem^2
+        self._ub = min((self.a_bp / self.a_mem) ** 2, 1.0)
+        self._k_gen = self.S_mem**2 / (4.0 * self.C_A_mem)
+
+        eq = self._solve_static_deflection(self.u_bias)
+        if eq is None:
+            u_pi = self.pullin_voltage()
+            raise ValueError(
+                "Elektrostatischer Kollaps (Pull-in): die statische "
+                "Anziehung der Backplate übersteigt die Rückstellkraft der "
+                "Membran. Maximal stabile Polarisationsspannung für diese "
+                f"Konfiguration: ca. {u_pi:.1f} V. Abhilfe: Spannung senken, "
+                "Luftspalt vergrößern oder Membran steifer (höhere "
+                "Resonanzfrequenz/Vorspannung). Hinweis: statisch trägt nur "
+                "die Membran-Vorspannung — das Luftpolster entweicht durch "
+                "die Löcher; gemessene Kapselresonanzen enthalten dagegen "
+                "die Luftpolster-Steifigkeit und liegen deshalb unter der "
+                "hier maßgeblichen Vorspannungs-Resonanz."
+            )
+        self.w0_static, k_neg_eq = eq
+        self.h_min_static = self.h_gap - self.w0_static  # Restspalt Mitte
+
+        inv_C_eff = 1.0 / self.C_A_mem - 4.0 * k_neg_eq / self.S_mem**2
+        if inv_C_eff <= 0.0:  # durch Stabilitätsprüfung praktisch abgedeckt
+            raise ValueError("Elektrostatischer Kollaps (Feder-Erweichung).")
         self.C_A_eff = 1.0 / inv_C_eff
         # relative Steifigkeitsreduktion durch die Vorspannung (Diagnose)
         self.softening_ratio = 1.0 - self.C_A_mem / self.C_A_eff
+        # maximal stabile Polarisationsspannung (Diagnose)
+        self.U_pullin = self.pullin_voltage()
 
         # kleine interne Membrandämpfung (s. _Q_MEMBRANE_INTERNAL)
         self.R_A_mem = (
             np.sqrt(self.M_A_mem / self.C_A_eff) / self._Q_MEMBRANE_INTERNAL
         )
 
-        # Ruhekapazität pro Backplate (Plattenkondensator):
-        self.C_elec_0 = EPS0 * self.S_bp / self.h_gap  # [F]
+        # ------------------------------------------------------------------
+        # WANDLERKOEFFIZIENT UND RUHEKAPAZITÄT AM ARBEITSPUNKT
+        # Betrieb mit konstanter Ladung (hochohmig): e = U0 * dC/C0.
+        # Membranmode w = dw*phi(r) moduliert die Kapazität:
+        #     dC = eps0 * I_F(w0) * dw,   I_F = Int phi/g(r)^2 dS
+        # (gleiches Integral wie die Kraft). Mit dw = 2*V_disp/S folgt
+        #     e = Theta * V_disp,  Theta = 2 U0 eps0 I_F / (S * C0).
+        # Grenzfall w0=0, keine Löcher: Theta = U0/(h*S) * (2 - (b/a)^2) —
+        # die frühere Flächengewichtung kappa. Die Lochporosität kürzt
+        # sich in erster Ordnung (dC und C0 skalieren gleich), Blindlöcher
+        # senken C0 geringfügig. Dual-Backplates: Gegentakt addiert beide
+        # Seiten (bei w0 = 0 exakt Faktor 2). Streu-/Kabelkapazität und
+        # Verstärkerlast sind nicht modelliert (Leerlauf an der Kapsel).
+        # ------------------------------------------------------------------
+        theta = 0.0
+        C0_rear = None
+        signs = (+1.0,) if self.architecture == "single" else (+1.0, -1.0)
+        for sign in signs:
+            I_F, _, I_C = self._electrode_integrals(sign * self.w0_static)
+            C0 = EPS0 * I_C
+            if C0_rear is None:
+                C0_rear = C0
+            theta += 2.0 * self.u_bias * EPS0 * I_F / (self.S_mem * C0)
+        self.C_elec_0 = C0_rear   # Ruhekapazität der (hinteren) Backplate
+        self._theta = theta
 
         # ------------------------------------------------------------------
         # LUFTSPALT: SQUEEZE-FILM-WIDERSTAND NACH ŠKVOR
@@ -477,6 +545,102 @@ class MicrophoneCapsule:
         # Pol geklammert.
         self._ring_cos = float(np.clip(
             (self.R_body - self.d_rear_ax) / self.R_body, -1.0, 1.0))
+
+    # ======================================================================
+    # Elektrostatik: Integrale, statischer Arbeitspunkt, Pull-in
+    # ======================================================================
+    def _electrode_integrals(self, w0):
+        """Elektrodenintegrale über das Membranprofil phi(r) = 1 - r²/a².
+
+        In Modenkoordinate u = r²/a_mem² (dS = S_mem·du, Elektrode bis
+        u <= ub) mit lokalem Spalt g = h - w0·phi:
+            I_F = Int phi/g²  dS   (Kraft-/Kapazitätsmodulation)
+            I_k = Int phi²/g³ dS   (negative Steifigkeit)
+            I_C = Int 1/g     dS   (Ruhekapazität)
+        Solide Elektrodenfläche wiegt mit (1 - phi_th - phi_bh); über
+        Blindlöchern gilt der vergrößerte Feldweg g + Tiefe (Durchgangs-
+        löcher tragen nichts). w0 < 0 beschreibt die von der Platte weg
+        ausgelenkte Membran (vordere Backplate der Dual-Architektur).
+        """
+        u = np.linspace(0.0, self._ub, 401)
+        v = 1.0 - u                               # Modenprofil phi
+        g_s = self.h_gap - w0 * v                 # Spalt, solide Elektrode
+        g_b = self.h_gap + self.d_bh - w0 * v     # Feldweg über Blindloch
+        c_s = 1.0 - self.phi_th - self.phi_bh
+        c_b = self.phi_bh
+        S = self.S_mem
+        I_F = S * np.trapezoid(c_s * v / g_s**2 + c_b * v / g_b**2, u)
+        I_k = S * np.trapezoid(c_s * v**2 / g_s**3 + c_b * v**2 / g_b**3, u)
+        I_C = S * np.trapezoid(c_s / g_s + c_b / g_b, u)
+        return I_F, I_k, I_C
+
+    def _static_residual(self, u_bias, w_grid):
+        """k_gen·w0 − F_es(w0) für ein Array von Auslenkungen (vektorisiert)."""
+        u = np.linspace(0.0, self._ub, 401)
+        v = 1.0 - u
+        w2 = np.atleast_1d(w_grid)[:, None]
+        g_s = self.h_gap - w2 * v[None, :]
+        g_b = self.h_gap + self.d_bh - w2 * v[None, :]
+        c_s = 1.0 - self.phi_th - self.phi_bh
+        I_F = self.S_mem * np.trapezoid(
+            c_s * v / g_s**2 + self.phi_bh * v / g_b**2, u, axis=1)
+        F = 0.5 * EPS0 * u_bias**2 * I_F
+        return self._k_gen * np.atleast_1d(w_grid) - F
+
+    def _solve_static_deflection(self, u_bias):
+        """Statischer Arbeitspunkt der Membran unter Polarisationsspannung.
+
+        Rückgabe: (w0_statisch, k_neg_gesamt) oder ``None`` bei Pull-in.
+        Gesucht wird die ERSTE Nullstelle von k_gen·w0 − F_es(w0) (das
+        stabile Gleichgewicht); danach wird die tangentiale Stabilität
+        k_gen − k_neg(w0) > 0 geprüft. Dual: statische Kräfte symmetrisch
+        -> w0 = 0, aber beide Seiten erweichen.
+        """
+        if u_bias <= 1e-9:
+            return 0.0, 0.0
+        if self.architecture == "dual":
+            _, I_k, _ = self._electrode_integrals(0.0)
+            k_neg = 2.0 * EPS0 * u_bias**2 * I_k
+            return (0.0, k_neg) if self._k_gen > k_neg else None
+        w_max = 0.98 * self.h_gap
+        grid = np.linspace(0.0, w_max, 240)
+        res = self._static_residual(u_bias, grid)
+        idx = None
+        for i in range(1, grid.size):
+            if res[i - 1] < 0.0 <= res[i]:
+                idx = i
+                break
+        if idx is None:
+            return None                            # kein Gleichgewicht
+        lo, hi = grid[idx - 1], grid[idx]
+        for _ in range(60):                        # Bisektion
+            mid = 0.5 * (lo + hi)
+            if self._static_residual(u_bias, mid)[0] < 0.0:
+                lo = mid
+            else:
+                hi = mid
+        w0 = 0.5 * (lo + hi)
+        _, I_k, _ = self._electrode_integrals(w0)
+        k_neg = EPS0 * u_bias**2 * I_k
+        if self._k_gen <= k_neg:                   # tangential instabil
+            return None
+        return w0, k_neg
+
+    def pullin_voltage(self, u_max=20000.0):
+        """Maximal stabile Polarisationsspannung (Pull-in) per Bisektion."""
+        hi = max(2.0 * self.u_bias, 100.0)
+        while self._solve_static_deflection(hi) is not None:
+            hi *= 2.0
+            if hi > u_max:
+                return float("inf")
+        lo = 0.0
+        for _ in range(50):
+            mid = 0.5 * (lo + hi)
+            if self._solve_static_deflection(mid) is None:
+                hi = mid
+            else:
+                lo = mid
+        return lo
 
     # ======================================================================
     # Elementare akustische Impedanzen
@@ -904,21 +1068,14 @@ class MicrophoneCapsule:
     def _output_voltage(self, omega, q_mem):
         """Elektrostatische Wandlung: Volumenfluss -> Leerlaufspannung.
 
-        ELEKTROSTATISCHE WANDLUNG (Betrieb mit konstanter Ladung):
-        Bei hochohmiger Beschaltung bleibt die Ladung Q = C0*U0 konstant;
-        eine mittlere Spaltänderung <dh> erzeugt die Leerlaufspannung
-            e = U0 * <dh> / h.
-        <dh> ist die über die BACKPLATE gemittelte Membranauslenkung. Mit
-        parabolischem Auslenkungsprofil und Backplate-Radius b gilt
-            <dh>_bp = kappa * (V_disp / S_mem),  kappa = 2 - (b/a)^2
-        (kappa = 1 für b = a; die Backplate "sieht" bevorzugt die stärker
-        ausgelenkte Membranmitte). V_disp = q_mem/(j*omega) ist die
-        Volumenverschiebung. Dual-Backplates arbeiten im Gegentakt ->
-        doppelte Spannung (n_bp = 2).
+        e = Theta * V_disp mit dem in _derive_parameters am statischen
+        Arbeitspunkt berechneten Wandlerkoeffizienten Theta (Herleitung
+        dort: e = U0*dC/C0 bei konstanter Ladung, dC über das Membran-
+        profil und die poröse Elektrode integriert; Dual-Backplates im
+        Gegentakt). V_disp = q_mem/(j*omega) ist die Volumenverschiebung.
         """
-        kappa = 2.0 - (self.a_bp / self.a_mem) ** 2 if self.a_bp < self.a_mem else 1.0
         v_disp = q_mem / (1j * np.asarray(omega, dtype=float))
-        return self.n_bp * (self.u_bias / self.h_gap) * kappa * v_disp / self.S_mem
+        return self._theta * v_disp
 
     # ======================================================================
     # Öffentliche Auswertemethoden
@@ -1020,6 +1177,13 @@ class MicrophoneCapsule:
             f"akust. Nachgiebigkeit C_A:    {self.C_A_mem:9.3e} m³/Pa",
             f"  dto. effektiv (mit Bias):   {self.C_A_eff:9.3e} m³/Pa",
             f"Feder-Erweichung durch Bias:  {self.softening_ratio * 100:9.2f} %",
+            f"statische Durchbiegung w0:    {self.w0_static * 1e6:9.2f} µm "
+            f"(Restspalt Mitte {self.h_min_static * 1e6:.1f} µm)",
+            ("Pull-in-Spannung U_PI:        "
+             + (f"{self.U_pullin:9.1f} V" if np.isfinite(self.U_pullin)
+                else "     > 20 kV")),
+            f"Elektroden-Porosität:         {100 * (self.phi_th + self.phi_bh):9.1f} % "
+            f"(Durchgang {100 * self.phi_th:.1f} %, Blind {100 * self.phi_bh:.1f} %)",
             f"Resonanz (Modell):            {self.f_res:9.1f} Hz",
             f"Resonanz aus Vorspannung/E:   {self.f_res_from_tension:9.1f} Hz",
             f"Ruhekapazität C0 (je BP):     {self.C_elec_0 * 1e12:9.2f} pF",
@@ -1182,5 +1346,24 @@ if __name__ == "__main__":
     print(f"Druckstau/Beugung: Kugel @100 Hz, 135°-Pegel "
           f"{p4k[135]:.2f} (4 kHz) -> {p16k[135]:.2f} (16 kHz), "
           f"frontaler Druckstau @16 kHz: +{boost_db:.1f} dB  OK")
+
+    # --------- Gegenprobe 5: Elektrostatik / Pull-in -----------------------
+    # Eine sehr weiche Membran (f_res = 800 Hz -> T ~ 4 N/m bei 22 mm/6 µm)
+    # kann 60 V bei 40 µm Spalt statisch nicht tragen (das Luftpolster
+    # entweicht durch die Löcher) -> Pull-in. Bei reduzierter Spannung
+    # existiert ein stabiler Arbeitspunkt mit statischer Durchbiegung.
+    try:
+        MicrophoneCapsule(membrane_resonance_hz=800.0)
+        raise AssertionError("800 Hz / 40 µm / 60 V müsste kollabieren")
+    except ValueError as exc:
+        assert "Pull-in" in str(exc)
+    soft = MicrophoneCapsule(membrane_resonance_hz=800.0, bias_voltage=20.0)
+    assert 20.0 < soft.U_pullin < 60.0, "U_PI muss zwischen 20 und 60 V liegen"
+    assert 0.0 < soft.w0_static < soft.h_gap
+    fr_soft = soft.frequency_response(n_points=50)
+    assert np.all(np.isfinite(fr_soft["amplitude_db"]))
+    print(f"Pull-in-Gegenprobe: 800 Hz kollabiert bei 60 V (U_PI = "
+          f"{soft.U_pullin:.1f} V), stabil bei 20 V mit statischer "
+          f"Durchbiegung {soft.w0_static * 1e6:.1f} µm  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
