@@ -111,6 +111,7 @@ DEFAULTS = {
     "d_blind_mm": 1.2,
     "blind_depth_mm": 1.5,
     # Rückseite / akustische Netzwerke
+    "rear_enabled": True,
     "delay_mm": 3.0,
     "cavity_length_mm": 12.0,
     "cavity_wall_mm": 1.5,
@@ -200,11 +201,15 @@ def build_capsule(p):
         n_blind_holes=p["n_blind"],
         blind_hole_diameter=p["d_blind_mm"] * 1e-3,
         blind_hole_depth=p["blind_depth_mm"] * 1e-3,
-        delay_length=p["delay_mm"] * 1e-3,
-        cavity_length=p["cavity_length_mm"] * 1e-3,
+        # Rückseite deaktiviert -> kein Laufzeitglied, kein Hohlraum,
+        # keine Einlasslöcher: die Kapsel ist unmittelbar hinter der
+        # Backplate hermetisch geschlossen (reiner Druckempfänger).
+        delay_length=p["delay_mm"] * 1e-3 if p["rear_enabled"] else 0.0,
+        cavity_length=p["cavity_length_mm"] * 1e-3 if p["rear_enabled"]
+        else 0.0,
         cavity_wall_thickness=p["cavity_wall_mm"] * 1e-3,
         cavity_hole_position=POS_LABELS[p["hole_position"]],
-        n_cavity_holes=p["n_cavity"],
+        n_cavity_holes=p["n_cavity"] if p["rear_enabled"] else 0,
         cavity_hole_diameter=p["d_cavity_mm"] * 1e-3,
         cavity_hole_axial_position=p["cavity_axial_mm"] * 1e-3,
         fabric_front_rayl=p["fabric_front_rayl"],
@@ -382,34 +387,45 @@ with st.sidebar:
         st.number_input("Blindlöcher — Tiefe [mm]", 0.05, _bd_max, step=0.05,
                         key="p_blind_depth_mm")
 
-    # ---------------- Rückseite / akustische Netzwerke -----------------
-    with st.expander("Rückseite & akustische Netzwerke", expanded=True):
+    # ---------------- Rückseite / Laufzeitglied -------------------------
+    with st.expander("Rückseite & Laufzeitglied", expanded=True):
+        st.toggle("Rückseite aktiv", key="p_rear_enabled",
+                  help="Deaktiviert: Laufzeitglied, Hohlraum und Einlass-"
+                       "löcher entfallen; die Kapsel ist unmittelbar hinter "
+                       "der Backplate hermetisch geschlossen und wird zum "
+                       "reinen Druckempfänger (Kugelcharakteristik). Das "
+                       "kleine eingeschlossene Luftpolster (Spalt + Blind-"
+                       "löcher) wirkt dann als steife Feder — die Empfind-"
+                       "lichkeit sinkt entsprechend.")
+        _rear_on = st.session_state["p_rear_enabled"]
         st.number_input("Laufzeitglied — Länge [mm]", 0.0, 100.0, step=0.5,
-                        key="p_delay_mm",
+                        key="p_delay_mm", disabled=not _rear_on,
                         help="Akustische Leitung hinter der Membran; "
                              "Laufzeit τ = L/c.")
         st.number_input("Hohlraum — Länge [mm]", 1.0, 100.0, step=0.5,
-                        key="p_cavity_length_mm")
+                        key="p_cavity_length_mm", disabled=not _rear_on)
         st.number_input("Hohlraum — Wandstärke [mm]", 0.2, 10.0, step=0.1,
-                        key="p_cavity_wall_mm")
+                        key="p_cavity_wall_mm", disabled=not _rear_on)
         st.radio("Hohlraumlöcher — Position", list(POS_LABELS),
-                 key="p_hole_position")
+                 key="p_hole_position", disabled=not _rear_on)
         st.number_input("Hohlraumlöcher — Anzahl", 0, 5000, step=1,
-                        key="p_n_cavity",
+                        key="p_n_cavity", disabled=not _rear_on,
                         help="0 = Rückseite geschlossen → Druckempfänger "
                              "(Kugelcharakteristik).")
         st.number_input("Hohlraumlöcher — Ø [mm]", 0.05, 5.0, step=0.05,
-                        key="p_d_cavity_mm")
+                        key="p_d_cavity_mm", disabled=not _rear_on)
         _ax_max = st.session_state["p_cavity_length_mm"]
         st.session_state["p_cavity_axial_mm"] = min(
             st.session_state["p_cavity_axial_mm"], _ax_max)
         st.number_input("Hohlraumlöcher — axiale Position [mm]", 0.1, _ax_max,
                         step=0.5, key="p_cavity_axial_mm",
-                        disabled=st.session_state["p_hole_position"]
-                        != "Umfang",
+                        disabled=(not _rear_on)
+                        or st.session_state["p_hole_position"] != "Umfang",
                         help="Abstand vom Hohlraumeingang "
                              "(nur bei Position 'Umfang').")
-        st.markdown("**Akustisches Gewebe**")
+
+    # ---------------- Akustisches Gewebe --------------------------------
+    with st.expander("Akustisches Gewebe", expanded=True):
         st.number_input("Vor der Membran [Rayl]", 0.0, 100000.0, step=5.0,
                         key="p_fabric_front_rayl")
         st.number_input("Hinter der Backplate [Rayl]", 0.0, 100000.0,
