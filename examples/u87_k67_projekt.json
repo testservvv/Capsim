@@ -13,10 +13,11 @@
     "28 mV/Pa und Frequenzgang (Neumann-Datenblatt).",
     "Membranresonanz 1150 Hz und Luftspalt 60 um: gemeinsame Loesung aus",
     "C0- und Pull-in-Randbedingung (U_PI = 78 V bei 60 V Betrieb).",
-    "Validierung gegen Herstellerdaten: Niere -7.3 dB @90 / -18.6 dB @180",
-    "(1 kHz), 125 Hz: -12 dB @180 (LF-Verbreiterung durch das Druckleck",
+    "Validierung gegen Herstellerdaten: Niere -6.9 dB @90 / -23.5 dB @180",
+    "(1 kHz), 125 Hz: -15 dB @180 (LF-Verbreiterung durch das Druckleck",
     "delta = C_int/C_mem der Doppelmembran-Bauform - wie beim Original),",
-    "flach 100 Hz - 5 kHz, Praesenzanhebung +6 dB (K67 real ~+6 dB)."
+    "flach 100 Hz - 5 kHz, Praesenzanhebung +2.2 dB @ 12 kHz wie die",
+    "veroeffentlichte U87Ai-Kurve (Elektronik glaettet den Kapselpeak)."
   ],
   "params": {
     "material": "PET (Mylar)",
@@ -44,8 +45,8 @@
     "n_cavity": 200,
     "d_cavity_mm": 0.25,
     "cavity_axial_mm": 2.5,
-    "fabric_front_rayl": 700.0,
-    "fabric_rear_rayl": 400.0,
+    "fabric_front_rayl": 2500.0,
+    "fabric_rear_rayl": 1500.0,
     "diffraction_on": true,
     "body_diameter_mm": 34.0,
     "n_points": 400,

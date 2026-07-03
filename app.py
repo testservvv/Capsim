@@ -386,12 +386,15 @@ with st.sidebar:
                       "Backplate-Spalt. Die passive Rückmembran bildet "
                       "das Phasenschiebernetzwerk (Niere) — Laufzeitglied "
                       "und Hohlraum entfallen.")
-        st.number_input("Backplate-Spalt (K67) [µm]", 5.0, 500.0, step=5.0,
+        st.number_input("Backplate-Spalt (K67) [µm]", 0.0, 500.0, step=5.0,
                         key="p_center_gap_um",
                         disabled=st.session_state["p_architecture"]
                         != K67_LABEL,
                         help="Spacer zwischen den beiden Backplate-Hälften "
-                             "der Doppelmembran-Bauform.")
+                             "der Doppelmembran-Bauform. 0 = einteilige, "
+                             "komplett durchbohrte Mittelelektrode "
+                             "(Braunmühl-Weber); die Backplate-Dicke ist "
+                             "dann die HALBE Plattendicke je Seite.")
 
         st.markdown("**Lochmuster**")
         st.number_input("Durchgangslöcher — Anzahl", 0, 2000, step=1,

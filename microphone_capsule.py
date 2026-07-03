@@ -259,8 +259,13 @@ class MicrophoneCapsule:
         # polarisiert)
         self.n_bp = 2 if self.architecture == "dual" else 1
         self.h_center = float(center_gap)
-        if self.architecture == "dual_diaphragm" and self.h_center <= 0:
-            raise ValueError("center_gap muss > 0 sein.")
+        if self.architecture == "dual_diaphragm" and self.h_center < 0:
+            raise ValueError("center_gap darf nicht negativ sein.")
+        # center_gap = 0 ist zulässig und beschreibt eine EINZELNE, komplett
+        # durchbohrte Mittelelektrode (Braunmühl-Weber-Bauform, z. B.
+        # Debenham/Robinson/Stebbings): die Durchgangslöcher beider Seiten
+        # fluchten, es existiert keine laterale Zwischenschicht.
+        # backplate_thickness ist dann die HALBE Plattendicke (je Seite).
 
         self.n_th = int(n_through_holes)
         self.r_th = 0.5 * float(through_hole_diameter)
@@ -475,15 +480,25 @@ class MicrophoneCapsule:
         # Die (kleine) Masse der lateral bewegten Spaltluft wird vernachlässigt.
         # ------------------------------------------------------------------
         if self.n_th > 0:
-            q = self.n_th * self.r_th**2 / self.a_bp**2
+            # ERWEITERUNG der Škvor-Formel: auch BLINDLÖCHER wirken im
+            # Spaltfilm als verteilte Druck-Sammelstellen — die laterale
+            # Strömung muss nur bis zur nächstgelegenen Bohrung laufen
+            # (gleich welcher Art), nicht über die ganze Platte zu den
+            # wenigen Durchgangslöchern. Der wirksame Squeeze-Film-
+            # Widerstand wird daher mit ALLEN Bohrungen als Senken
+            # gebildet (n_drain, q_drain). Ohne Blindlöcher fällt die
+            # Formel auf das klassische Škvor-Ergebnis zurück.
+            n_drain = self.n_th + self.n_bh
+            q = (self.n_th * self.r_th**2
+                 + self.n_bh * self.r_bh**2) / self.a_bp**2
             if not (0.0 < q < 1.0):
                 raise ValueError(
-                    f"Lochflächenanteil q={q:.3f} der Durchgangslöcher "
+                    f"Lochflächenanteil q={q:.3f} der Bohrungen "
                     "muss in (0, 1) liegen."
                 )
             B_q = q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0
             self.R_A_gap = (12.0 * MU_AIR
-                            / (self.n_th * np.pi * self.h_gap**3) * B_q)
+                            / (n_drain * np.pi * self.h_gap**3) * B_q)
         else:
             # Geschlossene Backplate: es existiert kein Strömungspfad zu
             # Löchern, also auch keine laterale Škvor-Strömung (die Formel
@@ -500,9 +515,14 @@ class MicrophoneCapsule:
         V_gap = self.S_bp * self.h_gap
         self.C_A_gap = V_gap / P_ATM
 
-        # Blindloch-Volumen (isotherme Nachgiebigkeit, Löcher sind eng):
+        # Blindloch-Volumen: Bohrungen im mm-Maßstab sind DEUTLICH weiter
+        # als die thermische Grenzschicht (~0.07 mm bei 1 kHz) — die
+        # Kompression verläuft ADIABATISCH, C = V/(rho0*c^2). (Isotherm
+        # wie im Membranspalt würde die Nachgiebigkeit um den Faktor
+        # gamma = 1.4 überschätzen.)
         V_blind = self.n_bh * np.pi * self.r_bh**2 * self.d_bh
-        self.C_A_blind = V_blind / P_ATM if self.n_bh > 0 else 0.0
+        self.C_A_blind = (V_blind / (RHO0 * C_AIR**2)
+                          if self.n_bh > 0 else 0.0)
 
         # ------------------------------------------------------------------
         # ZWISCHENSPALT DER K67-BAUFORM ("dual_diaphragm")
@@ -513,7 +533,8 @@ class MicrophoneCapsule:
         # Membranspalt mit der Škvor-Formel (Spalthöhe = center_gap)
         # modelliert; das Schichtvolumen ist isotherm nachgiebig.
         # ------------------------------------------------------------------
-        if self.architecture == "dual_diaphragm" and self.n_th > 0:
+        if (self.architecture == "dual_diaphragm" and self.n_th > 0
+                and self.h_center > 0):
             q_c = self.n_th * self.r_th**2 / self.a_bp**2
             B_qc = q_c / 2.0 - q_c**2 / 8.0 - np.log(q_c) / 4.0 - 3.0 / 8.0
             self.R_A_center = (12.0 * MU_AIR
@@ -521,6 +542,8 @@ class MicrophoneCapsule:
                                * B_qc)
             self.C_A_center = self.S_bp * self.h_center / P_ATM
         else:
+            # h_center = 0: einteilige durchbohrte Mittelelektrode —
+            # kein lateraler Strömungswiderstand, kein Zwischenvolumen
             self.R_A_center = 0.0
             self.C_A_center = 0.0
 
@@ -1493,16 +1516,18 @@ if __name__ == "__main__":
         bias_voltage=60.0, architecture="dual_diaphragm", center_gap=50e-6,
         n_through_holes=60, through_hole_diameter=1.2e-3,
         n_blind_holes=60, blind_hole_diameter=1.8e-3, blind_hole_depth=1.1e-3,
-        fabric_front_rayl=700.0, fabric_rear_rayl=400.0, body_diameter=34e-3,
+        fabric_front_rayl=2500.0, fabric_rear_rayl=1500.0,
+        body_diameter=34e-3,
     )
     di_k = k67.directivity(frequencies_hz=(1000.0,))
     pk67 = di_k["patterns"][1000.0]["db"]
-    assert pk67[180] < -10.0, "K67-Bauform muss Nierencharakteristik zeigen"
+    assert pk67[180] < -15.0, "K67-Bauform muss Nierencharakteristik zeigen"
     fr_k = k67.frequency_response(n_points=150)
     assert np.all(np.isfinite(fr_k["amplitude_db"]))
     fk, ak = fr_k["frequency_hz"], fr_k["amplitude_db_norm"]
     ihf = (fk > 5000) & (fk < 16000)
-    assert 3.0 < np.max(ak[ihf]) < 10.0, "Präsenzanhebung erwartet (~+6 dB)"
+    assert 1.0 < np.max(ak[ihf]) < 8.0, \
+        "moderate Präsenzanhebung erwartet (U87Ai-Kurve: +2..3 dB)"
     print(f"K67-Bauform: Niere (180° = {pk67[180]:.1f} dB @1 kHz), "
           f"Präsenzanhebung +{np.max(ak[ihf]):.1f} dB bei "
           f"{fk[ihf][np.argmax(ak[ihf])]/1000:.1f} kHz  OK")
