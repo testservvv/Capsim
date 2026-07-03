@@ -41,6 +41,7 @@ try:
     # Für die exakte thermoviskose Rohrimpedanz (Zwikker–Kosten) werden
     # Besselfunktionen mit komplexem Argument benötigt; für die Beugung
     # am Kapselkörper sphärische Besselfunktionen.
+    from scipy.linalg import solve_banded as _solve_banded
     from scipy.special import jv as _besselj
     from scipy.special import spherical_jn as _sph_jn
     from scipy.special import spherical_yn as _sph_yn
@@ -162,6 +163,22 @@ class MicrophoneCapsule:
             und die Freifeldempfindlichkeit steigt frontal um bis zu +6 dB.
             ``False``: einfache ebene-Welle-Phasen (nur zu Vergleichs-
             zwecken; ohne SciPy automatisch dieser Fallback).
+
+    Spaltfilm-Modell
+        squeeze_model : str
+            ``"1d"`` (Standard): der Luftspalt wird als ein einziges
+            Lumped-Element modelliert (Škvor-Widerstand + Nachgiebigkeit
+            + Lochimpedanz in einer festen Topologie). Schnell, für dichte
+            gleichmäßige Lochmuster ausreichend.
+            ``"2d"``: das Druckfeld im Spalt wird als modifizierte
+            REYNOLDS-GLEICHUNG (Homentcovschi & Miles, JASA 2004; Bao)
+            axialsymmetrisch als Feldgleichung gelöst — s.
+            :meth:`_gap_field_2port`. Trennt korrekt den Nachgiebigkeits-
+            Rückweg (Spaltvolumen + Blindlöcher, lokal) vom Rückkopplungs-
+            weg (nur durch die Durchgangslöcher) und erfasst den radialen
+            Druckaufbau. Wichtig bei WENIGEN, engen Durchgangslöchern
+            (z. B. Braunmühl-Weber-Platten), wo das 1D-Modell die interne
+            Übertragung überschätzt. Braucht SciPy (sonst Fallback 1D).
     """
 
     # Membranmaterialien: Dichte rho [kg/m^3], E-Modul E [Pa],
@@ -197,9 +214,11 @@ class MicrophoneCapsule:
         center_gap=50e-6,
         n_through_holes=60,
         through_hole_diameter=1.0e-3,
+        through_hole_pcd=None,
         n_blind_holes=30,
         blind_hole_diameter=1.2e-3,
         blind_hole_depth=None,
+        blind_hole_pcd=None,
         # --- Akustische Netzwerke & Rückseite -------------------------------
         rear_network_enabled=True,
         delay_length=3e-3,
@@ -214,6 +233,8 @@ class MicrophoneCapsule:
         # --- Gehäuse & Beugung ----------------------------------------------
         body_diameter=None,
         include_diffraction=True,
+        # --- Spaltfilm-Modell -----------------------------------------------
+        squeeze_model="1d",
     ):
         # ------------------------- Membran ---------------------------------
         if isinstance(membrane_material, dict):
@@ -288,6 +309,21 @@ class MicrophoneCapsule:
         if self.n_bh > 0 and not (0 < self.d_bh < self.t_bp):
             raise ValueError("Blindlochtiefe muss zwischen 0 und Backplate-Dicke liegen.")
 
+        # Lochkreisradien (nur für das 2D-Feldmodell relevant): mittlerer
+        # radialer Sitz der Durchgangs- bzw. Blindlöcher. None -> die Löcher
+        # werden gleichmäßig über die Elektrode verteilt. Der radiale
+        # Versatz zwischen beiden Lochtypen bildet im Feldmodell die
+        # Laufzeit-/Verzögerungsstrecke der Niere ab.
+        self.r_th_pcd = (None if through_hole_pcd is None
+                         else 0.5 * float(through_hole_pcd))
+        self.r_bh_pcd = (None if blind_hole_pcd is None
+                         else 0.5 * float(blind_hole_pcd))
+        for _r in (self.r_th_pcd, self.r_bh_pcd):
+            if _r is not None and not (0.0 <= _r <= self.a_bp):
+                raise ValueError(
+                    "Lochkreisradius muss zwischen 0 und Backplate-Radius liegen."
+                )
+
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
         self.l_delay = float(delay_length)
@@ -313,6 +349,12 @@ class MicrophoneCapsule:
         self.body_diameter = (None if body_diameter is None
                               else float(body_diameter))
         self.include_diffraction = bool(include_diffraction)
+
+        sm = str(squeeze_model).strip().lower()
+        if sm not in ("1d", "2d"):
+            raise ValueError("squeeze_model muss '1d' oder '2d' sein.")
+        # Das 2D-Feldmodell (modifizierte Reynolds-Gleichung) braucht SciPy.
+        self.squeeze_model = sm if (sm == "1d" or _HAS_SCIPY) else "1d"
 
         # ------------------------ abgeleitete Größen ------------------------
         self._derive_parameters()
@@ -452,13 +494,17 @@ class MicrophoneCapsule:
         # Grenzfall w0=0, keine Löcher: Theta = U0/(h*S) * (2 - (b/a)^2) —
         # die frühere Flächengewichtung kappa. Die Lochporosität kürzt
         # sich in erster Ordnung (dC und C0 skalieren gleich), Blindlöcher
-        # senken C0 geringfügig. Dual-Backplates: Gegentakt addiert beide
-        # Seiten (bei w0 = 0 exakt Faktor 2). Streu-/Kabelkapazität und
+        # senken C0 geringfügig. Nur die ECHTE Dual-Backplate arbeitet im
+        # Gegentakt (beide Seiten polarisiert, addiert bei w0 = 0 exakt
+        # Faktor 2). Die K67-Doppelmembran (dual_diaphragm) ist im Nieren-
+        # modus dagegen NUR frontseitig polarisiert — die Rückmembran liegt
+        # auf Backplate-Potential und trägt weder zur Wandlung noch zur
+        # Ruhekapazität bei (wie 'single'). Streu-/Kabelkapazität und
         # Verstärkerlast sind nicht modelliert (Leerlauf an der Kapsel).
         # ------------------------------------------------------------------
         theta = 0.0
         C0_rear = None
-        signs = (+1.0,) if self.architecture == "single" else (+1.0, -1.0)
+        signs = (+1.0, -1.0) if self.architecture == "dual" else (+1.0,)
         for sign in signs:
             I_F, _, I_C = self._electrode_integrals(sign * self.w0_static)
             C0 = EPS0 * I_C
@@ -546,6 +592,42 @@ class MicrophoneCapsule:
             # kein lateraler Strömungswiderstand, kein Zwischenvolumen
             self.R_A_center = 0.0
             self.C_A_center = 0.0
+
+        # ------------------------------------------------------------------
+        # RADIALGITTER FÜR DAS 2D-SPALTFILM-MODELL (modifizierte Reynolds-
+        # Gleichung). Zellzentriertes Finite-Volumen-Gitter auf [0, a_bp];
+        # die Zellzentren r_i = (i+1/2)*dr vermeiden die 1/r-Singularität
+        # bei r=0. Die Löcher werden über die Elektrodenfläche homogenisiert
+        # (gleichmäßige Dichte), das Membranprofil ist die Grundmode phi.
+        # ------------------------------------------------------------------
+        N = 60
+        dr = self.a_bp / N
+        r_c = (np.arange(N) + 0.5) * dr
+        self._fld_area = 2.0 * np.pi * r_c * dr           # Zellflächen [m^2]
+        self._fld_phi = np.maximum(1.0 - (r_c / self.a_mem) ** 2, 0.0)
+        self._fld_Sphi = float(np.sum(self._fld_phi * self._fld_area))
+        # Geometriefaktor der lateralen Flächenleitwerte: Gface = 2*pi*k*K
+        # (Fläche k liegt bei r = k*dr; Randflächen 0 = kein Fluss -> Neumann)
+        gg = np.zeros(N + 1)
+        gg[1:N] = 2.0 * np.pi * np.arange(1, N)
+        self._fld_gface_geom = gg
+        self._fld_S_elec = np.pi * self.a_bp**2
+        self._fld_N = N
+
+        # Radiale Dichteverteilungen der Löcher (normiert: Σ dens·A = 1),
+        # damit die Gesamt-Lochleitwerte erhalten bleiben. Mit Lochkreis
+        # (PCD) wird die Dichte als schmales Ringband um r_pcd konzentriert,
+        # sonst gleichmäßig über die Elektrode.
+        def _hole_density(r_pcd):
+            if r_pcd is None:
+                dens = np.ones(N)
+            else:
+                width = max(0.10 * self.a_bp, 1.5 * dr)
+                dens = np.exp(-0.5 * ((r_c - r_pcd) / width) ** 2)
+            return dens / float(np.sum(dens * self._fld_area))
+
+        self._fld_dens_th = _hole_density(self.r_th_pcd)
+        self._fld_dens_bh = _hole_density(self.r_bh_pcd)
 
         # Ist die Rückseite akustisch offen (Gradientenempfänger)?
         # Die Durchgangslöcher sind der einzige Weg durch die Backplate:
@@ -1015,6 +1097,101 @@ class MicrophoneCapsule:
     # ======================================================================
     # Netzwerk-Zusammenbau
     # ======================================================================
+    @staticmethod
+    def _abcd_inv(T):
+        """Kehrmatrix eines reziproken (2,2,N)-Zweitors (det = 1):
+        T^-1 = [[D, -B], [-C, A]]. Für die gespiegelte Kettenrichtung."""
+        return np.array([[T[1, 1], -T[0, 1]], [-T[1, 0], T[0, 0]]])
+
+    def _gap_field_2port(self, omega):
+        """Zweitor des Luftspalts aus der modifizierten Reynolds-Gleichung.
+
+        MODIFIZIERTE REYNOLDS-GLEICHUNG (2D-Feldmodell)
+        -----------------------------------------------
+        Statt eines einzelnen Lumped-Widerstands wird das Druckfeld p(r)
+        im dünnen Spalt als Feldgleichung gelöst (Homentcovschi & Miles,
+        JASA 116, 2004; Bao et al.). Axialsymmetrisch, mit über die
+        Elektrode homogenisierten Löchern:
+
+            ∇·[(h³/12μ) ∇p] - Y(r)·p = -v(r) + g_h(r)·p_rear
+
+        Bilanz je Ringzelle (Finite-Volumen):
+          * laterale Poiseuille-Strömung im Spalt: Leitwert Gface = 2π r h³/(12μ)/dr
+          * Speicherung im Spaltvolumen (isotherm):      jω·h/P_atm
+          * Blindlöcher: LOKALE Admittanz y_bh (Rohr + adiab. Nachgiebig-
+            keit), koppeln NICHT zur Rückseite
+          * Durchgangslöcher: Admittanz g_h, koppeln zum rückwärtigen Port
+            (Druckdifferenz p - p_rear)
+          * Membran treibt mit der Modenform v(r) = φ(r)·U/∫φ dA
+
+        Der entscheidende Fortschritt gegenüber dem 1D-Modell: der
+        Nachgiebigkeits-Rückweg (Spaltvolumen + Blindlöcher, überall lokal)
+        und der Rückkopplungsweg (nur durch die wenigen Durchgangslöcher)
+        sehen UNTERSCHIEDLICHE Widerstände — im 1D-Lumped teilen sie sich
+        einen einzigen R_gap. Bei wenigen, engen Durchgangslöchern
+        (Braunmühl-Weber-Platten) überschätzt 1D deshalb die interne
+        Übertragung; das Feldmodell erfasst zudem den radialen Druckaufbau.
+
+        Das Zweitor wird durch zwei Feldlösungen extrahiert (Membran treibt
+        bei kurzgeschlossenem Rückport / Rückport treibt bei ruhender
+        Membran) und ist per Konstruktion reziprok (det T = 1). Rückgabe
+        als (2,2,N)-Kettenmatrix in Richtung Membran -> Außen, gleiche
+        Konvention wie :meth:`_backplate_gap_abcd`.
+        """
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        Nf = omega.size
+        S_el = self._fld_S_elec
+
+        A = self._fld_area                               # (N,)
+        phi = self._fld_phi
+        Sphi = self._fld_Sphi
+        N = self._fld_N
+        dens_th = self._fld_dens_th                       # Σ dens·A = 1
+        dens_bh = self._fld_dens_bh
+
+        # pro-Loch-Impedanzen (vektorisiert über omega); die Lochleitwerte
+        # werden über die radialen Dichten dens_th/dens_bh verteilt.
+        Z_th1 = self._hole_impedance(omega, self.r_th, self.t_bp, 1,
+                                     end_correction=True)
+        g_tot = self.n_th / Z_th1                         # Gesamtleitwert (Nf,)
+        if self.n_bh > 0:
+            Z_v = self._hole_impedance(omega, self.r_bh, 0.5 * self.d_bh, 1,
+                                       end_correction=False)
+            S_bh = np.pi * self.r_bh**2
+            Z_end = 1j * omega * RHO0 * (0.85 * self.r_bh) / S_bh
+            Z_comp = self.n_bh / (1j * omega * self.C_A_blind)
+            y_tot = self.n_bh / (Z_v + Z_end + Z_comp)
+        else:
+            y_tot = np.zeros(Nf, dtype=complex)
+
+        c_gap = self.h_gap / P_ATM                       # isotherm, per Fläche
+        K = self.h_gap**3 / (12.0 * MU_AIR)
+        Gface = self._fld_gface_geom * K                 # (N+1,)
+
+        src_a = phi * A / Sphi                            # Membran treibt (U=1)
+        T = np.empty((2, 2, Nf), dtype=complex)
+        ab = np.zeros((3, N), dtype=complex)
+        ab[0, 1:] = -Gface[1:N]                           # Superdiagonale
+        ab[2, :-1] = -Gface[1:N]                          # Subdiagonale
+        base_diag = Gface[:N] + Gface[1:N + 1]            # laterale Beiträge
+        for f in range(Nf):
+            g_h = g_tot[f] * dens_th                      # (N,) verteilt
+            y_bh = y_tot[f] * dens_bh
+            Y = 1j * omega[f] * c_gap + y_bh + g_h
+            ab[1, :] = base_diag + Y * A
+            rhs = np.column_stack((src_a, g_h * A))       # (N, 2)
+            sol = _solve_banded((1, 1), ab, rhs)
+            p_a, p_b = sol[:, 0], sol[:, 1]
+            alpha = np.sum(p_a * phi * A) / Sphi
+            beta = np.sum(p_b * phi * A) / Sphi
+            gamma = np.sum(g_h * A * p_a)
+            delta = np.sum(g_h * A * (p_b - 1.0))
+            T[0, 0, f] = beta - alpha * delta / gamma
+            T[0, 1, f] = alpha / gamma
+            T[1, 0, f] = -delta / gamma
+            T[1, 1, f] = 1.0 / gamma
+        return T
+
     def _backplate_gap_abcd(self, omega, outside_to_membrane,
                             holes_radiate=False):
         """Kettenmatrix des Backplate/Luftspalt-Netzwerks.
@@ -1032,6 +1209,20 @@ class MicrophoneCapsule:
         und Blindlöcher wirken als reine Shunt-Nachgiebigkeiten an der
         Membran; die Kette endet dahinter blockiert.
         """
+        # 2D-Feldmodell: das komplette Spalt-/Lochnetzwerk kommt aus der
+        # Reynolds-Feldlösung (nur sinnvoll, wenn Durchgangslöcher da sind).
+        if self.squeeze_model == "2d" and self.n_th > 0:
+            T = self._gap_field_2port(omega)
+            if holes_radiate:
+                k = np.asarray(omega, float) / C_AIR
+                S_holes = self.n_th * np.pi * self.r_th**2
+                Z_rad = (RHO0 * C_AIR / S_holes) * np.minimum(
+                    (k * self.r_th) ** 2 / 2.0, 1.0)
+                T = self._mmul(T, self._abcd_series(Z_rad, omega))
+            if outside_to_membrane:
+                T = self._abcd_inv(T)
+            return T
+
         mats = []  # Reihenfolge: Membranseite -> Außenseite
         if self.n_bh > 0:
             mats.append(self._abcd_shunt(1.0 / self._blind_hole_impedance(omega), omega))
@@ -1292,6 +1483,9 @@ class MicrophoneCapsule:
             "MicrophoneCapsule — abgeleitete Parameter",
             "-" * 55,
             f"Architektur:                  {self.architecture} ({arch_note})",
+            f"Spaltfilm-Modell:             {self.squeeze_model} "
+            + ("(modifizierte Reynolds-Feldlösung)" if self.squeeze_model == "2d"
+               else "(Lumped-Element)"),
             f"Membranfläche:                {self.S_mem * 1e6:9.2f} mm²",
             f"akust. Masse Membran M_A:     {self.M_A_mem:9.2f} kg/m⁴",
             f"akust. Nachgiebigkeit C_A:    {self.C_A_mem:9.3e} m³/Pa",
@@ -1531,5 +1725,57 @@ if __name__ == "__main__":
     print(f"K67-Bauform: Niere (180° = {pk67[180]:.1f} dB @1 kHz), "
           f"Präsenzanhebung +{np.max(ak[ihf]):.1f} dB bei "
           f"{fk[ihf][np.argmax(ak[ihf])]/1000:.1f} kHz  OK")
+
+    # --------- Gegenprobe 7: Elektrostatik der Doppelmembran ---------------
+    # Im Nierenmodus ist NUR die Frontmembran polarisiert: die passive
+    # Rückmembran benutzt die unpolarisierte Nachgiebigkeit (keine Feder-
+    # Erweichung), und Wandlung/Ruhekapazität rechnen einseitig (n_bp = 1,
+    # anders als die echte Gegentakt-Dual-Backplate mit n_bp = 2).
+    assert k67.n_bp == 1, "K67-Bauform: nur die Frontseite ist polarisiert"
+    Z_front = k67._membrane_impedance(np.array([2 * np.pi * 1000.0]))[0]
+    Z_pass = k67._membrane_impedance_passive(np.array([2 * np.pi * 1000.0]))[0]
+    assert abs(Z_front - Z_pass) > 0, "Rückmembran muss unpolarisiert sein"
+    # Bias-Unabhängigkeit der NORMIERTEN Niere (Front-Membranimpedanz ist ein
+    # Serienelement und kürzt sich aus dem Muster; nur die Empfindlichkeit
+    # skaliert mit der Spannung).
+    def _p180(bias):
+        c = MicrophoneCapsule(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_tension=13.7, air_gap=60e-6, backplate_diameter=25e-3,
+            bias_voltage=bias, architecture="dual_diaphragm", center_gap=50e-6,
+            n_through_holes=60, through_hole_diameter=1.2e-3,
+            n_blind_holes=60, blind_hole_diameter=1.8e-3,
+            blind_hole_depth=1.1e-3, fabric_front_rayl=2500.0,
+            fabric_rear_rayl=1500.0, body_diameter=34e-3)
+        return c.directivity(frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
+    assert abs(_p180(20.0) - _p180(60.0)) < 0.1, \
+        "Bias darf die normierte Richtcharakteristik nicht verschieben"
+    print("Elektrostatik Doppelmembran: nur Front polarisiert (n_bp=1), "
+          "Richtdiagramm bias-unabhängig  OK")
+
+    # --------- Gegenprobe 8: 2D-Spaltfilmmodell (Reynolds-Feld) ------------
+    # a) Das Feld-Zweitor ist reziprok (det T = 1).
+    if _HAS_SCIPY:
+        cap2d = MicrophoneCapsule(architecture="single", n_through_holes=12,
+                                  through_hole_diameter=0.5e-3,
+                                  rear_network_enabled=False,
+                                  squeeze_model="2d")
+        Tg = cap2d._gap_field_2port(np.array([2 * np.pi * 1000.0]))
+        det = Tg[0, 0, 0] * Tg[1, 1, 0] - Tg[0, 1, 0] * Tg[1, 0, 0]
+        assert abs(det - 1.0) < 1e-6, "Reynolds-Zweitor muss reziprok sein"
+        # b) Das 2D-Modell entfernt die spurious Lumped-Resonanz des Spalts:
+        #    bei wenigen ENGEN Löchern gibt 1D einen überhöhten HF-Peak,
+        #    2D (verteilte Dämpfung) einen deutlich kleineren.
+        def _hfpeak(sm):
+            c = MicrophoneCapsule(architecture="single", n_through_holes=12,
+                                  through_hole_diameter=0.7e-3,
+                                  rear_network_enabled=False, squeeze_model=sm)
+            fr = c.frequency_response(n_points=200)
+            f, a = fr["frequency_hz"], fr["amplitude_db_norm"]
+            return float(np.max(a[(f > 2000) & (f < 20000)]))
+        p1d, p2d = _hfpeak("1d"), _hfpeak("2d")
+        assert p2d < p1d - 3.0, "2D muss die spurious Spaltresonanz dämpfen"
+        print(f"2D-Reynolds-Feld: reziprok (det={det.real:.4f}); HF-Peak "
+              f"1D +{p1d:.1f} dB -> 2D +{p2d:.1f} dB (verteilte Dämpfung)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

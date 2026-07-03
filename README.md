@@ -7,8 +7,28 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 
 | Datei | Inhalt |
 |---|---|
-| `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film, elektrostatische Wandlung) — eigenständig lauffähig mit Testlauf |
+| `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell, elektrostatische Wandlung mit Pull-in, Gehäusebeugung) — eigenständig lauffähig mit Testlauf |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
+
+## Spaltfilm-Modell: 1D vs. 2D
+
+Der Luftspalt zwischen Membran und Backplate kann auf zwei Arten
+gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
+
+- **1D (Standard):** ein Lumped-Element (Škvor-Widerstand + Nachgiebigkeit
+  + Lochimpedanz). Schnell; für dichte, gleichmäßige Lochmuster
+  ausreichend und für die validierten Beispiele verwendet.
+- **2D:** das Druckfeld im Spalt wird als *modifizierte Reynolds-Gleichung*
+  (Homentcovschi & Miles, JASA 2004; Bao) axialsymmetrisch als
+  Feldgleichung gelöst. Trennt den Nachgiebigkeits-Rückweg (Spaltvolumen +
+  Blindlöcher, lokal) vom Rückkopplungsweg (nur Durchgangslöcher) und
+  nutzt die Lochkreis-Radien (PCD). Beseitigt die überhöhte, unphysika-
+  lische Spaltresonanz, die das 1D-Lumped-Modell bei **wenigen engen
+  Durchgangslöchern** erzeugt (Beispiel: HF-Resonanz +9 dB → +2 dB). Der
+  Nierenphasengang symmetrischer Doppelmembran-Kapseln hängt dagegen von
+  der Leiter-/Anordnungs-Asymmetrie ab; das 2D-Feld legt die zugrunde
+  liegende Acht offen und braucht die radialen Lochkreise zur Abstimmung.
+  Braucht SciPy.
 
 ## Installation & Start
 
@@ -30,9 +50,21 @@ Parametersatz einer Neumann-K67/K870-Kapsel (U87Ai, Nierenmodus) in der
 echten Doppelmembran-Bauform: zwei 26-mm-Membranen (6 µm Mylar) außen,
 zwei innenliegende Backplates mit 50-µm-Spacer, 60 V, Membranresonanz
 ≈ 1,15 kHz. Die passive Rückmembran bildet das Phasenschiebernetzwerk.
-Validierung gegen Herstellerdaten: Niere (−13 dB @ 180°/1 kHz), flacher
-Frequenzgang 100 Hz–5 kHz, Präsenzanhebung ≈ +7 dB bei ~10 kHz,
-Empfindlichkeit 25 mV/Pa (Leerlauf). Über „Projekt laden" importierbar.
+Validierung gegen Herstellerdaten: Niere (−23 dB @ 180°/1 kHz), flacher
+Frequenzgang 100 Hz–5 kHz, Präsenzanhebung ≈ +2 dB bei ~12 kHz.
+Über „Projekt laden" importierbar.
+
+`examples/debenham_stereo_condenser.json` — Braunmühl-Weber-Kapsel aus
+Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi
+News): einteilige durchbohrte Mittelelektrode (`center_gap = 0`), 1"-
+Membranen, 12 Durchgangs- + 46 Dämpfungslöcher je Seite, 50 V. Validiert
+gegen die im Artikel gemessenen Richtdiagramme (Fig. 9) und den
+Frequenzgang (Fig. 10).
+
+Im Nierenmodus ist nur die Frontmembran polarisiert; die Leerlauf-
+Empfindlichkeit der Kapsel liegt im niedrigen mV/Pa-Bereich. Datenblatt-
+Empfindlichkeiten gelten am Verstärkerausgang (Gain nicht modelliert),
+die absolute Empfindlichkeit ist daher nur näherungsweise.
 
 ## Projektdateien
 

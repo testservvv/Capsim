@@ -17,7 +17,12 @@
     "(1 kHz), 125 Hz: -15 dB @180 (LF-Verbreiterung durch das Druckleck",
     "delta = C_int/C_mem der Doppelmembran-Bauform - wie beim Original),",
     "flach 100 Hz - 5 kHz, Praesenzanhebung +2.2 dB @ 12 kHz wie die",
-    "veroeffentlichte U87Ai-Kurve (Elektronik glaettet den Kapselpeak)."
+    "veroeffentlichte U87Ai-Kurve (Elektronik glaettet den Kapselpeak).",
+    "Im Nierenmodus ist nur die Frontmembran polarisiert (n_bp = 1); die",
+    "Leerlauf-Empfindlichkeit der Kapsel liegt daher bei ~6 mV/Pa. Die",
+    "Datenblatt-Angabe 28 mV/Pa gilt am VERSTAERKERAUSGANG (FET/Uebertrager",
+    "mit Verstaerkung), die im Modell nicht enthalten ist - die absolute",
+    "Empfindlichkeit ist deshalb nur naeherungsweise."
   ],
   "params": {
     "material": "PET (Mylar)",

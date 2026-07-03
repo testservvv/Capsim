@@ -110,9 +110,11 @@ DEFAULTS = {
     "center_gap_um": 50.0,
     "n_through": 60,
     "d_through_mm": 1.0,
+    "th_pcd_mm": 0.0,
     "n_blind": 30,
     "d_blind_mm": 1.2,
     "blind_depth_mm": 1.5,
+    "bh_pcd_mm": 0.0,
     # Rückseite / akustische Netzwerke
     "rear_enabled": True,
     "delay_mm": 3.0,
@@ -127,6 +129,8 @@ DEFAULTS = {
     # Gehäuse & Beugung
     "diffraction_on": True,
     "body_diameter_mm": 26.4,
+    # Spaltfilm-Modell
+    "squeeze_2d": False,
     # Simulation
     "n_points": 400,
     "normalize_1khz": False,
@@ -205,9 +209,11 @@ def build_capsule(p):
         center_gap=p["center_gap_um"] * 1e-6,
         n_through_holes=p["n_through"],
         through_hole_diameter=p["d_through_mm"] * 1e-3,
+        through_hole_pcd=(p["th_pcd_mm"] * 1e-3 if p["th_pcd_mm"] > 0 else None),
         n_blind_holes=p["n_blind"],
         blind_hole_diameter=p["d_blind_mm"] * 1e-3,
         blind_hole_depth=p["blind_depth_mm"] * 1e-3,
+        blind_hole_pcd=(p["bh_pcd_mm"] * 1e-3 if p["bh_pcd_mm"] > 0 else None),
         # Rückseite deaktiviert -> keine rückwärtige Baugruppe: die
         # Durchgangslöcher der Backplate münden (durch das rückwärtige
         # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
@@ -224,6 +230,7 @@ def build_capsule(p):
         fabric_rear_rayl=p["fabric_rear_rayl"],
         body_diameter=p["body_diameter_mm"] * 1e-3,
         include_diffraction=p["diffraction_on"],
+        squeeze_model=("2d" if p["squeeze_2d"] else "1d"),
     )
 
 
@@ -407,6 +414,14 @@ with st.sidebar:
                              "mindestens 1 Loch nötig.")
         st.number_input("Durchgangslöcher — Ø [mm]", 0.05, 5.0, step=0.05,
                         key="p_d_through_mm")
+        _bp_d = st.session_state["p_bp_diameter_mm"]
+        st.number_input("Durchgangslöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
+                        step=0.5, key="p_th_pcd_mm",
+                        help="Mittlerer Sitzradius der Durchgangslöcher "
+                             "(nur im 2D-Modell wirksam). 0 = gleichmäßig "
+                             "verteilt. Der radiale Versatz zu den "
+                             "Blindlöchern bildet die Laufzeitstrecke der "
+                             "Niere ab.")
         st.number_input("Blindlöcher — Anzahl", 0, 2000, step=1,
                         key="p_n_blind")
         st.number_input("Blindlöcher — Ø [mm]", 0.05, 5.0, step=0.05,
@@ -416,6 +431,10 @@ with st.sidebar:
             st.session_state["p_blind_depth_mm"], _bd_max)
         st.number_input("Blindlöcher — Tiefe [mm]", 0.05, _bd_max, step=0.05,
                         key="p_blind_depth_mm")
+        st.number_input("Blindlöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
+                        step=0.5, key="p_bh_pcd_mm",
+                        help="Mittlerer Sitzradius der Blindlöcher (nur im "
+                             "2D-Modell wirksam). 0 = gleichmäßig verteilt.")
 
     # ---------------- Rückseite / Laufzeitglied -------------------------
     _is_k67 = st.session_state["p_architecture"] == K67_LABEL
@@ -489,6 +508,25 @@ with st.sidebar:
                              "Druckstau und Abschattung einsetzen: "
                              "ka = 1 bei f ≈ 109/d Hz (d in m) — für "
                              "Ø 26 mm also ab ≈ 4 kHz.")
+
+    # ---------------- Spaltfilm-Modell -----------------------------------
+    with st.expander("Spaltfilm-Modell", expanded=False):
+        st.toggle("2D-Feldmodell (modifizierte Reynolds-Gleichung)",
+                  key="p_squeeze_2d",
+                  help="Aus: der Luftspalt ist ein Lumped-Element (Škvor-"
+                       "Widerstand + Nachgiebigkeit + Lochimpedanz). Schnell "
+                       "und für dichte gleichmäßige Lochmuster ausreichend.\n\n"
+                       "An: das Druckfeld im Spalt wird als modifizierte "
+                       "Reynolds-Gleichung (Homentcovschi & Miles) axial-"
+                       "symmetrisch gelöst. Trennt den Nachgiebigkeits-"
+                       "Rückweg (Spaltvolumen + Blindlöcher) vom Rück-"
+                       "kopplungsweg (nur Durchgangslöcher) und erfasst den "
+                       "radialen Druckaufbau. Beseitigt die überhöhte "
+                       "Spaltresonanz bei wenigen engen Löchern und nutzt "
+                       "die Lochkreis-Radien (PCD). Etwas langsamer.")
+        if st.session_state["p_squeeze_2d"]:
+            st.caption("Die Lochkreis-Durchmesser (PCD) im Abschnitt "
+                       "Backplate steuern jetzt die radiale Lochverteilung.")
 
     # ---------------- Simulation ---------------------------------------
     with st.expander("Simulation", expanded=False):
