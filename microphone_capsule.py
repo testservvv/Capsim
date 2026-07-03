@@ -1294,6 +1294,24 @@ class MicrophoneCapsule:
             f"äußere Wegdifferenz d_ext:    {self.d_ext * 1e3:9.2f} mm",
             f"Beugung am Gehäuse:           "
             f"{self.include_diffraction and _HAS_SCIPY}",
+        ]
+        if self.architecture == "dual_diaphragm":
+            # Druckleck der Doppelmembran-Bauform: die Rückmembran liegt
+            # als Nachgiebigkeit in SERIE im rückwärtigen Pfad; das innere
+            # Luftpolster (Spalte, Blindlöcher, Zwischenspalt) zweigt den
+            # frequenzunabhängigen Anteil δ = C_int/C_mem des Flusses ab.
+            # Unterhalb von f_δ (wo 1.5·k·d_ext = δ) dominiert das Leck
+            # und die Richtwirkung geht in Richtung Kugel.
+            C_int = (2.0 * self.C_A_gap + 2.0 * self.C_A_blind
+                     + self.C_A_center)
+            delta = C_int / self.C_A_mem
+            f_floor = delta * C_AIR / (2.0 * np.pi * 1.5 * self.d_ext)
+            lines += [
+                f"Druckleck δ = C_int/C_mem:    {delta:9.4f}",
+                f"Pattern-Untergrenze f_δ:      {f_floor:9.1f} Hz "
+                "(darunter -> Kugel)",
+            ]
+        lines += [
             f"Ersatz-Gehäuseradius R_body:  {self.R_body * 1e3:9.2f} mm "
             f"(ka=1 bei {C_AIR / (2 * np.pi * self.R_body):.0f} Hz)",
             f"Empfindlichkeit @ 1 kHz:      {abs(sens) * 1e3:9.2f} mV/Pa "
@@ -1474,8 +1492,8 @@ if __name__ == "__main__":
         membrane_tension=13.7, air_gap=60e-6, backplate_diameter=25e-3,
         bias_voltage=60.0, architecture="dual_diaphragm", center_gap=50e-6,
         n_through_holes=60, through_hole_diameter=1.2e-3,
-        n_blind_holes=60, blind_hole_diameter=2.0e-3, blind_hole_depth=2.0e-3,
-        fabric_front_rayl=500.0, fabric_rear_rayl=300.0, body_diameter=34e-3,
+        n_blind_holes=60, blind_hole_diameter=1.8e-3, blind_hole_depth=1.1e-3,
+        fabric_front_rayl=700.0, fabric_rear_rayl=400.0, body_diameter=34e-3,
     )
     di_k = k67.directivity(frequencies_hz=(1000.0,))
     pk67 = di_k["patterns"][1000.0]["db"]
