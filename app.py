@@ -301,10 +301,13 @@ def polar_figure(di):
     r_max = 0.0
     for i, (f, pat) in enumerate(sorted(di["patterns"].items())):
         r_max = max(r_max, float(np.max(pat["db"])))
+        # Bei mehr als 8 Kurven wiederholen sich die Serienfarben — die
+        # Wiederholungen werden gestrichelt, damit sie eindeutig bleiben.
+        dash = "solid" if i < len(SERIES) else "dash"
         fig.add_trace(go.Scatterpolar(
             theta=angles, r=pat["db"], mode="lines",
             name=_freq_label(f),
-            line=dict(color=SERIES[i % len(SERIES)], width=2),
+            line=dict(color=SERIES[i % len(SERIES)], width=2, dash=dash),
             hovertemplate="%{theta:.0f}° · %{r:.1f} dB<extra>"
                           + _freq_label(f) + "</extra>",
         ))
@@ -415,13 +418,16 @@ with st.sidebar:
         st.number_input("Durchgangslöcher — Ø [mm]", 0.05, 5.0, step=0.05,
                         key="p_d_through_mm")
         _bp_d = st.session_state["p_bp_diameter_mm"]
-        st.number_input("Durchgangslöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
-                        step=0.5, key="p_th_pcd_mm",
-                        help="Mittlerer Sitzradius der Durchgangslöcher "
-                             "(nur im 2D-Modell wirksam). 0 = gleichmäßig "
-                             "verteilt. Der radiale Versatz zu den "
-                             "Blindlöchern bildet die Laufzeitstrecke der "
-                             "Niere ab.")
+        # Die Lochkreis-Durchmesser (PCD) steuern nur im 2D-Feldmodell die
+        # radiale Lochverteilung; im 1D-Modell sind sie wirkungslos und
+        # werden daher ausgeblendet.
+        if st.session_state["p_squeeze_2d"]:
+            st.number_input("Durchgangslöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
+                            step=0.5, key="p_th_pcd_mm",
+                            help="Mittlerer Sitzdurchmesser der Durchgangs-"
+                                 "löcher. 0 = gleichmäßig verteilt. Der "
+                                 "radiale Versatz zu den Blindlöchern bildet "
+                                 "die Laufzeitstrecke der Niere ab.")
         st.number_input("Blindlöcher — Anzahl", 0, 2000, step=1,
                         key="p_n_blind")
         st.number_input("Blindlöcher — Ø [mm]", 0.05, 5.0, step=0.05,
@@ -431,10 +437,11 @@ with st.sidebar:
             st.session_state["p_blind_depth_mm"], _bd_max)
         st.number_input("Blindlöcher — Tiefe [mm]", 0.05, _bd_max, step=0.05,
                         key="p_blind_depth_mm")
-        st.number_input("Blindlöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
-                        step=0.5, key="p_bh_pcd_mm",
-                        help="Mittlerer Sitzradius der Blindlöcher (nur im "
-                             "2D-Modell wirksam). 0 = gleichmäßig verteilt.")
+        if st.session_state["p_squeeze_2d"]:
+            st.number_input("Blindlöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
+                            step=0.5, key="p_bh_pcd_mm",
+                            help="Mittlerer Sitzdurchmesser der Blindlöcher. "
+                                 "0 = gleichmäßig verteilt.")
 
     # ---------------- Rückseite / Laufzeitglied -------------------------
     _is_k67 = st.session_state["p_architecture"] == K67_LABEL
@@ -457,9 +464,9 @@ with st.sidebar:
                         key="p_delay_mm", disabled=not _rear_on,
                         help="Akustische Leitung hinter der Membran; "
                              "Laufzeit τ = L/c.")
-        st.number_input("Hohlraum — Länge [mm]", 1.0, 100.0, step=0.5,
+        st.number_input("Hohlraum — Länge [mm]", 0.0, 100.0, step=0.5,
                         key="p_cavity_length_mm", disabled=not _rear_on)
-        st.number_input("Hohlraum — Wandstärke [mm]", 0.2, 10.0, step=0.1,
+        st.number_input("Hohlraum — Wandstärke [mm]", 0.0, 10.0, step=0.1,
                         key="p_cavity_wall_mm", disabled=not _rear_on)
         st.radio("Hohlraumlöcher — Position", list(POS_LABELS),
                  key="p_hole_position", disabled=not _rear_on)
@@ -467,15 +474,17 @@ with st.sidebar:
                         key="p_n_cavity", disabled=not _rear_on,
                         help="0 = Rückseite geschlossen → Druckempfänger "
                              "(Kugelcharakteristik).")
-        st.number_input("Hohlraumlöcher — Ø [mm]", 0.05, 5.0, step=0.05,
-                        key="p_d_cavity_mm", disabled=not _rear_on)
+        st.number_input("Hohlraumlöcher — Ø [mm]", 0.0, 5.0, step=0.05,
+                        key="p_d_cavity_mm", disabled=not _rear_on,
+                        help="0 = Rückseite geschlossen.")
         _ax_max = st.session_state["p_cavity_length_mm"]
         st.session_state["p_cavity_axial_mm"] = min(
             st.session_state["p_cavity_axial_mm"], _ax_max)
-        st.number_input("Hohlraumlöcher — axiale Position [mm]", 0.1, _ax_max,
-                        step=0.5, key="p_cavity_axial_mm",
+        st.number_input("Hohlraumlöcher — axiale Position [mm]", 0.0,
+                        max(_ax_max, 0.5), step=0.5, key="p_cavity_axial_mm",
                         disabled=(not _rear_on)
-                        or st.session_state["p_hole_position"] != "Umfang",
+                        or st.session_state["p_hole_position"] != "Umfang"
+                        or _ax_max <= 0.0,
                         help="Abstand vom Hohlraumeingang "
                              "(nur bei Position 'Umfang').")
 
@@ -533,7 +542,7 @@ with st.sidebar:
         st.slider("Frequenzpunkte", 100, 1500, step=50, key="p_n_points")
         st.toggle("Amplitude auf 1 kHz normieren", key="p_normalize_1khz")
         st.multiselect("Richtdiagramm-Frequenzen [Hz]", DIRECTIVITY_OPTIONS,
-                       key="p_dir_freqs", max_selections=6)
+                       key="p_dir_freqs", max_selections=10)
 
 # ---------------------------------------------------------------------------
 # Berechnung

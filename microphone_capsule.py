@@ -336,12 +336,15 @@ class MicrophoneCapsule:
         self.cavity_hole_position = pos
         self.n_ch = int(n_cavity_holes)
         self.r_ch = 0.5 * float(cavity_hole_diameter)
-        self.x_ch = float(cavity_hole_axial_position)
-        if self.n_ch > 0 and pos == "circumference":
-            if not (0.0 < self.x_ch <= self.l_cav):
-                raise ValueError(
-                    "cavity_hole_axial_position muss im Bereich (0, cavity_length] liegen."
-                )
+        # Die axiale Lochposition ergibt nur innerhalb des Hohlraums Sinn;
+        # sie wird still in [0, cavity_length] geklammert (0 = am Eingang,
+        # cavity_length = am geschlossenen Ende). Bei l_cav = 0 (kein
+        # Hohlraum) fällt sie auf 0.
+        if self.l_cav > 0.0:
+            self.x_ch = min(max(float(cavity_hole_axial_position), 0.0),
+                            self.l_cav)
+        else:
+            self.x_ch = 0.0
 
         self.rayl_front = float(fabric_front_rayl)
         self.rayl_rear = float(fabric_rear_rayl)
