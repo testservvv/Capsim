@@ -20,15 +20,17 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   ausreichend und für die validierten Beispiele verwendet.
 - **2D:** das Druckfeld im Spalt wird als *modifizierte Reynolds-Gleichung*
   (Homentcovschi & Miles, JASA 2004; Bao) axialsymmetrisch als
-  Feldgleichung gelöst. Trennt den Nachgiebigkeits-Rückweg (Spaltvolumen +
-  Blindlöcher, lokal) vom Rückkopplungsweg (nur Durchgangslöcher) und
-  nutzt die Lochkreis-Radien (PCD). Beseitigt die überhöhte, unphysika-
-  lische Spaltresonanz, die das 1D-Lumped-Modell bei **wenigen engen
-  Durchgangslöchern** erzeugt (Beispiel: HF-Resonanz +9 dB → +2 dB). Der
-  Nierenphasengang symmetrischer Doppelmembran-Kapseln hängt dagegen von
-  der Leiter-/Anordnungs-Asymmetrie ab; das 2D-Feld legt die zugrunde
-  liegende Acht offen und braucht die radialen Lochkreise zur Abstimmung.
-  Braucht SciPy.
+  Feldgleichung gelöst — inklusive Zell-Engstellenwiderstand je Bohrung
+  (im dichten Grenzfall wird Škvor reproduziert, verifiziert im Test),
+  viskoser Trägheit des Spaltfilms (Schlitz-Zwikker–Kosten; bei 25 kHz
+  bis Faktor 4 mit −73° Phase) und polytroper Kompressibilität
+  (isotherm→adiabatisch). Trennt den Nachgiebigkeits-Rückweg (Blind-
+  löcher, lokal) vom Rückkopplungsweg (Durchgangslöcher) und nutzt bei
+  Einzel-Backplate-Architekturen die Lochkreis-Radien (PCD). Bei der
+  spiegelsymmetrischen Doppelmembran-Bauform kürzt sich die radiale
+  Anordnung heraus — das Feldmodell zeigt dort die zugrunde liegende
+  Acht; die im 1D-Modell entstehende Niere hängt an dessen Leiter-
+  Topologie. Reziprok und passiv (im Test geprüft). Braucht SciPy.
 
 ## Installation & Start
 

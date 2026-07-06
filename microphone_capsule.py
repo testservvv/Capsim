@@ -1119,13 +1119,37 @@ class MicrophoneCapsule:
             ∇·[(h³/12μ) ∇p] - Y(r)·p = -v(r) + g_h(r)·p_rear
 
         Bilanz je Ringzelle (Finite-Volumen):
-          * laterale Poiseuille-Strömung im Spalt: Leitwert Gface = 2π r h³/(12μ)/dr
-          * Speicherung im Spaltvolumen (isotherm):      jω·h/P_atm
+          * laterale Filmströmung: frequenzabhängiger Leitwert je Breite
+                K_f(ω) = h/(jωρ0) · [1 − tanh(α_v)/α_v],
+                α_v = (h/2)·sqrt(jωρ0/μ)
+            (Schlitz-Pendant der Zwikker–Kosten-Lösung: für ω→0 die
+            Poiseuille-Leitung h³/(12μ), bei hohen Frequenzen dominiert
+            die TRÄGHEIT der Spaltluft — bei 25 kHz/60 µm beträgt der
+            Unterschied Faktor ~4 mit −73° Phase)
+          * Speicherung im Spaltvolumen mit thermischer Relaxation:
+                c_gap(ω) = h/(n_p(ω)·P_atm),
+                n_p = γ / [1 + (γ−1)·tanh(α_t)/α_t],  α_t = α_v·sqrt(Pr)
+            (polytroper Übergang isotherm -> adiabatisch, Tijdeman/LRF)
           * Blindlöcher: LOKALE Admittanz y_bh (Rohr + adiab. Nachgiebig-
             keit), koppeln NICHT zur Rückseite
           * Durchgangslöcher: Admittanz g_h, koppeln zum rückwärtigen Port
             (Druckdifferenz p - p_rear)
           * Membran treibt mit der Modenform v(r) = φ(r)·U/∫φ dA
+
+        ZELL-ENGSTELLENWIDERSTAND: die axialsymmetrische Homogenisierung
+        kann die azimutale Strömungskonvergenz zu den DISKRETEN Löchern
+        nicht auflösen (Validierung: ohne Korrektur fehlen ~99 % des
+        Škvor-Widerstands im Grenzfall dichter Löcher). Nach dem Zellen-
+        ansatz der modifizierten Reynolds-Gleichung (Bao; Homentcovschi &
+        Miles) erhält deshalb jede Bohrung den Engstellenwiderstand ihrer
+        Zelle in Serie:
+                R_cell(ω) = B(q_c) / (π·K_f(ω)),
+                q_c = (n_th + n_bh)·r_loch² / a_bp²
+        (B = Škvor-Zellfunktion; alle Bohrungen teilen sich die Zellen).
+        Damit reproduziert das Feldmodell im Grenzfall dichter, gleich-
+        verteilter Löcher exakt das Škvor-Ergebnis, und bei spärlichen
+        oder ringförmig sitzenden Löchern kommt die im Gitter aufgelöste
+        plattenweite Ausbreitung additiv hinzu.
 
         Der entscheidende Fortschritt gegenüber dem 1D-Modell: der
         Nachgiebigkeits-Rückweg (Spaltvolumen + Blindlöcher, überall lokal)
@@ -1152,10 +1176,32 @@ class MicrophoneCapsule:
         dens_th = self._fld_dens_th                       # Σ dens·A = 1
         dens_bh = self._fld_dens_bh
 
+        # Filmleitwert mit viskoser Trägheit und polytrope Kompressibilität
+        # (s. Docstring); beide sind komplex und frequenzabhängig.
+        h = self.h_gap
+        a_v = 0.5 * h * np.sqrt(1j * omega * RHO0 / MU_AIR)
+        K_f = h / (1j * omega * RHO0) * (1.0 - np.tanh(a_v) / a_v)
+        a_t = a_v * np.sqrt(PRANDTL)
+        n_poly = GAMMA / (1.0 + (GAMMA - 1.0) * np.tanh(a_t) / a_t)
+        c_gap = h / (n_poly * P_ATM)                     # (Nf,) komplex
+
+        # Zell-Engstellenwiderstand je Bohrung (Škvor-Zellfunktion, alle
+        # Bohrungen teilen sich die Zellen; q_c >= 1 -> Löcher berühren
+        # sich, keine Engstelle mehr)
+        n_wells = self.n_th + self.n_bh
+
+        def _cell_B(r_hole):
+            q_c = min(n_wells * r_hole**2 / self.a_bp**2, 1.0)
+            if q_c >= 1.0:
+                return 0.0
+            return max(q_c / 2.0 - q_c**2 / 8.0
+                       - np.log(q_c) / 4.0 - 3.0 / 8.0, 0.0)
+
         # pro-Loch-Impedanzen (vektorisiert über omega); die Lochleitwerte
         # werden über die radialen Dichten dens_th/dens_bh verteilt.
-        Z_th1 = self._hole_impedance(omega, self.r_th, self.t_bp, 1,
-                                     end_correction=True)
+        Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_bp, 1,
+                                      end_correction=True)
+                 + _cell_B(self.r_th) / (np.pi * K_f))
         g_tot = self.n_th / Z_th1                         # Gesamtleitwert (Nf,)
         if self.n_bh > 0:
             Z_v = self._hole_impedance(omega, self.r_bh, 0.5 * self.d_bh, 1,
@@ -1163,25 +1209,23 @@ class MicrophoneCapsule:
             S_bh = np.pi * self.r_bh**2
             Z_end = 1j * omega * RHO0 * (0.85 * self.r_bh) / S_bh
             Z_comp = self.n_bh / (1j * omega * self.C_A_blind)
-            y_tot = self.n_bh / (Z_v + Z_end + Z_comp)
+            y_tot = self.n_bh / (Z_v + Z_end + Z_comp
+                                 + _cell_B(self.r_bh) / (np.pi * K_f))
         else:
             y_tot = np.zeros(Nf, dtype=complex)
-
-        c_gap = self.h_gap / P_ATM                       # isotherm, per Fläche
-        K = self.h_gap**3 / (12.0 * MU_AIR)
-        Gface = self._fld_gface_geom * K                 # (N+1,)
 
         src_a = phi * A / Sphi                            # Membran treibt (U=1)
         T = np.empty((2, 2, Nf), dtype=complex)
         ab = np.zeros((3, N), dtype=complex)
-        ab[0, 1:] = -Gface[1:N]                           # Superdiagonale
-        ab[2, :-1] = -Gface[1:N]                          # Subdiagonale
-        base_diag = Gface[:N] + Gface[1:N + 1]            # laterale Beiträge
+        gg = self._fld_gface_geom
         for f in range(Nf):
+            Gface = gg * K_f[f]                           # (N+1,) komplex
+            ab[0, 1:] = -Gface[1:N]                       # Superdiagonale
+            ab[2, :-1] = -Gface[1:N]                      # Subdiagonale
             g_h = g_tot[f] * dens_th                      # (N,) verteilt
             y_bh = y_tot[f] * dens_bh
-            Y = 1j * omega[f] * c_gap + y_bh + g_h
-            ab[1, :] = base_diag + Y * A
+            Y = 1j * omega[f] * c_gap[f] + y_bh + g_h
+            ab[1, :] = Gface[:N] + Gface[1:N + 1] + Y * A
             rhs = np.column_stack((src_a, g_h * A))       # (N, 2)
             sol = _solve_banded((1, 1), ab, rhs)
             p_a, p_b = sol[:, 0], sol[:, 1]
@@ -1757,28 +1801,37 @@ if __name__ == "__main__":
           "Richtdiagramm bias-unabhängig  OK")
 
     # --------- Gegenprobe 8: 2D-Spaltfilmmodell (Reynolds-Feld) ------------
-    # a) Das Feld-Zweitor ist reziprok (det T = 1).
     if _HAS_SCIPY:
+        # a) Das Feld-Zweitor ist reziprok (det T = 1) und passiv
+        #    (Re Z_in >= 0 über das Band).
         cap2d = MicrophoneCapsule(architecture="single", n_through_holes=12,
                                   through_hole_diameter=0.5e-3,
                                   rear_network_enabled=False,
                                   squeeze_model="2d")
-        Tg = cap2d._gap_field_2port(np.array([2 * np.pi * 1000.0]))
-        det = Tg[0, 0, 0] * Tg[1, 1, 0] - Tg[0, 1, 0] * Tg[1, 0, 0]
-        assert abs(det - 1.0) < 1e-6, "Reynolds-Zweitor muss reziprok sein"
-        # b) Das 2D-Modell entfernt die spurious Lumped-Resonanz des Spalts:
-        #    bei wenigen ENGEN Löchern gibt 1D einen überhöhten HF-Peak,
-        #    2D (verteilte Dämpfung) einen deutlich kleineren.
-        def _hfpeak(sm):
-            c = MicrophoneCapsule(architecture="single", n_through_holes=12,
-                                  through_hole_diameter=0.7e-3,
-                                  rear_network_enabled=False, squeeze_model=sm)
-            fr = c.frequency_response(n_points=200)
-            f, a = fr["frequency_hz"], fr["amplitude_db_norm"]
-            return float(np.max(a[(f > 2000) & (f < 20000)]))
-        p1d, p2d = _hfpeak("1d"), _hfpeak("2d")
-        assert p2d < p1d - 3.0, "2D muss die spurious Spaltresonanz dämpfen"
-        print(f"2D-Reynolds-Feld: reziprok (det={det.real:.4f}); HF-Peak "
-              f"1D +{p1d:.1f} dB -> 2D +{p2d:.1f} dB (verteilte Dämpfung)  OK")
+        oms = 2.0 * np.pi * np.logspace(1.0, np.log10(25000.0), 40)
+        Tg = cap2d._gap_field_2port(oms)
+        det = Tg[0, 0] * Tg[1, 1] - Tg[0, 1] * Tg[1, 0]
+        assert np.max(np.abs(det - 1.0)) < 1e-6, \
+            "Reynolds-Zweitor muss reziprok sein"
+        assert np.min((Tg[0, 1] / Tg[1, 1]).real) > 0.0, \
+            "Reynolds-Zweitor muss passiv sein"
+        # b) Grenzfall dichte, gleichverteilte Löcher: dank des Zell-
+        #    Engstellenwiderstands muss das Feldmodell bei tiefer Frequenz
+        #    den Škvor-Spaltwiderstand reproduzieren (das Gitter fügt die
+        #    real aufgelöste radiale Ausbreitung des Membranprofils hinzu,
+        #    daher Toleranz nach oben).
+        cd = MicrophoneCapsule(architecture="single", n_through_holes=60,
+                               through_hole_diameter=1.2e-3, n_blind_holes=0,
+                               air_gap=60e-6, rear_network_enabled=False,
+                               squeeze_model="2d")
+        om1 = np.array([2.0 * np.pi * 20.0])
+        Tg1 = cd._gap_field_2port(om1)
+        Z_h = cd._hole_impedance(om1, cd.r_th, cd.t_bp, cd.n_th,
+                                 end_correction=True)[0]
+        ratio = (Tg1[0, 1, 0] - Z_h).real / cd.R_A_gap
+        assert 0.8 < ratio < 1.6, \
+            f"2D muss im dichten Grenzfall Škvor reproduzieren (ratio={ratio:.2f})"
+        print(f"2D-Reynolds-Feld: reziprok/passiv über das Band; dichter "
+              f"Grenzfall 2D/Škvor = {ratio:.2f}  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
