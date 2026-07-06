@@ -93,48 +93,52 @@ DIRECTIVITY_OPTIONS = [50, 100, 125, 250, 500, 1000, 2000, 4000,
                        5000, 8000, 10000, 12500, 16000, 20000]
 
 # (key, Widget-Art, Default) — Gruppen s. Sidebar-Aufbau weiter unten
+# Voreinstellungen beim Start: die Debenham/Robinson/Stebbings-Kapsel
+# ("A Stereo Condenser Microphone", Hi-Fi News) — Braunmühl-Weber-Bauform
+# mit einteiliger durchbohrter Mittelelektrode; identisch zu
+# examples/debenham_stereo_condenser.json.
 DEFAULTS = {
     # Membran
     "material": "PET (Mylar)",
     "use_f_res": True,
-    "f_res_hz": 8000.0,
-    "mem_diameter_mm": 22.0,
+    "f_res_hz": 2100.0,
+    "mem_diameter_mm": 25.4,
     "mem_thickness_um": 6.0,
-    "mem_tension_npm": 400.0,
+    "mem_tension_npm": 45.0,
     # Backplate
-    "air_gap_um": 40.0,
-    "bp_diameter_mm": 20.0,
-    "bp_thickness_mm": 3.0,
-    "bias_v": 60.0,
-    "architecture": "Single Backplate",
-    "center_gap_um": 50.0,
-    "n_through": 60,
-    "d_through_mm": 1.0,
+    "air_gap_um": 38.1,
+    "bp_diameter_mm": 23.9,
+    "bp_thickness_mm": 3.125,
+    "bias_v": 50.0,
+    "architecture": "Doppelmembran (K67-Bauform)",
+    "center_gap_um": 0.0,
+    "n_through": 12,
+    "d_through_mm": 0.71,
     "th_pcd_mm": 0.0,
-    "n_blind": 30,
+    "n_blind": 46,
     "d_blind_mm": 1.2,
-    "blind_depth_mm": 1.5,
+    "blind_depth_mm": 3.0,
     "bh_pcd_mm": 0.0,
-    # Rückseite / akustische Netzwerke
+    # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
-    "delay_mm": 3.0,
-    "cavity_length_mm": 12.0,
+    "delay_mm": 1.0,
+    "cavity_length_mm": 5.0,
     "cavity_wall_mm": 1.5,
     "hole_position": "Umfang",
     "n_cavity": 200,
-    "d_cavity_mm": 0.2,
-    "cavity_axial_mm": 6.0,
-    "fabric_front_rayl": 10.0,
-    "fabric_rear_rayl": 25.0,
+    "d_cavity_mm": 0.25,
+    "cavity_axial_mm": 2.5,
+    "fabric_front_rayl": 0.0,
+    "fabric_rear_rayl": 0.0,
     # Gehäuse & Beugung
     "diffraction_on": True,
-    "body_diameter_mm": 26.4,
+    "body_diameter_mm": 31.75,
     # Spaltfilm-Modell
     "squeeze_2d": False,
     # Simulation
     "n_points": 400,
-    "normalize_1khz": False,
-    "dir_freqs": [100, 1000, 5000, 10000],
+    "normalize_1khz": True,
+    "dir_freqs": [100, 1000, 10000],
 }
 
 _FLOAT_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, float)}
