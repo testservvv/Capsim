@@ -112,13 +112,15 @@ DEFAULTS = {
     "bias_v": 50.0,
     "architecture": "Doppelmembran (K67-Bauform)",
     "center_gap_um": 0.0,
-    "n_through": 12,
+    # Lochmuster als Lochkreis-Listen [Anzahl, Lochkreis-Ø in mm];
+    # Lochkreis-Ø 0 = gleichmäßig verteilt. Debenham-Zeichnung: Lochkreise
+    # 0.860/0.688/0.516/0.344/0.172 Zoll = 21.84/17.48/13.11/8.74/4.37 mm.
     "d_through_mm": 0.71,
-    "th_pcd_mm": 0.0,
-    "n_blind": 46,
+    "th_rings": [[6, 21.84], [3, 17.48], [3, 8.74]],
     "d_blind_mm": 1.2,
     "blind_depth_mm": 3.0,
-    "bh_pcd_mm": 0.0,
+    "bh_rings": [[12, 21.84], [12, 17.48], [12, 13.11], [6, 8.74],
+                 [4, 4.37]],
     # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
     "delay_mm": 1.0,
@@ -146,18 +148,55 @@ _INT_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, int)
              and not isinstance(v, bool)}
 _BOOL_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, bool)}
 
+# Lochkreis-Listen: Projekt-/DEFAULTS-Schlüssel -> Session-Key-Präfix.
+# Die Ringzeilen leben als einzelne Widget-Keys p_<prefix>_ring_n_<i> /
+# p_<prefix>_ring_pcd_<i> plus Zeilenzähler <prefix>_ring_count, weil
+# Streamlit-Widgets nur skalare Zustände tragen.
+_RING_PREFIX = {"th_rings": "th", "bh_rings": "bh"}
+MAX_RINGS = 8
+
+
+def _set_ring_state(prefix, rings):
+    """Ringliste [[Anzahl, Lochkreis-Ø mm], ...] in die Widget-Session-Keys
+    schreiben; überzählige Zeilen eines früheren Zustands werden entfernt."""
+    old = st.session_state.get(f"{prefix}_ring_count", 0)
+    for i in range(len(rings), old):
+        st.session_state.pop(f"p_{prefix}_ring_n_{i}", None)
+        st.session_state.pop(f"p_{prefix}_ring_pcd_{i}", None)
+    for i, (cnt, pcd) in enumerate(rings):
+        st.session_state[f"p_{prefix}_ring_n_{i}"] = int(cnt)
+        st.session_state[f"p_{prefix}_ring_pcd_{i}"] = float(pcd)
+    st.session_state[f"{prefix}_ring_count"] = len(rings)
+
+
+def _rings_from_state(prefix):
+    n = st.session_state.get(f"{prefix}_ring_count", 1)
+    return [[int(st.session_state[f"p_{prefix}_ring_n_{i}"]),
+             float(st.session_state[f"p_{prefix}_ring_pcd_{i}"])]
+            for i in range(n)]
+
 
 def _init_state():
     for key, val in DEFAULTS.items():
-        st.session_state.setdefault("p_" + key, val)
+        if key in _RING_PREFIX:
+            if f"{_RING_PREFIX[key]}_ring_count" not in st.session_state:
+                _set_ring_state(_RING_PREFIX[key], val)
+        else:
+            st.session_state.setdefault("p_" + key, val)
 
 
 def _current_params():
-    return {k: st.session_state["p_" + k] for k in DEFAULTS}
+    return {k: (_rings_from_state(_RING_PREFIX[k]) if k in _RING_PREFIX
+                else st.session_state["p_" + k])
+            for k in DEFAULTS}
 
 
 def _coerce(key, val):
     """Robuste Typkonvertierung beim Projekt-Laden."""
+    if key in _RING_PREFIX:
+        rings = [[max(0, int(r[0])), max(0.0, float(r[1]))]
+                 for r in list(val)[:MAX_RINGS]]
+        return rings or [[0, 0.0]]
     if key in _BOOL_KEYS:
         return bool(val)
     if key in _FLOAT_KEYS:
@@ -185,16 +224,89 @@ def _load_project():
         data = json.load(up)
         if data.get("format") != "capsim-project":
             raise ValueError("kein Capsim-Projektformat")
+        params_in = data.get("params", {})
         loaded = 0
-        for key, val in data.get("params", {}).items():
-            if key in DEFAULTS:
+        for key, val in params_in.items():
+            if key in _RING_PREFIX:
+                _set_ring_state(_RING_PREFIX[key], _coerce(key, val))
+                loaded += 1
+            elif key in DEFAULTS:
                 st.session_state["p_" + key] = _coerce(key, val)
                 loaded += 1
+        # Altes Projektformat (Version 1, EIN Lochkreis je Lochtyp):
+        # n_through/th_pcd_mm bzw. n_blind/bh_pcd_mm -> eine Ringzeile.
+        if "th_rings" not in params_in and "n_through" in params_in:
+            _set_ring_state("th", [[int(params_in["n_through"]),
+                                    float(params_in.get("th_pcd_mm", 0.0))]])
+            loaded += 1
+        if "bh_rings" not in params_in and "n_blind" in params_in:
+            _set_ring_state("bh", [[int(params_in["n_blind"]),
+                                    float(params_in.get("bh_pcd_mm", 0.0))]])
+            loaded += 1
         st.session_state["_load_msg"] = (
             "success", f"Projekt geladen — {loaded} Parameter übernommen.")
     except Exception as exc:  # defekte Datei darf die App nicht stoppen
         st.session_state["_load_msg"] = (
             "error", f"Projekt konnte nicht geladen werden: {exc}")
+
+
+def _add_ring(prefix):
+    """+‑Button: hängt einen weiteren (leeren) Lochkreis an."""
+    n = st.session_state[f"{prefix}_ring_count"]
+    if n >= MAX_RINGS:
+        return
+    st.session_state[f"p_{prefix}_ring_n_{n}"] = 0
+    st.session_state[f"p_{prefix}_ring_pcd_{n}"] = 0.0
+    st.session_state[f"{prefix}_ring_count"] = n + 1
+
+
+def _remove_ring(prefix):
+    """−‑Button: entfernt den letzten Lochkreis (mindestens einer bleibt)."""
+    n = st.session_state[f"{prefix}_ring_count"]
+    if n <= 1:
+        return
+    st.session_state.pop(f"p_{prefix}_ring_n_{n - 1}", None)
+    st.session_state.pop(f"p_{prefix}_ring_pcd_{n - 1}", None)
+    st.session_state[f"{prefix}_ring_count"] = n - 1
+
+
+def _ring_rows(prefix, bp_diameter_mm):
+    """Dynamische Lochkreis-Zeilen eines Lochtyps (Anzahl + Lochkreis-Ø)
+    mit ➕/➖-Buttons; gibt die Gesamt-Lochzahl zurück."""
+    n_rings = st.session_state[f"{prefix}_ring_count"]
+    h1, h2 = st.columns(2)
+    h1.caption("Anzahl")
+    h2.caption("Lochkreis Ø [mm]")
+    total = 0
+    for i in range(n_rings):
+        pcd_key = f"p_{prefix}_ring_pcd_{i}"
+        # Schrumpft die Backplate, wird der gespeicherte Lochkreis still
+        # auf den neuen Maximalwert geklammert (wie Blindlochtiefe).
+        st.session_state[pcd_key] = min(st.session_state[pcd_key],
+                                        bp_diameter_mm)
+        c1, c2 = st.columns(2)
+        # Beschriftung nur für Screenreader (kompakte Tabellenoptik;
+        # die sichtbare Kopfzeile liefern die Captions darüber).
+        c1.number_input(f"Anzahl · Kreis {i + 1}", 0, 2000, step=1,
+                        key=f"p_{prefix}_ring_n_{i}",
+                        label_visibility="collapsed")
+        c2.number_input(f"Lochkreis Ø [mm] · Kreis {i + 1}", 0.0,
+                        bp_diameter_mm, step=0.5, key=pcd_key,
+                        label_visibility="collapsed")
+        total += st.session_state[f"p_{prefix}_ring_n_{i}"]
+    b1, b2 = st.columns(2)
+    b1.button("➕ Lochkreis", key=f"btn_add_{prefix}",
+              on_click=_add_ring, args=(prefix,),
+              disabled=n_rings >= MAX_RINGS, use_container_width=True,
+              help="Fügt einen weiteren Lochkreis hinzu (je Druck ein "
+                   "Kreis), um reale Lochmuster nachzubilden.")
+    b2.button("➖ letzter Kreis", key=f"btn_del_{prefix}",
+              on_click=_remove_ring, args=(prefix,),
+              disabled=n_rings <= 1, use_container_width=True,
+              help="Entfernt den letzten Lochkreis.")
+    if n_rings > 1:
+        st.caption(f"gesamt: {total} Löcher auf {n_rings} Lochkreisen")
+    return total
 
 
 def build_capsule(p):
@@ -211,13 +323,14 @@ def build_capsule(p):
         bias_voltage=p["bias_v"],
         architecture=ARCH_LABELS[p["architecture"]],
         center_gap=p["center_gap_um"] * 1e-6,
-        n_through_holes=p["n_through"],
+        # Lochkreis-Ø 0 in der GUI = dieser Anteil gleichmäßig verteilt
+        through_hole_rings=[(int(n), d * 1e-3 if d > 0 else None)
+                            for n, d in p["th_rings"]],
         through_hole_diameter=p["d_through_mm"] * 1e-3,
-        through_hole_pcd=(p["th_pcd_mm"] * 1e-3 if p["th_pcd_mm"] > 0 else None),
-        n_blind_holes=p["n_blind"],
+        blind_hole_rings=[(int(n), d * 1e-3 if d > 0 else None)
+                          for n, d in p["bh_rings"]],
         blind_hole_diameter=p["d_blind_mm"] * 1e-3,
         blind_hole_depth=p["blind_depth_mm"] * 1e-3,
-        blind_hole_pcd=(p["bh_pcd_mm"] * 1e-3 if p["bh_pcd_mm"] > 0 else None),
         # Rückseite deaktiviert -> keine rückwärtige Baugruppe: die
         # Durchgangslöcher der Backplate münden (durch das rückwärtige
         # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
@@ -353,7 +466,10 @@ with st.sidebar:
         project_json = json.dumps(
             {
                 "format": "capsim-project",
-                "version": 1,
+                # Version 2: Lochmuster als Lochkreis-Listen th_rings/
+                # bh_rings; Version-1-Projekte (n_through/th_pcd_mm, ...)
+                # werden beim Laden automatisch konvertiert.
+                "version": 2,
                 "saved": _dt.date.today().isoformat(),
                 "params": _current_params(),
             },
@@ -411,41 +527,38 @@ with st.sidebar:
                              "dann die HALBE Plattendicke je Seite.")
 
         st.markdown("**Lochmuster**")
-        st.number_input("Durchgangslöcher — Anzahl", 0, 2000, step=1,
-                        key="p_n_through",
-                        help="Die Durchgangslöcher sind der einzige Weg "
-                             "durch die Backplate. 0 = Backplate "
-                             "geschlossen → Kapsel hermetisch dicht "
-                             "(Druckempfänger), unabhängig von der "
-                             "Rückseite. Bei Dual-Architektur ist "
-                             "mindestens 1 Loch nötig.")
-        st.number_input("Durchgangslöcher — Ø [mm]", 0.05, 5.0, step=0.05,
-                        key="p_d_through_mm")
+        st.caption("Jeder Lochtyp lässt sich mit ➕ auf mehrere Lochkreise "
+                   "verteilen (je Kreis: Anzahl + Sitz-Ø; Lochkreis-Ø 0 = "
+                   "gleichmäßig verteilt). Die radiale Anordnung wirkt im "
+                   "2D-Feldmodell und auf die Elektrodenporosität; das "
+                   "1D-Spaltmodell nutzt nur die Gesamtzahlen.")
         _bp_d = st.session_state["p_bp_diameter_mm"]
-        # Die Lochkreis-Durchmesser (PCD) steuern nur im 2D-Feldmodell die
-        # radiale Lochverteilung; im 1D-Modell sind sie wirkungslos und
-        # werden daher ausgeblendet.
-        if st.session_state["p_squeeze_2d"]:
-            st.number_input("Durchgangslöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
-                            step=0.5, key="p_th_pcd_mm",
-                            help="Mittlerer Sitzdurchmesser der Durchgangs-"
-                                 "löcher. 0 = gleichmäßig verteilt. Der "
-                                 "radiale Versatz zu den Blindlöchern bildet "
-                                 "die Laufzeitstrecke der Niere ab.")
-        st.number_input("Blindlöcher — Anzahl", 0, 2000, step=1,
-                        key="p_n_blind")
+
+        st.markdown("Durchgangslöcher",
+                    help="Die Durchgangslöcher sind der einzige Weg durch "
+                         "die Backplate. 0 Löcher insgesamt = Backplate "
+                         "geschlossen → Kapsel hermetisch dicht "
+                         "(Druckempfänger), unabhängig von der Rückseite. "
+                         "Bei Dual-Architektur ist mindestens 1 Loch nötig.")
+        _ring_rows("th", _bp_d)
+        st.number_input("Durchgangslöcher — Ø [mm]", 0.05, 5.0, step=0.05,
+                        key="p_d_through_mm",
+                        help="Bohrungsdurchmesser (gilt für alle "
+                             "Lochkreise dieses Typs).")
+
+        st.markdown("Blindlöcher",
+                    help="Sacklöcher auf der Membranseite: Dämpfungs- und "
+                         "Volumen-Bohrungen, kein Weg durch die Platte.")
+        _ring_rows("bh", _bp_d)
         st.number_input("Blindlöcher — Ø [mm]", 0.05, 5.0, step=0.05,
-                        key="p_d_blind_mm")
+                        key="p_d_blind_mm",
+                        help="Bohrungsdurchmesser (gilt für alle "
+                             "Lochkreise dieses Typs).")
         _bd_max = max(0.1, st.session_state["p_bp_thickness_mm"] - 0.1)
         st.session_state["p_blind_depth_mm"] = min(
             st.session_state["p_blind_depth_mm"], _bd_max)
         st.number_input("Blindlöcher — Tiefe [mm]", 0.05, _bd_max, step=0.05,
                         key="p_blind_depth_mm")
-        if st.session_state["p_squeeze_2d"]:
-            st.number_input("Blindlöcher — Lochkreis Ø [mm]", 0.0, _bp_d,
-                            step=0.5, key="p_bh_pcd_mm",
-                            help="Mittlerer Sitzdurchmesser der Blindlöcher. "
-                                 "0 = gleichmäßig verteilt.")
 
     # ---------------- Rückseite / Laufzeitglied -------------------------
     _is_k67 = st.session_state["p_architecture"] == K67_LABEL
@@ -538,8 +651,8 @@ with st.sidebar:
                        "Spaltresonanz bei wenigen engen Löchern und nutzt "
                        "die Lochkreis-Radien (PCD). Etwas langsamer.")
         if st.session_state["p_squeeze_2d"]:
-            st.caption("Die Lochkreis-Durchmesser (PCD) im Abschnitt "
-                       "Backplate steuern jetzt die radiale Lochverteilung.")
+            st.caption("Die Lochkreise im Abschnitt Backplate steuern "
+                       "jetzt die radiale Lochverteilung im Spaltfeld.")
 
     # ---------------- Simulation ---------------------------------------
     with st.expander("Simulation", expanded=False):

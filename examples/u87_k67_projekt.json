@@ -1,7 +1,7 @@
 {
   "format": "capsim-project",
-  "version": 1,
-  "saved": "2026-07-02",
+  "version": 2,
+  "saved": "2026-07-07",
   "_kommentar": [
     "Neumann U87Ai / K67-K870-Kapsel (Nierenmodus) in der echten",
     "Doppelmembran-Bauform: zwei 26-mm-Membranen (6 um Mylar) aussen,",
@@ -37,11 +37,11 @@
     "bias_v": 60.0,
     "architecture": "Doppelmembran (K67-Bauform)",
     "center_gap_um": 50.0,
-    "n_through": 60,
     "d_through_mm": 1.2,
-    "n_blind": 60,
+    "th_rings": [[60, 0.0]],
     "d_blind_mm": 1.8,
     "blind_depth_mm": 1.1,
+    "bh_rings": [[60, 0.0]],
     "rear_enabled": true,
     "delay_mm": 1.0,
     "cavity_length_mm": 5.0,
@@ -54,6 +54,7 @@
     "fabric_rear_rayl": 1500.0,
     "diffraction_on": true,
     "body_diameter_mm": 34.0,
+    "squeeze_2d": false,
     "n_points": 400,
     "normalize_1khz": true,
     "dir_freqs": [125, 1000, 4000, 8000, 16000]

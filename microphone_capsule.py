@@ -117,6 +117,15 @@ class MicrophoneCapsule:
             Anzahl/Durchmesser/Tiefe der Blindlöcher (Sacklöcher) auf der
             Membranseite der Backplate. ``blind_hole_depth=None`` ->
             halbe Backplate-Dicke.
+        through_hole_rings, blind_hole_rings
+            Optional: Verteilung der Löcher eines Typs auf MEHRERE
+            Lochkreise als Liste ``[(anzahl, lochkreis_durchmesser_m),
+            ...]``; Lochkreis ``None`` -> dieser Anteil ist gleichmäßig
+            über die Elektrode verteilt. Wenn gesetzt, ersetzen sie
+            ``n_*_holes`` und ``*_pcd`` (Gesamtzahl = Summe der
+            Anzahlen). Der Lochdurchmesser gilt weiterhin je Lochtyp.
+            Die radiale Sitzverteilung wirkt im 2D-Feldmodell und (über
+            die Porositätsprofile) in der Elektrostatik.
 
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
@@ -215,10 +224,12 @@ class MicrophoneCapsule:
         n_through_holes=60,
         through_hole_diameter=1.0e-3,
         through_hole_pcd=None,
+        through_hole_rings=None,
         n_blind_holes=30,
         blind_hole_diameter=1.2e-3,
         blind_hole_depth=None,
         blind_hole_pcd=None,
+        blind_hole_rings=None,
         # --- Akustische Netzwerke & Rückseite -------------------------------
         rear_network_enabled=True,
         delay_length=3e-3,
@@ -288,10 +299,45 @@ class MicrophoneCapsule:
         # fluchten, es existiert keine laterale Zwischenschicht.
         # backplate_thickness ist dann die HALBE Plattendicke (je Seite).
 
-        self.n_th = int(n_through_holes)
+        # Lochmuster: jeder Lochtyp (Durchgang/Blind) sitzt auf einem oder
+        # MEHREREN Lochkreisen. Intern wird alles auf eine Ringliste
+        # [(anzahl, lochkreisRADIUS oder None), ...] normiert; None = dieser
+        # Anteil ist gleichmäßig über die Elektrode verteilt. Die Skalar-
+        # Parameter n_*_holes/*_pcd sind der Ein-Ring-Sonderfall. Der
+        # radiale Sitz steuert im 2D-Feldmodell die Verteilung der Loch-
+        # leitwerte (der Versatz zwischen beiden Lochtypen bildet dort die
+        # Laufzeitstrecke der Niere ab) und geht über die Porositäts-
+        # profile in die Elektrostatik ein.
+        def _normalize_rings(rings, n_scalar, pcd_scalar, label):
+            if rings is None:
+                rings = [(n_scalar, pcd_scalar)]
+            out, n_tot = [], 0
+            for entry in rings:
+                try:
+                    cnt, pcd = entry
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"{label}: jeder Lochkreis braucht das Paar "
+                        "(Anzahl, Lochkreis-Durchmesser)."
+                    )
+                cnt = int(cnt)
+                if cnt < 0:
+                    raise ValueError(
+                        f"{label}: Lochanzahl darf nicht negativ sein.")
+                r = None if pcd is None else 0.5 * float(pcd)
+                if r is not None and not (0.0 <= r <= self.a_bp):
+                    raise ValueError(
+                        f"{label}: Lochkreisradius muss zwischen 0 und "
+                        "Backplate-Radius liegen."
+                    )
+                out.append((cnt, r))
+                n_tot += cnt
+            return out, n_tot
+
+        self._th_rings, self.n_th = _normalize_rings(
+            through_hole_rings, n_through_holes, through_hole_pcd,
+            "Durchgangslöcher")
         self.r_th = 0.5 * float(through_hole_diameter)
-        if self.n_th < 0:
-            raise ValueError("Anzahl der Durchgangslöcher darf nicht negativ sein.")
         if self.n_th > 0 and self.r_th <= 0:
             raise ValueError("Durchgangslochdurchmesser muss > 0 sein.")
         if self.n_th == 0 and self.architecture == "dual":
@@ -301,28 +347,14 @@ class MicrophoneCapsule:
                 "isolieren."
             )
 
-        self.n_bh = int(n_blind_holes)
+        self._bh_rings, self.n_bh = _normalize_rings(
+            blind_hole_rings, n_blind_holes, blind_hole_pcd, "Blindlöcher")
         self.r_bh = 0.5 * float(blind_hole_diameter)
         if blind_hole_depth is None:
             blind_hole_depth = 0.5 * self.t_bp
         self.d_bh = float(blind_hole_depth)
         if self.n_bh > 0 and not (0 < self.d_bh < self.t_bp):
             raise ValueError("Blindlochtiefe muss zwischen 0 und Backplate-Dicke liegen.")
-
-        # Lochkreisradien (nur für das 2D-Feldmodell relevant): mittlerer
-        # radialer Sitz der Durchgangs- bzw. Blindlöcher. None -> die Löcher
-        # werden gleichmäßig über die Elektrode verteilt. Der radiale
-        # Versatz zwischen beiden Lochtypen bildet im Feldmodell die
-        # Laufzeit-/Verzögerungsstrecke der Niere ab.
-        self.r_th_pcd = (None if through_hole_pcd is None
-                         else 0.5 * float(through_hole_pcd))
-        self.r_bh_pcd = (None if blind_hole_pcd is None
-                         else 0.5 * float(blind_hole_pcd))
-        for _r in (self.r_th_pcd, self.r_bh_pcd):
-            if _r is not None and not (0.0 <= _r <= self.a_bp):
-                raise ValueError(
-                    "Lochkreisradius muss zwischen 0 und Backplate-Radius liegen."
-                )
 
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
@@ -438,19 +470,26 @@ class MicrophoneCapsule:
         self._fld_N = N
 
         # Radiale Dichteverteilungen der Löcher (normiert: Σ dens·A = 1),
-        # damit die Gesamt-Lochleitwerte erhalten bleiben. Mit Lochkreis
-        # (PCD) wird die Dichte als schmales Ringband um r_pcd konzentriert,
-        # sonst gleichmäßig über die Elektrode.
-        def _hole_density(r_pcd):
-            if r_pcd is None:
-                dens = np.ones(N)
-            else:
-                width = max(0.10 * self.a_bp, 1.5 * dr)
-                dens = np.exp(-0.5 * ((r_c - r_pcd) / width) ** 2)
-            return dens / float(np.sum(dens * self._fld_area))
+        # damit die Gesamt-Lochleitwerte erhalten bleiben. Jeder Lochkreis
+        # wird als schmales Ringband um seinen Radius konzentriert (ohne
+        # Lochkreis: gleichmäßig über die Elektrode) und mit seinem Anteil
+        # an der Gesamt-Lochzahl gewichtet — ein einzelner Ring reproduziert
+        # exakt das bisherige Ein-PCD-Verhalten.
+        def _hole_density(rings, n_total):
+            if n_total <= 0:
+                return np.ones(N) / float(np.sum(self._fld_area))
+            width = max(0.10 * self.a_bp, 1.5 * dr)
+            dens = np.zeros(N)
+            for cnt, r_pcd in rings:
+                if cnt <= 0:
+                    continue
+                band = (np.ones(N) if r_pcd is None
+                        else np.exp(-0.5 * ((r_c - r_pcd) / width) ** 2))
+                dens += cnt * band / float(np.sum(band * self._fld_area))
+            return dens / n_total
 
-        self._fld_dens_th = _hole_density(self.r_th_pcd)
-        self._fld_dens_bh = _hole_density(self.r_bh_pcd)
+        self._fld_dens_th = _hole_density(self._th_rings, self.n_th)
+        self._fld_dens_bh = _hole_density(self._bh_rings, self.n_bh)
 
         # Elektrodenrand in Modenkoordinate u = r^2/a_mem^2
         self._ub = min((self.a_bp / self.a_mem) ** 2, 1.0)
@@ -1632,6 +1671,14 @@ class MicrophoneCapsule:
     # ======================================================================
     # Diagnose
     # ======================================================================
+    @staticmethod
+    def _ring_note(rings):
+        """Kurzform eines Lochmusters für summary(): Anzahl je Lochkreis."""
+        parts = [(f"{cnt} gleichmäßig" if r is None
+                  else f"{cnt} auf LK ⌀{2e3 * r:.1f} mm")
+                 for cnt, r in rings if cnt > 0]
+        return "; ".join(parts) if parts else "keine"
+
     def summary(self):
         """Mehrzeilige Übersicht der abgeleiteten Modellparameter."""
         sens = self.transfer_function(1000.0)[0]
@@ -1661,6 +1708,10 @@ class MicrophoneCapsule:
                 else "     > 20 kV")),
             f"Elektroden-Porosität:         {100 * (self.phi_th + self.phi_bh):9.1f} % "
             f"(Durchgang {100 * self.phi_th:.1f} %, Blind {100 * self.phi_bh:.1f} %)",
+            f"Lochmuster Durchgang:         {self.n_th:6d} × ⌀{2e3 * self.r_th:.2f} mm "
+            f"({self._ring_note(self._th_rings)})",
+            f"Lochmuster Blind:             {self.n_bh:6d} × ⌀{2e3 * self.r_bh:.2f} mm "
+            f"({self._ring_note(self._bh_rings)})",
             f"Resonanz (Modell):            {self.f_res:9.1f} Hz",
             f"Resonanz aus Vorspannung/E:   {self.f_res_from_tension:9.1f} Hz",
             f"Ruhekapazität C0 (je BP):     {self.C_elec_0 * 1e12:9.2f} pF",
@@ -1954,5 +2005,45 @@ if __name__ == "__main__":
             f"2D muss im dichten Grenzfall Škvor reproduzieren (ratio={ratio:.2f})"
         print(f"2D-Reynolds-Feld: reziprok/passiv über das Band; dichter "
               f"Grenzfall 2D/Škvor = {ratio:.2f}  OK")
+
+    # --------- Gegenprobe 9: Mehrfach-Lochkreise ---------------------------
+    # Die Ringlisten sind eine reine VERALLGEMEINERUNG der Skalar-Parameter:
+    # a) ein einzelner Ring muss exakt dem Skalar-PCD entsprechen,
+    # b) mehrere gleichmäßige Anteile exakt der Gleichverteilung.
+    _base = dict(architecture="single", backplate_diameter=20e-3,
+                 n_blind_holes=30, blind_hole_diameter=1.2e-3)
+    _fchk = np.array([100.0, 1000.0, 10000.0])
+    ref_pcd = MicrophoneCapsule(n_through_holes=12, through_hole_pcd=16e-3,
+                                **_base)
+    one_ring = MicrophoneCapsule(through_hole_rings=[(12, 16e-3)], **_base)
+    assert np.allclose(ref_pcd.transfer_function(_fchk)[0],
+                       one_ring.transfer_function(_fchk)[0], rtol=1e-12), \
+        "1 Lochkreis muss dem Skalar-PCD exakt entsprechen"
+    ref_uni = MicrophoneCapsule(n_through_holes=12, **_base)
+    two_uni = MicrophoneCapsule(through_hole_rings=[(8, None), (4, None)],
+                                **_base)
+    assert np.allclose(ref_uni.transfer_function(_fchk)[0],
+                       two_uni.transfer_function(_fchk)[0], rtol=1e-12), \
+        "gleichmäßige Ringanteile müssen der Gleichverteilung entsprechen"
+    # c) Mehrere echte Ringe: Gesamtzahlen = Summen, Dichten normiert
+    #    (Σ dens·A = 1, Lochleitwerte bleiben erhalten), Ergebnis endlich —
+    #    auch im 2D-Feldmodell.
+    multi = MicrophoneCapsule(
+        architecture="single", backplate_diameter=20e-3,
+        through_hole_rings=[(6, 17e-3), (3, 12e-3), (3, 6e-3)],
+        through_hole_diameter=0.7e-3,
+        blind_hole_rings=[(12, 17e-3), (12, 12e-3), (6, 6e-3)],
+        blind_hole_diameter=1.0e-3,
+        squeeze_model="2d" if _HAS_SCIPY else "1d",
+    )
+    assert multi.n_th == 12 and multi.n_bh == 30
+    for _dens in (multi._fld_dens_th, multi._fld_dens_bh):
+        assert abs(np.sum(_dens * multi._fld_area) - 1.0) < 1e-9, \
+            "Ring-Dichteprofil muss auf Σ dens·A = 1 normiert sein"
+    fr_multi = multi.frequency_response(20.0, 20000.0, n_points=60)
+    assert np.all(np.isfinite(fr_multi["amplitude_db"]))
+    print(f"Mehrfach-Lochkreise: 1 Ring ≡ Skalar-PCD, gleichmäßige Anteile "
+          f"≡ Gleichverteilung; {multi.n_th}+{multi.n_bh} Löcher auf 3+3 "
+          f"Kreisen ({multi.squeeze_model}-Modell) lauffähig  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

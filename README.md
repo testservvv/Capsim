@@ -26,7 +26,10 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   bis Faktor 4 mit −73° Phase) und polytroper Kompressibilität
   (isotherm→adiabatisch). Trennt den Nachgiebigkeits-Rückweg (Blind-
   löcher, lokal) vom Rückkopplungsweg (Durchgangslöcher) und nutzt bei
-  Einzel-Backplate-Architekturen die Lochkreis-Radien (PCD). Bei der
+  Einzel-Backplate-Architekturen die Lochkreis-Radien (PCD) — je Lochtyp
+  auch MEHRERE Lochkreise (in der GUI per ➕-Button, in der Klasse über
+  `through_hole_rings`/`blind_hole_rings`), um reale Bohrbilder
+  nachzubilden. Bei der
   spiegelsymmetrischen Doppelmembran-Bauform kürzt sich die radiale
   Anordnung heraus — das Feldmodell zeigt dort die zugrunde liegende
   Acht; die im 1D-Modell entstehende Niere hängt an dessen Leiter-
@@ -59,9 +62,11 @@ Frequenzgang 100 Hz–5 kHz, Präsenzanhebung ≈ +2 dB bei ~12 kHz.
 `examples/debenham_stereo_condenser.json` — Braunmühl-Weber-Kapsel aus
 Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi
 News): einteilige durchbohrte Mittelelektrode (`center_gap = 0`), 1"-
-Membranen, 12 Durchgangs- + 46 Dämpfungslöcher je Seite, 50 V. Validiert
-gegen die im Artikel gemessenen Richtdiagramme (Fig. 9) und den
-Frequenzgang (Fig. 10).
+Membranen, je Seite 12 Durchgangs- + 46 Dämpfungslöcher auf den echten
+Lochkreisen der Konstruktionszeichnung (0.860/0.688/0.516/0.344/0.172"),
+50 V. Validiert gegen die im Artikel gemessenen Richtdiagramme (Fig. 9)
+und den Frequenzgang (Fig. 10). Dieser Parametersatz ist zugleich die
+Voreinstellung beim App-Start.
 
 Im Nierenmodus ist nur die Frontmembran polarisiert; die Leerlauf-
 Empfindlichkeit der Kapsel liegt im niedrigen mV/Pa-Bereich. Datenblatt-
