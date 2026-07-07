@@ -306,12 +306,12 @@ def _ring_rows(prefix, bp_diameter_mm):
     b1, b2 = st.columns(2)
     b1.button("➕ Lochkreis", key=f"btn_add_{prefix}",
               on_click=_add_ring, args=(prefix,),
-              disabled=n_rings >= MAX_RINGS, use_container_width=True,
+              disabled=n_rings >= MAX_RINGS, width="stretch",
               help="Fügt einen weiteren Lochkreis hinzu (je Druck ein "
                    "Kreis), um reale Lochmuster nachzubilden.")
     b2.button("➖ letzter Kreis", key=f"btn_del_{prefix}",
               on_click=_remove_ring, args=(prefix,),
-              disabled=n_rings <= 1, use_container_width=True,
+              disabled=n_rings <= 1, width="stretch",
               help="Entfernt den letzten Lochkreis.")
     if n_rings > 1:
         st.caption(f"gesamt: {total} Löcher auf {n_rings} Lochkreisen")
@@ -491,7 +491,7 @@ with st.sidebar:
         st.download_button(
             "💾 Projekt speichern (.json)", data=project_json,
             file_name="capsim_projekt.json", mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
     if "_load_msg" in st.session_state:
         kind, msg = st.session_state.pop("_load_msg")
@@ -748,10 +748,10 @@ m4.metric("Feder-Erweichung (Bias)",
 col_bode, col_polar = st.columns([11, 9], gap="medium")
 with col_bode:
     st.plotly_chart(bode_figure(fr, params["normalize_1khz"]),
-                    use_container_width=True,
+                    width="stretch",
                     config={"displayModeBar": False})
 with col_polar:
-    st.plotly_chart(polar_figure(di), use_container_width=True,
+    st.plotly_chart(polar_figure(di), width="stretch",
                     config={"displayModeBar": False})
 
 with st.expander("Abgeleitete Modellparameter (Diagnose)"):
@@ -777,9 +777,9 @@ for f, pat in sorted(di["patterns"].items()):
 
 tab_fr, tab_di = st.tabs(["Frequenzgang", "Richtdiagramm"])
 with tab_fr:
-    st.dataframe(df_fr, height=240, use_container_width=True, hide_index=True)
+    st.dataframe(df_fr, height=240, width="stretch", hide_index=True)
 with tab_di:
-    st.dataframe(df_di, height=240, use_container_width=True, hide_index=True)
+    st.dataframe(df_di, height=240, width="stretch", hide_index=True)
 
 exp1, exp2, exp3 = st.columns([2, 2, 3])
 sep_choice = exp3.selectbox(
@@ -798,10 +798,10 @@ def _to_csv(df):
 
 exp1.download_button("⬇️ Frequenzgang als CSV", _to_csv(df_fr),
                      file_name="capsim_frequenzgang.csv", mime="text/csv",
-                     use_container_width=True)
+                     width="stretch")
 exp2.download_button("⬇️ Richtdiagramm als CSV", _to_csv(df_di),
                      file_name="capsim_richtdiagramm.csv", mime="text/csv",
-                     use_container_width=True)
+                     width="stretch")
 
 st.caption("Capsim · Physikmodell: ABCD-Kettenmatrizen, Zwikker–Kosten-"
            "Lochimpedanzen, Škvor-Squeeze-Film, elektrostatische Wandlung "
