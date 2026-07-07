@@ -135,6 +135,20 @@ class MicrophoneCapsule:
             münden (durch das rückwärtige Gewebe) DIREKT ins rückwärtige
             Schallfeld; die Kapsel wird zum einfachen Gradientenempfänger
             mit der äußeren Wegdifferenz Spalt + Backplate-Dicke.
+        rear_spacer_height : float
+            Höhe des Distanzrings (Spacer) DIREKT hinter der Backplate [m]:
+            eine dünne laterale Luftschicht zwischen Backplate und
+            Rückplatte, wie bei K103-artigen Bauformen (TLM 103 — K87-
+            Front, Rückseite durch Platte statt Rückmembran abgeschlossen).
+            ``0`` = kein Spacer. Bei ``"dual_diaphragm"`` ignoriert.
+        rear_plate_thickness, n_rear_plate_holes, rear_plate_hole_diameter
+            Massive Rückplatte hinter dem Spacer: Dicke [m] (``0`` = keine
+            Rückplatte), Anzahl und Durchmesser ihrer Durchgangslöcher.
+            Ohne Löcher verschließt die Platte die Rückseite (die Kapsel
+            wird zum Druckempfänger). Ist hinter der Platte nichts mehr
+            konfiguriert (Laufzeitglied 0, Hohlraum 0, keine Einlass-
+            löcher), münden die Plattenlöcher DIREKT ins rückwärtige
+            Schallfeld — der Normalfall der K103-Bauform.
         delay_length : float
             Länge des akustischen Laufzeitglieds hinter der Membran [m].
             Modelliert als (schwach verlustbehaftete) akustische Leitung;
@@ -232,6 +246,10 @@ class MicrophoneCapsule:
         blind_hole_rings=None,
         # --- Akustische Netzwerke & Rückseite -------------------------------
         rear_network_enabled=True,
+        rear_spacer_height=0.0,
+        rear_plate_thickness=0.0,
+        n_rear_plate_holes=0,
+        rear_plate_hole_diameter=1.0e-3,
         delay_length=3e-3,
         cavity_length=12e-3,
         cavity_wall_thickness=1.5e-3,
@@ -358,6 +376,21 @@ class MicrophoneCapsule:
 
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
+
+        # Spacer + massive Rückplatte (K103-Bauform) direkt hinter der
+        # Backplate; Teil der rückwärtigen Baugruppe.
+        self.h_sp = float(rear_spacer_height)
+        self.t_rp = float(rear_plate_thickness)
+        self.n_rp = int(n_rear_plate_holes)
+        self.r_rp = 0.5 * float(rear_plate_hole_diameter)
+        if self.h_sp < 0 or self.t_rp < 0 or self.n_rp < 0:
+            raise ValueError(
+                "Spacer-Höhe, Rückplatten-Dicke und -Lochzahl dürfen "
+                "nicht negativ sein."
+            )
+        if self.t_rp > 0 and self.n_rp > 0 and self.r_rp <= 0:
+            raise ValueError("Rückplatten-Lochdurchmesser muss > 0 sein.")
+
         self.l_delay = float(delay_length)
         self.l_cav = float(cavity_length)
         self.t_cav_wall = float(cavity_wall_thickness)
@@ -704,6 +737,45 @@ class MicrophoneCapsule:
             self.R_A_center = 0.0
             self.C_A_center = 0.0
 
+        # ------------------------------------------------------------------
+        # SPACER + MASSIVE RÜCKPLATTE (K103-BAUFORM)
+        # Dünne Luftschicht (Distanzring) zwischen Backplate-Rückseite und
+        # einer massiven, gelochten Rückplatte — wie beim K103 (TLM 103):
+        # K87-artige Front, die Rückseite ist statt einer Rückmembran durch
+        # eine Platte abgeschlossen. Die Strömung tritt durch die
+        # Durchgangslöcher der Backplate in den Spacer ein und durch die
+        # Löcher der Rückplatte aus; wie beim K67-Zwischenspalt wird jede
+        # Seite mit ihrer HALBEN Škvor-Zelle modelliert — hier aber mit dem
+        # jeweils eigenen Lochmuster (Loch­zahlen/-radien beider Platten
+        # dürfen sich unterscheiden):
+        #     R_half = 6*mu*B(q) / (n * pi * h_sp^3),  q = n*r^2/a_bp^2
+        # Das Schichtvolumen wirkt als (thermisch relaxierende) Shunt-
+        # Nachgiebigkeit, s. _film_compliance_Y.
+        # ------------------------------------------------------------------
+        def _half_skvor(n, r_hole, h_film):
+            q = min(n * r_hole**2 / self.a_bp**2, 1.0) if n > 0 else 0.0
+            if n == 0 or q <= 0.0 or q >= 1.0:
+                return 0.0     # keine/berührende Löcher: keine Engstelle
+            B_q = max(q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0,
+                      0.0)
+            return 6.0 * MU_AIR / (n * np.pi * h_film**3) * B_q
+
+        if self.h_sp > 0.0:
+            self.R_A_sp_in = _half_skvor(self.n_th, self.r_th, self.h_sp)
+            self.R_A_sp_out = _half_skvor(self.n_rp, self.r_rp, self.h_sp)
+        else:
+            self.R_A_sp_in = 0.0
+            self.R_A_sp_out = 0.0
+
+        # Ist hinter Spacer/Rückplatte nichts mehr konfiguriert, münden die
+        # Rückplattenlöcher direkt ins rückwärtige Schallfeld (K103-Fall).
+        self._rear_tail_empty = (self.l_delay <= 0.0 and self.l_cav <= 0.0
+                                 and (self.n_ch == 0 or self.r_ch <= 0.0))
+        self._plate_vents = (self.rear_network_enabled
+                             and self.architecture != "dual_diaphragm"
+                             and self.t_rp > 0.0 and self.n_rp > 0
+                             and self._rear_tail_empty)
+
         # Ist die Rückseite akustisch offen (Gradientenempfänger)?
         # Die Durchgangslöcher sind der einzige Weg durch die Backplate:
         if self.n_th == 0:
@@ -717,6 +789,13 @@ class MicrophoneCapsule:
         elif not self.rear_network_enabled:
             # Keine rückwärtige Baugruppe: die Durchgangslöcher münden
             # direkt ins rückwärtige Schallfeld.
+            self.rear_open = True
+        elif self.t_rp > 0.0 and self.n_rp == 0:
+            # Massive Rückplatte ohne Löcher: verschließt die Rückseite
+            # unmittelbar hinter Backplate/Spacer — Druckempfänger.
+            self.rear_open = False
+        elif self._plate_vents:
+            # Rückplattenlöcher münden direkt ins Schallfeld (K103-Fall).
             self.rear_open = True
         else:
             # Baugruppe vorhanden: offen nur über deren Einlasslöcher.
@@ -736,11 +815,16 @@ class MicrophoneCapsule:
         else:
             d_ax = self.h_gap + self.t_bp
             if self.rear_network_enabled:
-                d_ax += self.l_delay
-                if self.cavity_hole_position == "circumference":
-                    d_ax += self.x_ch
-                else:
-                    d_ax += self.l_cav + self.t_cav_wall
+                # Spacer + Rückplatte verschieben den Rückeinlass nach
+                # hinten; münden die Plattenlöcher direkt (K103-Fall),
+                # endet der Weg dort.
+                d_ax += self.h_sp + self.t_rp
+                if not self._plate_vents:
+                    d_ax += self.l_delay
+                    if self.cavity_hole_position == "circumference":
+                        d_ax += self.x_ch
+                    else:
+                        d_ax += self.l_cav + self.t_cav_wall
         # axiale Einbautiefe der rückwärtigen Einlässe (für die Beugung)
         self.d_rear_ax = d_ax
         d = d_ax
@@ -1508,12 +1592,54 @@ class MicrophoneCapsule:
             T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
             return T_total, T_rear
 
-        # Gewebe hinter der Backplate (überspannt die Backplate-Fläche,
-        # liegt auch im Direktbelüftungsfall über den Öffnungen)
+        if vents_directly:
+            # kein Laufzeitglied/Hohlraum: Gewebe liegt über den Öffnungen,
+            # Port = rückwärtiges Schallfeld
+            rear.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
+            T_rear = reduce(self._mmul, rear)
+            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
+            return T_total, T_rear
+
+        # ------- Spacer + massive Rückplatte (K103-Bauform) ----------------
+        # Dünner Distanzspalt hinter der Backplate; die Strömung tritt über
+        # die Backplate-Durchgangslöcher ein und die Rückplattenlöcher aus
+        # (je halbe Škvor-Zelle mit dem eigenen Lochmuster, s.
+        # _derive_parameters), das Schichtvolumen shuntet dazwischen.
+        plate = self.t_rp > 0.0
+        if self.h_sp > 0.0:
+            Y_sp = self._film_compliance_Y(omega, self.h_sp, self.S_bp)
+            if plate and self.n_rp > 0:
+                rear.append(self._abcd_series(self.R_A_sp_in, omega))
+                rear.append(self._abcd_shunt(Y_sp, omega))
+                rear.append(self._abcd_series(self.R_A_sp_out, omega))
+            else:
+                # ohne (gelochte) Rückplatte wirkt der Spacer nur als
+                # zusätzliches Luftvolumen (axialer Durchtritt, kein
+                # nennenswerter lateraler Widerstand)
+                rear.append(self._abcd_shunt(Y_sp, omega))
+        if plate:
+            if self.n_rp == 0:
+                # Rückplatte ohne Löcher: Rückseite hier verschlossen —
+                # alles Dahinterliegende ist akustisch unerreichbar
+                # (rear_open=False blockiert den Port).
+                T_rear = reduce(self._mmul, rear)
+                T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
+                return T_total, T_rear
+            # Durchgangslöcher der Rückplatte: thermoviskoses Rohr über
+            # die Plattendicke; münden sie direkt ins Schallfeld
+            # (K103-Fall), kommt die Strahlungsimpedanz hinzu.
+            Z_rp = self._hole_impedance(omega, self.r_rp, self.t_rp,
+                                        self.n_rp, end_correction=True,
+                                        radiates=self._plate_vents)
+            rear.append(self._abcd_series(Z_rp, omega))
+
+        # Gewebe hinter der Backplate/Rückplatte (überspannt die Fläche,
+        # liegt im Direktmündungsfall über den Plattenöffnungen)
         rear.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
 
-        if vents_directly:
-            # kein Laufzeitglied/Hohlraum: Port = rückwärtiges Schallfeld
+        if self._plate_vents:
+            # K103-Fall: hinter der Rückplatte folgt nichts mehr —
+            # Port = rückwärtiges Schallfeld an den Plattenlöchern
             T_rear = reduce(self._mmul, rear)
             T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
             return T_total, T_rear
@@ -1726,6 +1852,20 @@ class MicrophoneCapsule:
             f"Beugung am Gehäuse:           "
             f"{self.include_diffraction and _HAS_SCIPY}",
         ]
+        if (self.architecture != "dual_diaphragm"
+                and self.rear_network_enabled
+                and (self.h_sp > 0.0 or self.t_rp > 0.0)):
+            sp = (f"Spacer {self.h_sp * 1e6:.0f} µm" if self.h_sp > 0
+                  else "kein Spacer")
+            if self.t_rp > 0:
+                rp = f"Rückplatte {self.t_rp * 1e3:.2f} mm"
+                rp += (f", {self.n_rp} × ⌀{2e3 * self.r_rp:.2f} mm"
+                       if self.n_rp > 0 else ", ohne Löcher (dicht)")
+                if self._plate_vents:
+                    rp += " → Schallfeld"
+            else:
+                rp = "keine Rückplatte"
+            lines.append(f"Spacer/Rückplatte (K103):     {sp}; {rp}")
         if self.architecture == "dual_diaphragm":
             # Druckleck der Doppelmembran-Bauform: die Rückmembran liegt
             # als Nachgiebigkeit in SERIE im rückwärtigen Pfad; das innere
@@ -2045,5 +2185,56 @@ if __name__ == "__main__":
     print(f"Mehrfach-Lochkreise: 1 Ring ≡ Skalar-PCD, gleichmäßige Anteile "
           f"≡ Gleichverteilung; {multi.n_th}+{multi.n_bh} Löcher auf 3+3 "
           f"Kreisen ({multi.squeeze_model}-Modell) lauffähig  OK")
+
+    # --------- Gegenprobe 10: Spacer + Rückplatte (K103-Bauform) -----------
+    # a) Spacer/Rückplatte = 0 muss exakt dem bisherigen Verhalten
+    #    entsprechen (reine Erweiterung).
+    ref10 = MicrophoneCapsule()
+    zero10 = MicrophoneCapsule(rear_spacer_height=0.0,
+                               rear_plate_thickness=0.0,
+                               n_rear_plate_holes=0)
+    assert np.allclose(ref10.transfer_function(_fchk)[0],
+                       zero10.transfer_function(_fchk)[0], rtol=1e-12), \
+        "Spacer/Rückplatte = 0 darf nichts ändern"
+    # b) Rückplatte OHNE Löcher verschließt die Rückseite: Druckempfänger
+    #    (ohne Beugung exakt Kugelcharakteristik), egal was dahinter kommt.
+    sealed_rp = MicrophoneCapsule(rear_spacer_height=80e-6,
+                                  rear_plate_thickness=2e-3,
+                                  n_rear_plate_holes=0,
+                                  include_diffraction=False)
+    assert not sealed_rp.rear_open
+    H0 = sealed_rp.transfer_function(1000.0, angle_deg=0.0)[0]
+    H180 = sealed_rp.transfer_function(1000.0, angle_deg=180.0)[0]
+    assert abs(abs(H180) / abs(H0) - 1.0) < 1e-9, \
+        "dichte Rückplatte muss Druckempfänger (Kugel) ergeben"
+    # c) K103-artige Konfiguration: Membran -> Backplate -> Spacer ->
+    #    gelochte massive Rückplatte -> Schallfeld (Laufzeitglied/Hohlraum
+    #    leer). Die Rückseite ist offen, die Plattenlöcher münden direkt,
+    #    der Außenweg endet an der Rückplatte, das Pattern ist gerichtet.
+    k103 = MicrophoneCapsule(
+        membrane_resonance_hz=1500.0, membrane_diameter=25e-3,
+        air_gap=50e-6, backplate_diameter=23e-3, backplate_thickness=3e-3,
+        bias_voltage=45.0, architecture="single",
+        n_through_holes=24, through_hole_diameter=0.8e-3,
+        n_blind_holes=30, blind_hole_diameter=1.2e-3,
+        rear_network_enabled=True,
+        rear_spacer_height=50e-6, rear_plate_thickness=2e-3,
+        n_rear_plate_holes=30, rear_plate_hole_diameter=0.5e-3,
+        delay_length=0.0, cavity_length=0.0, n_cavity_holes=0,
+        include_diffraction=False,
+    )
+    assert k103.rear_open and k103._plate_vents
+    assert abs(k103.d_ext - (50e-6 + 3e-3 + 50e-6 + 2e-3)) < 1e-12, \
+        "d_ext muss an der direkt mündenden Rückplatte enden"
+    H0 = k103.transfer_function(1000.0, angle_deg=0.0)[0]
+    H180 = k103.transfer_function(1000.0, angle_deg=180.0)[0]
+    ratio_k103 = abs(H180) / abs(H0)
+    assert ratio_k103 < 0.5, \
+        f"K103-Konfiguration muss richten (180°/0° = {ratio_k103:.2f})"
+    fr_k103 = k103.frequency_response(20.0, 20000.0, n_points=60)
+    assert np.all(np.isfinite(fr_k103["amplitude_db"]))
+    print(f"Spacer/Rückplatte (K103): 0-Werte ≡ Bestand, dichte Platte -> "
+          f"Kugel, K103-Konfiguration richtet (180°/0° @1 kHz = "
+          f"{20 * np.log10(ratio_k103):.1f} dB)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

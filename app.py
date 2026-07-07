@@ -123,6 +123,11 @@ DEFAULTS = {
                  [4, 4.37]],
     # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
+    # Spacer + massive gelochte Rückplatte (K103-Bauform); 0 = nicht vorhanden
+    "spacer_um": 0.0,
+    "rearplate_mm": 0.0,
+    "n_rearplate": 0,
+    "d_rearplate_mm": 1.0,
     "delay_mm": 1.0,
     "cavity_length_mm": 5.0,
     "cavity_wall_mm": 1.5,
@@ -225,26 +230,30 @@ def _load_project():
         if data.get("format") != "capsim-project":
             raise ValueError("kein Capsim-Projektformat")
         params_in = data.get("params", {})
-        loaded = 0
-        for key, val in params_in.items():
-            if key in _RING_PREFIX:
-                _set_ring_state(_RING_PREFIX[key], _coerce(key, val))
-                loaded += 1
-            elif key in DEFAULTS:
-                st.session_state["p_" + key] = _coerce(key, val)
-                loaded += 1
+        # Erst alles validieren (staged), dann atomar anwenden — eine
+        # defekte Datei lässt den aktuellen Zustand unangetastet.
+        staged = {key: _coerce(key, val) for key, val in params_in.items()
+                  if key in DEFAULTS}
         # Altes Projektformat (Version 1, EIN Lochkreis je Lochtyp):
         # n_through/th_pcd_mm bzw. n_blind/bh_pcd_mm -> eine Ringzeile.
-        if "th_rings" not in params_in and "n_through" in params_in:
-            _set_ring_state("th", [[int(params_in["n_through"]),
-                                    float(params_in.get("th_pcd_mm", 0.0))]])
-            loaded += 1
-        if "bh_rings" not in params_in and "n_blind" in params_in:
-            _set_ring_state("bh", [[int(params_in["n_blind"]),
-                                    float(params_in.get("bh_pcd_mm", 0.0))]])
-            loaded += 1
+        if "th_rings" not in staged and "n_through" in params_in:
+            staged["th_rings"] = [[int(params_in["n_through"]),
+                                   float(params_in.get("th_pcd_mm", 0.0))]]
+        if "bh_rings" not in staged and "n_blind" in params_in:
+            staged["bh_rings"] = [[int(params_in["n_blind"]),
+                                   float(params_in.get("bh_pcd_mm", 0.0))]]
+        # Ein Projekt beschreibt die KOMPLETTE Kapsel: im Projekt nicht
+        # enthaltene Parameter fallen auf die Voreinstellung zurück
+        # (ältere Projekte kennen z. B. Spacer/Rückplatte noch nicht).
+        for key, default in DEFAULTS.items():
+            val = staged.get(key, default)
+            if key in _RING_PREFIX:
+                _set_ring_state(_RING_PREFIX[key], val)
+            else:
+                st.session_state["p_" + key] = val
         st.session_state["_load_msg"] = (
-            "success", f"Projekt geladen — {loaded} Parameter übernommen.")
+            "success",
+            f"Projekt geladen — {len(staged)} Parameter übernommen.")
     except Exception as exc:  # defekte Datei darf die App nicht stoppen
         st.session_state["_load_msg"] = (
             "error", f"Projekt konnte nicht geladen werden: {exc}")
@@ -336,6 +345,10 @@ def build_capsule(p):
         # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
         # nur bei 0 Durchgangslöchern — das entscheidet das Physikmodell.
         rear_network_enabled=p["rear_enabled"],
+        rear_spacer_height=p["spacer_um"] * 1e-6,
+        rear_plate_thickness=p["rearplate_mm"] * 1e-3,
+        n_rear_plate_holes=p["n_rearplate"],
+        rear_plate_hole_diameter=p["d_rearplate_mm"] * 1e-3,
         delay_length=p["delay_mm"] * 1e-3,
         cavity_length=p["cavity_length_mm"] * 1e-3,
         cavity_wall_thickness=p["cavity_wall_mm"] * 1e-3,
@@ -577,6 +590,36 @@ with st.sidebar:
                        "Spalt + Backplate-Dicke). Hermetisch geschlossen "
                        "ist die Kapsel nur mit 0 Durchgangslöchern.")
         _rear_on = st.session_state["p_rear_enabled"] and not _is_k67
+        st.markdown("**Spacer & Rückplatte (K103-Bauform)**",
+                    help="Direkt hinter der Backplate: dünner Distanzring "
+                         "(Spacer) und massive, gelochte Rückplatte — wie "
+                         "beim Neumann K103 (TLM 103), dessen K87-artige "
+                         "Front statt einer Rückmembran durch eine Platte "
+                         "abgeschlossen ist. Der enge Spacer liefert den "
+                         "Reibungswiderstand des Nieren-Phasenschiebers. "
+                         "Sind Laufzeitglied, Hohlraum und Einlasslöcher 0, "
+                         "münden die Plattenlöcher direkt ins rückwärtige "
+                         "Schallfeld. Eine Rückplatte ohne Löcher "
+                         "verschließt die Kapsel (Druckempfänger).")
+        st.number_input("Spacer — Höhe [µm]", 0.0, 1000.0, step=5.0,
+                        key="p_spacer_um", disabled=not _rear_on,
+                        help="Luftschicht zwischen Backplate und Rück-"
+                             "platte. 0 = kein Spacer. Enger Spalt = mehr "
+                             "Reibung (R ~ 1/h³) — das Abstimmelement der "
+                             "Richtcharakteristik.")
+        st.number_input("Rückplatte — Dicke [mm]", 0.0, 20.0, step=0.1,
+                        key="p_rearplate_mm", disabled=not _rear_on,
+                        help="Massive Platte hinter dem Spacer. "
+                             "0 = keine Rückplatte.")
+        _rp_on = _rear_on and st.session_state["p_rearplate_mm"] > 0.0
+        st.number_input("Rückplatte — Löcher Anzahl", 0, 2000, step=1,
+                        key="p_n_rearplate", disabled=not _rp_on,
+                        help="0 = Rückplatte ohne Löcher → Rückseite "
+                             "verschlossen (Druckempfänger).")
+        st.number_input("Rückplatte — Löcher Ø [mm]", 0.05, 5.0, step=0.05,
+                        key="p_d_rearplate_mm", disabled=not _rp_on)
+
+        st.markdown("**Laufzeitglied & Hohlraum**")
         st.number_input("Laufzeitglied — Länge [mm]", 0.0, 100.0, step=0.5,
                         key="p_delay_mm", disabled=not _rear_on,
                         help="Akustische Leitung hinter der Membran; "

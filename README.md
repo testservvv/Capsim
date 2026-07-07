@@ -68,6 +68,17 @@ Lochkreisen der Konstruktionszeichnung (0.860/0.688/0.516/0.344/0.172"),
 und den Frequenzgang (Fig. 10). Dieser Parametersatz ist zugleich die
 Voreinstellung beim App-Start.
 
+`examples/k103_bauform_demo.json` — Demonstration der **K103-Bauform**
+(Neumann TLM 103): Einzelmembran-Niere auf K87-Basis, deren Rückseite
+statt einer Rückmembran durch einen engen **Spacer** und eine massive,
+gelochte **Rückplatte** abgeschlossen ist; die Plattenlöcher münden
+direkt ins rückwärtige Schallfeld. Kein validierter K103-Parametersatz
+(die inneren Maße sind nicht veröffentlicht), sondern eine plausible
+Vorlage zum Abstimmen: der Spacer ist mit R ∝ 1/h³ das Stellglied des
+Nieren-Phasenschiebers. Eine Rückplatte ohne Löcher verschließt die
+Kapsel (Druckempfänger). Beide Elemente sitzen im Abschnitt
+„Rückseite & Laufzeitglied".
+
 Im Nierenmodus ist nur die Frontmembran polarisiert; die Leerlauf-
 Empfindlichkeit der Kapsel liegt im niedrigen mV/Pa-Bereich. Datenblatt-
 Empfindlichkeiten gelten am Verstärkerausgang (Gain nicht modelliert),
