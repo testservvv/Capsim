@@ -2375,20 +2375,22 @@ if __name__ == "__main__":
     H_t = tiny11.transfer_function(_fchk)[0]
     assert np.max(np.abs(H_t / H_p - 1.0)) < 0.05, \
         "verschwindende Senkung muss die normale Bohrung reproduzieren"
-    # b) K67-Geometrie (60 gestufte + 60 reine Sacklöcher): das enge Rohr
-    #    ist nur noch t_bp − Tiefe lang -> spürbar kleinere Durchgangs-
-    #    impedanz; Stirnporosität zählt die Senkungsringe; die Niere der
-    #    Doppelmembran-Bauform bleibt erhalten.
+    # b) K67-Geometrie (verifiziert: je Seite 120 Bohrungen 1.3 mm x
+    #    3.7 mm in der 4-mm-Halbplatte, jede zweite mit 0.6-mm-Durchbruch
+    #    am Grund -> 60 gestufte + 60 reine Sacklöcher): das enge Rohr
+    #    ist nur noch t_bp − Tiefe = 0.3 mm lang -> deutlich kleinere
+    #    Durchgangsimpedanz; Stirnporosität zählt die Senkungsringe;
+    #    die Niere der Doppelmembran-Bauform bleibt erhalten.
     k67_kwargs = dict(
         membrane_material="pet", membrane_resonance_hz=1150.0,
         membrane_diameter=26e-3, membrane_thickness=6e-6,
-        membrane_tension=13.7, air_gap=60e-6, backplate_diameter=25e-3,
-        backplate_thickness=3e-3, bias_voltage=60.0,
+        membrane_tension=13.7, air_gap=65e-6, backplate_diameter=25e-3,
+        backplate_thickness=4e-3, bias_voltage=60.0,
         architecture="dual_diaphragm", center_gap=50e-6,
-        n_through_holes=60, through_hole_diameter=1.2e-3,
-        n_blind_holes=60, blind_hole_diameter=1.8e-3,
-        blind_hole_depth=1.1e-3,
-        fabric_front_rayl=2500.0, fabric_rear_rayl=1500.0,
+        n_through_holes=60, through_hole_diameter=0.6e-3,
+        n_blind_holes=60, blind_hole_diameter=1.3e-3,
+        blind_hole_depth=3.7e-3,
+        fabric_front_rayl=300.0, fabric_rear_rayl=200.0,
         body_diameter=34e-3,
     )
     k67_pl = MicrophoneCapsule(**k67_kwargs)
@@ -2400,6 +2402,9 @@ if __name__ == "__main__":
         "Stufenbohrung muss die Durchgangsimpedanz senken (kürzeres Rohr)"
     assert k67_st.phi_bh > k67_pl.phi_bh    # Senkungsringe in der Porosität
     assert k67_st.C_A_cb > 0.0
+    # Ruhekapazität trifft den nachgemessenen K67-Wert (~50 pF)
+    assert 47.0 < k67_st.C_elec_0 * 1e12 < 54.0, \
+        f"K67-C0 = {k67_st.C_elec_0 * 1e12:.1f} pF (erwartet ~50 pF)"
     H0 = k67_st.transfer_function(1000.0, angle_deg=0.0)[0]
     H180 = k67_st.transfer_function(1000.0, angle_deg=180.0)[0]
     st_180 = 20.0 * np.log10(abs(H180) / abs(H0))

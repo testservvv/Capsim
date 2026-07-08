@@ -53,17 +53,19 @@ python microphone_capsule.py
 `examples/u87_k67_projekt.json` — recherchierter und modellvalidierter
 Parametersatz einer Neumann-K67/K870-Kapsel (U87Ai, Nierenmodus) in der
 echten Doppelmembran-Bauform: zwei 26-mm-Membranen (6 µm Mylar) außen,
-zwei innenliegende Backplates mit 50-µm-Spacer, 60 V, Membranresonanz
-≈ 1,15 kHz. Die passive Rückmembran bildet das Phasenschiebernetzwerk,
-und das Lochbild ist als echte **Stufenbohrung** erfasst: 120 weite
-Bohrungen je Seite, jede zweite mit konzentrischem Durchbruch am Grund
-(GUI-Schalter „Stufenbohrung", Klasse `through_holes_stepped` — enges
-Rohr nur über die Restdicke, Senkung als Sackvolumen, korrekte
-Stirnporosität, eine Škvor-Senke je Bohrung). Validierung gegen
-Herstellerdaten: Niere (−26 dB @ 180°/1 kHz), flacher Frequenzgang
-100 Hz–5 kHz, Präsenzanhebung ≈ +3 dB bei ~12 kHz (die U87Ai-Elektronik
-glättet den Kapselpeak auf die veröffentlichten ~+2 dB).
-Über „Projekt laden" importierbar.
+zwei innenliegende Backplate-Hälften (je ~4 mm) mit 50-µm-Spacer, 60 V.
+Die passive Rückmembran bildet das Phasenschiebernetzwerk, und das
+Lochbild ist die verifizierte **Stufenbohr-Geometrie**: je Seite 120
+Bohrungen ⌀1,3 mm × 3,7 mm tief, jede zweite mit konzentrischem
+0,6-mm-Durchbruch am Grund (GUI-Schalter „Stufenbohrung", Klasse
+`through_holes_stepped` — enges Rohr nur über die Restdicke, Senkung
+als Sackvolumen, korrekte Stirnporosität, eine Škvor-Senke je Bohrung).
+Validierung gegen Herstellerdaten: Ruhekapazität C₀ = 50 pF (trifft
+den nachgemessenen Wert), Niere −18 dB @ 180°/1 kHz mit nur noch
+leichtem Gewebe (300/200 Rayl statt Ersatzdämpfung), flacher
+Frequenzgang 100 Hz–5 kHz; der rohe Kapselpeak (+7 dB @ 8,5 kHz) wird
+real durch Korb und Elektronik (nicht modelliert) auf die
+veröffentlichten ~+2..3 dB geglättet. Über „Projekt laden" importierbar.
 
 `examples/debenham_stereo_condenser.json` — Braunmühl-Weber-Kapsel aus
 Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi
