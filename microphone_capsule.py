@@ -941,6 +941,28 @@ class MicrophoneCapsule:
         B_q = q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0
         return 12.0 * MU_AIR / (n_drain * np.pi * h_film**3) * B_q
 
+    @staticmethod
+    def _film_R_dynamic(omega, h_film):
+        """Frequenzkorrektur des lateralen Squeeze-Film-Widerstands.
+
+        Der statische Škvor-Widerstand gilt für Poiseuille-Strömung; mit
+        steigender Frequenz füllt die viskose Grenzschicht den Spalt
+        nicht mehr und die TRÄGHEIT der lateral bewegten Spaltluft
+        dominiert. Korrekturfaktor (Schlitz-Zwikker–Kosten, identisch
+        zum Filmleitwert K_f des 2D-Feldmodells):
+
+            Φ(ω) = (h³/12μ) / K_f(ω),
+            K_f  = h/(jωρ0)·[1 − tanh(α)/α],  α = (h/2)·sqrt(jωρ0/μ)
+
+        Φ→1 für ω→0; bei 25 kHz/60 µm beträgt der Unterschied Faktor ~4
+        mit −73° Phase. Multiplikativ auf den statischen R anzuwenden —
+        macht das 1D-Modell filmphysikalisch konsistent zum 2D-Modell.
+        """
+        omega = np.asarray(omega, dtype=float)
+        a_v = 0.5 * h_film * np.sqrt(1j * omega * RHO0 / MU_AIR)
+        K_f = h_film / (1j * omega * RHO0) * (1.0 - np.tanh(a_v) / a_v)
+        return (h_film**3 / (12.0 * MU_AIR)) / K_f
+
     def _film_compliance_Y(self, omega, h_film, S):
         """Shunt-Admittanz eines dünnen Luftvolumens (Fläche S, Höhe h)
         mit THERMISCHER RELAXATION (Tijdeman/Low-Reduced-Frequency):
@@ -1061,7 +1083,7 @@ class MicrophoneCapsule:
     # ======================================================================
     @staticmethod
     def _hole_impedance(omega, radius, length, count,
-                        end_correction=True, radiates=False):
+                        end_correction=True, radiates=False, visc_ends=0):
         """Akustische Impedanz von ``count`` parallelen Zylinderlöchern.
 
         THERMOVISKOSE ROHRIMPEDANZ (Zwikker–Kosten / Crandall)
@@ -1084,6 +1106,21 @@ class MicrophoneCapsule:
 
         MÜNDUNGSKORREKTUR: an jedem offenen Ende schwingt eine zusätzliche
         Luftmasse mit; für angeflanschte Mündungen delta_L = 0.85*r pro Seite.
+
+        VISKOSE MÜNDUNG (``visc_ends`` = Anzahl der Enden mit viskosem
+        Mündungswiderstand): Die Einströmung in eine Kreisöffnung hat
+        neben der Mündungsmasse auch einen REIBUNGSWIDERSTAND
+        (Sampson/Roscoe-Kriechströmung; Weissberg 1962:
+        R_Rohr+Enden = 8·mu·L/(pi r^4) + 3·mu/r^3). Er entspricht einer
+        zusätzlichen ROHRLÄNGE von 3*pi*r/16 je offener Mündung und wird
+        hier mit dem thermoviskosen Belag des Rohres selbst ausgewertet
+        (nur Realteil — die Mündungsmasse steckt bereits in 0.85·r), so
+        dass er bei hohen Frequenzen physikalisch mit der Grenzschicht
+        ~sqrt(omega) wächst. Bei kurzen, engen Bohrungen ist dieser Term
+        vergleichbar mit dem Rohrwiderstand selbst und darf nicht fehlen.
+        Für Mündungen in DÜNNE Spaltfilme gilt er NICHT (dort deckt die
+        Škvor-/Zell-Ausbreitung die Zuströmung ab) — daher explizit
+        je Aufrufstelle 0, 1 oder 2 Enden.
 
         STRAHLUNGSWIDERSTAND (radiates=True, Öffnung ins Freifeld):
             R_rad = rho0*c/(pi r^2) * (k r)^2 / 2    (Kolben in Schallwand,
@@ -1113,60 +1150,131 @@ class MicrophoneCapsule:
         if end_correction:
             Z = Z + 1j * omega * RHO0 * (2.0 * 0.85 * radius) / S
 
+        if visc_ends:
+            # viskoser Mündungswiderstand (s. Docstring): äquivalente
+            # Zusatzlänge 3*pi*r/16 je Mündung, gleicher thermoviskoser
+            # Belag wie das Rohr, nur der Realteil zählt.
+            L_end = visc_ends * (3.0 * np.pi / 16.0) * radius
+            Z_end = MicrophoneCapsule._hole_impedance(
+                omega, radius, L_end, 1, end_correction=False)
+            Z = Z + Z_end.real
+
         if radiates:
             k = omega / C_AIR
             Z = Z + (RHO0 * C_AIR / S) * np.minimum((k * radius) ** 2 / 2.0, 1.0)
 
         return Z / count  # parallele Löcher
 
-    def _blind_hole_impedance(self, omega, count=None, C_vol=None):
+    @staticmethod
+    def _narrow_duct_propagation(omega, radius):
+        """Ausbreitungskonstante/Wellenwiderstand eines ENGEN Rohres.
+
+        Pendant zu :meth:`_duct_propagation` (weite Leitung, Kirchhoff-
+        Grenzschichtnäherung), aber mit den vollen Zwikker–Kosten-
+        Besselfunktionen — gültig auch, wenn viskose und thermische
+        Grenzschicht den Querschnitt ganz ausfüllen (Sacklöcher,
+        Senkungen im mm-Maßstab):
+
+            Z' = jω·rho0 / (S·F_v)           (Impedanzbelag)
+            Y' = jω·S / (n_p(ω)·P_atm)       (Admittanzbelag)
+            n_p = gamma / [1 + (gamma−1)·F_t]
+
+        F_v: viskose Rohrfunktion (wie _hole_impedance), F_t: thermisches
+        Pendant mit sqrt(Pr)-skaliertem Argument. n_p läuft von 1
+        (isotherm) nach gamma (adiabatisch) inkl. Relaxationsverlusten.
+        Rückgabe: (gamma_prop, Zc). Erfordert SciPy (Besselfunktionen).
+        """
+        omega = np.asarray(omega, dtype=float)
+        S = np.pi * radius**2
+        k_v = np.sqrt(-1j * omega * RHO0 / MU_AIR)
+        arg = k_v * radius
+        F_v = 1.0 - 2.0 * _besselj(1, arg) / (arg * _besselj(0, arg))
+        arg_t = arg * np.sqrt(PRANDTL)
+        F_t = 2.0 * _besselj(1, arg_t) / (arg_t * _besselj(0, arg_t))
+        n_p = GAMMA / (1.0 + (GAMMA - 1.0) * F_t)
+        Zp = 1j * omega * RHO0 / (S * F_v)
+        Yp = 1j * omega * S / (n_p * P_ATM)
+        return np.sqrt(Zp * Yp), np.sqrt(Zp / Yp)
+
+    def _closed_hole_stub(self, omega, radius, length):
+        """Eingangsimpedanz EINES endseitig geschlossenen engen Rohres
+        (Sackloch) als thermoviskose Leitung:
+
+            Z_in = Zc · coth(gamma·L)
+
+        Gegenüber dem früheren Lumped-Modell (Rohr über die halbe Tiefe
+        + adiabatische Volumen-Nachgiebigkeit) ist die Reibung korrekt
+        über die Tiefe VERTEILT — der LF-Grenzfall ist das Standard-
+        Ergebnis der RC-Leitung, Z ≈ R_Rohr/3 + 1/(jωC) —, die
+        Nachgiebigkeit wechselt konsistent isotherm→adiabatisch (mit
+        Relaxationsdämpfung), und die λ/4-Resonanz des Sacklochs am
+        oberen Bandende liegt an der richtigen Stelle.
+        Ohne SciPy: Fallback auf das bisherige Lumped-Modell.
+        """
+        omega = np.asarray(omega, dtype=float)
+        if not _HAS_SCIPY:
+            Z_v = self._hole_impedance(omega, radius, 0.5 * length, 1,
+                                       end_correction=False)
+            C_ad = np.pi * radius**2 * length / (RHO0 * C_AIR**2)
+            return Z_v + 1.0 / (1j * omega * C_ad)
+        g, Zc = self._narrow_duct_propagation(omega, radius)
+        return Zc / np.tanh(g * length)
+
+    def _blind_hole_impedance(self, omega, count=None):
         """Shunt-Impedanz von Sacklochvolumina in der Backplate.
 
         Blindlöcher vergrößern das wirksame Luftvolumen unter der Membran
         und entlasten so den Squeeze-Film (weniger Dämpfung, klassischer
-        Trick bei Großmembran-Backplates). Modell: viskose Rohrimpedanz
-        über die HALBE Tiefe (mittlere Eindringtiefe der Strömung in ein
-        geschlossenes Loch) in Serie mit der isothermen Nachgiebigkeit des
-        vollen Lochvolumens:
-            Z_blind = Z_tube(r, d/2) + 1/(j*omega*C_blind)
-        Einseitige Mündungskorrektur (nur membranseitige Öffnung).
-        Ohne ``count``/``C_vol`` die reinen Blindlöcher; mit Argumenten
-        auch für die SENKUNGEN der Stufenbohrungen nutzbar (gleiche
-        Geometrie r_bh/d_bh, eigene Anzahl und Nachgiebigkeit).
+        Trick bei Großmembran-Backplates). Modell: endseitig geschlossener
+        thermoviskoser Leitungsstub über die volle Tiefe
+        (s. :meth:`_closed_hole_stub` — verteilte Reibung, isotherm→
+        adiabatische Nachgiebigkeit, λ/4-Stub-Verhalten) plus einseitige
+        Mündungsmasse. KEIN viskoser Mündungswiderstand: die Öffnung
+        liegt im dünnen Spaltfilm, dessen Zuströmung bereits die
+        Škvor-/Zell-Ausbreitung abdeckt.
+        Ohne ``count`` die reinen Blindlöcher; mit ``count`` auch für
+        die SENKUNGEN der Stufenbohrungen nutzbar (gleiche Geometrie
+        r_bh/d_bh, eigene Anzahl).
         """
         if count is None:
-            count, C_vol = self.n_bh, self.C_A_blind
+            count = self.n_bh
         omega = np.asarray(omega, dtype=float)
-        Z_visc = self._hole_impedance(
-            omega, self.r_bh, 0.5 * self.d_bh, count, end_correction=False
-        )
+        Z_stub = self._closed_hole_stub(omega, self.r_bh, self.d_bh)
         S = np.pi * self.r_bh**2
-        Z_end = 1j * omega * RHO0 * (0.85 * self.r_bh) / (S * count)
-        Z_comp = 1.0 / (1j * omega * C_vol)
-        return Z_visc + Z_end + Z_comp
+        Z_end = 1j * omega * RHO0 * (0.85 * self.r_bh) / S
+        return (Z_stub + Z_end) / count
 
     def _through_hole_impedance(self, omega, count, radiates=False):
         """Serienimpedanz der Durchgangsbohrungen der Backplate.
 
         Normale Bohrung: Zwikker–Kosten-Rohr über die volle Plattendicke
-        mit beidseitig angeflanschter Mündungskorrektur. STUFENBOHRUNG:
-        eng gebohrt ist nur die Restdicke t_bp − d_bh unter der Senkung;
-        die äußere Mündung ist angeflanscht (0.85·r), die innere mündet
-        in die weite Senkung — ihre Mündungsmasse trägt den Karal-Faktor
-        (1 − r_th/r_bh) der Querschnittsstufe. Das Senkungsvolumen selbst
-        shuntet als Sacklochvolumen an der Membranseite
-        (s. _blind_hole_impedance mit C_A_cb).
+        mit beidseitig angeflanschter Mündungskorrektur; der viskose
+        Mündungswiderstand (Sampson) zählt nur AUSSENSEITIG — die
+        spaltseitige Zuströmung deckt die Škvor-Ausbreitung ab.
+        STUFENBOHRUNG: eng gebohrt ist nur die Restdicke t_bp − d_bh
+        unter der Senkung; die äußere Mündung ist angeflanscht (0.85·r,
+        mit viskosem Anteil), die innere mündet in die weite Senkung —
+        Mündungsmasse UND viskoser Mündungswiderstand tragen dort den
+        Karal-Faktor (1 − r_th/r_bh) der Querschnittsstufe. Das
+        Senkungsvolumen selbst liegt als eigenes Ketten-Element im
+        Serienpfad (s. _backplate_gap_abcd).
         """
         omega = np.asarray(omega, dtype=float)
         if not self.stepped:
             return self._hole_impedance(omega, self.r_th, self.t_bp, count,
                                         end_correction=True,
-                                        radiates=radiates)
+                                        radiates=radiates, visc_ends=1)
         Z = self._hole_impedance(omega, self.r_th, self.t_th_eff, count,
-                                 end_correction=False, radiates=radiates)
+                                 end_correction=False, radiates=radiates,
+                                 visc_ends=1)
         S = np.pi * self.r_th**2
-        delta = 0.85 * self.r_th * (2.0 - self.r_th / self.r_bh)
-        return Z + 1j * omega * RHO0 * delta / (S * count)
+        karal = 1.0 - self.r_th / self.r_bh
+        delta = 0.85 * self.r_th * (1.0 + karal)
+        # viskose Mündung an der Stufe (Karal-gewichtete Sampson-Länge)
+        Z_step = self._hole_impedance(
+            omega, self.r_th, (3.0 * np.pi / 16.0) * self.r_th, 1,
+            end_correction=False).real * karal
+        return Z + (1j * omega * RHO0 * delta / S + Z_step) / count
 
     def _radiation_impedance_membrane(self, omega):
         """Strahlungsimpedanz der Membranvorderseite.
@@ -1493,33 +1601,37 @@ class MicrophoneCapsule:
         # dichte) wie ein Blindloch shuntet.
         S_th = np.pi * self.r_th**2
         r_well_th = self.r_bh if self.stepped else self.r_th
+        # Portseite: Mündungsmasse + viskoser Mündungswiderstand (Sampson)
         Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
-                                      end_correction=False)
+                                      end_correction=False, visc_ends=1)
                  + 1j * omega * RHO0 * (0.85 * self.r_th) / S_th
                  + _cell_B(r_well_th) / (np.pi * K_f))
         if self.stepped:
             # weites Senkungssegment in Serie + Karal-Stufenmündung
-            # (die filmseitige Ausbreitung deckt die Zelle mit r_bh ab)
+            # (Masse und viskoser Anteil; die filmseitige Ausbreitung
+            # deckt die Zelle mit r_bh ab)
+            karal = 1.0 - self.r_th / self.r_bh
             Z_th1 = (Z_th1
                      + self._hole_impedance(omega, self.r_bh, self.d_bh, 1,
                                             end_correction=False)
-                     + 1j * omega * RHO0 * 0.85 * self.r_th
-                     * (1.0 - self.r_th / self.r_bh) / S_th)
+                     + 1j * omega * RHO0 * 0.85 * self.r_th * karal / S_th
+                     + self._hole_impedance(
+                         omega, self.r_th,
+                         (3.0 * np.pi / 16.0) * self.r_th, 1,
+                         end_correction=False).real * karal)
         g_tot = self.n_th / Z_th1                         # Gesamtleitwert (Nf,)
+        # Sackloch-/Senkungs-Shunts als geschlossene thermoviskose Stubs
+        # (verteilte Reibung, isotherm→adiabatisch, s. _closed_hole_stub)
+        Z_stub1 = (self._closed_hole_stub(omega, self.r_bh, self.d_bh)
+                   if (self.n_bh > 0 or self.stepped) else None)
         if self.n_bh > 0:
-            Z_v = self._hole_impedance(omega, self.r_bh, 0.5 * self.d_bh, 1,
-                                       end_correction=False)
-            Z_comp = self.n_bh / (1j * omega * self.C_A_blind)
-            y_tot = self.n_bh / (Z_v + Z_comp
+            y_tot = self.n_bh / (Z_stub1
                                  + _cell_B(self.r_bh) / (np.pi * K_f))
         else:
             y_tot = np.zeros(Nf, dtype=complex)
         if self.stepped:
             # Senkungsvolumina der Stufenbohrungen (sitzen auf dens_th)
-            Z_v_cb = self._hole_impedance(omega, self.r_bh, 0.5 * self.d_bh,
-                                          1, end_correction=False)
-            Z_comp_cb = self.n_th / (1j * omega * self.C_A_cb)
-            y_cb = self.n_th / (Z_v_cb + Z_comp_cb
+            y_cb = self.n_th / (Z_stub1
                                 + _cell_B(self.r_bh) / (np.pi * K_f))
         else:
             y_cb = np.zeros(Nf, dtype=complex)
@@ -1595,20 +1707,35 @@ class MicrophoneCapsule:
             return reduce(self._mmul, mats)
         Z_holes = self._through_hole_impedance(omega, self.n_th,
                                                radiates=holes_radiate)
-        mats.append(self._abcd_series(self._skvor_R(h_eff), omega))
+        # statischer Škvor-R mit Frequenzkorrektur (laterale Filmträgheit)
+        mats.append(self._abcd_series(
+            self._skvor_R(h_eff) * self._film_R_dynamic(omega, h_eff),
+            omega))
         mats.append(self._abcd_shunt(Y_gap, omega))
         if self.stepped:
-            # Senkungssegment der Stufenbohrungen in SERIE: weites Rohr
-            # mit spaltseitiger Mündung, dann shuntet das Senkungsvolumen,
-            # bevor der enge Kern (Z_holes) folgt. Grenzfall Senkung -> 0
-            # reproduziert exakt die normale Durchgangsbohrung.
+            # Senkungssegment der Stufenbohrungen in SERIE: spaltseitige
+            # Mündungsmasse, dann das weite Rohr als thermoviskose
+            # LEITUNG (verteilte Reibung + isotherm→adiabatische
+            # Nachgiebigkeit), bevor der enge Kern (Z_holes) folgt.
+            # Grenzfall Senkung -> 0 reproduziert die normale Bohrung.
             S_cb = np.pi * self.r_bh**2
-            Z_wide = (self._hole_impedance(omega, self.r_bh, self.d_bh,
-                                           self.n_th, end_correction=False)
-                      + 1j * omega * RHO0 * (0.85 * self.r_bh)
-                      / (S_cb * self.n_th))
-            mats.append(self._abcd_series(Z_wide, omega))
-            mats.append(self._abcd_shunt(1j * omega * self.C_A_cb, omega))
+            mats.append(self._abcd_series(
+                1j * omega * RHO0 * (0.85 * self.r_bh)
+                / (S_cb * self.n_th), omega))
+            if _HAS_SCIPY:
+                g_cb, Zc_cb = self._narrow_duct_propagation(omega, self.r_bh)
+                gl = g_cb * self.d_bh
+                ch, sh = np.cosh(gl), np.sinh(gl)
+                # Leitung aus n_th parallelen Rohren: Z skaliert 1/n
+                mats.append(np.array([[ch, Zc_cb * sh / self.n_th],
+                                      [self.n_th * sh / Zc_cb, ch]]))
+            else:
+                Z_wide = self._hole_impedance(omega, self.r_bh, self.d_bh,
+                                              self.n_th,
+                                              end_correction=False)
+                mats.append(self._abcd_series(Z_wide, omega))
+                mats.append(self._abcd_shunt(1j * omega * self.C_A_cb,
+                                             omega))
         mats.append(self._abcd_series(Z_holes, omega))
         if outside_to_membrane:
             mats = mats[::-1]
@@ -1673,12 +1800,17 @@ class MicrophoneCapsule:
                               self._abcd_shunt(Y_c, omega),
                               self._abcd_series(Z_c_half, omega)]
                 else:
+                    # halbe Škvor-Zellen mit Frequenzkorrektur (laterale
+                    # Trägheit der Schichtluft, wie im Membranspalt)
+                    R_c_half = (0.5 * self.R_A_center
+                                * self._film_R_dynamic(omega, self.h_center)
+                                if self.h_center > 0 else 0.0)
                     center = [
-                        self._abcd_series(0.5 * self.R_A_center, omega),
+                        self._abcd_series(R_c_half, omega),
                         self._abcd_shunt(self._film_compliance_Y(
                             omega, self.h_center, self.S_bp)
                             if self.h_center > 0 else 0.0, omega),
-                        self._abcd_series(0.5 * self.R_A_center, omega),
+                        self._abcd_series(R_c_half, omega),
                     ]
                 rear += center + [
                     self._backplate_gap_abcd(omega, outside_to_membrane=True,
@@ -1729,10 +1861,13 @@ class MicrophoneCapsule:
         plate = self.t_rp > 0.0
         if self.h_sp > 0.0:
             Y_sp = self._film_compliance_Y(omega, self.h_sp, self.S_bp)
+            phi_sp = self._film_R_dynamic(omega, self.h_sp)
             if plate and self.n_rp > 0:
-                rear.append(self._abcd_series(self.R_A_sp_in, omega))
+                rear.append(self._abcd_series(self.R_A_sp_in * phi_sp,
+                                              omega))
                 rear.append(self._abcd_shunt(Y_sp, omega))
-                rear.append(self._abcd_series(self.R_A_sp_out, omega))
+                rear.append(self._abcd_series(self.R_A_sp_out * phi_sp,
+                                              omega))
             else:
                 # ohne (gelochte) Rückplatte wirkt der Spacer nur als
                 # zusätzliches Luftvolumen (axialer Durchtritt, kein
@@ -1748,10 +1883,13 @@ class MicrophoneCapsule:
                 return T_total, T_rear
             # Durchgangslöcher der Rückplatte: thermoviskoses Rohr über
             # die Plattendicke; münden sie direkt ins Schallfeld
-            # (K103-Fall), kommt die Strahlungsimpedanz hinzu.
+            # (K103-Fall), kommt die Strahlungsimpedanz hinzu. Die äußere
+            # Mündung öffnet in Freifeld/Baugruppe -> viskoser Mündungs-
+            # widerstand; die innere liegt im Spacer-Film (Škvor deckt ab).
             Z_rp = self._hole_impedance(omega, self.r_rp, self.t_rp,
                                         self.n_rp, end_correction=True,
-                                        radiates=self._plate_vents)
+                                        radiates=self._plate_vents,
+                                        visc_ends=1)
             rear.append(self._abcd_series(Z_rp, omega))
 
         # Gewebe hinter der Backplate/Rückplatte (überspannt die Fläche,
@@ -1783,10 +1921,12 @@ class MicrophoneCapsule:
             else:  # "end": Löcher in der hinteren Stirnfläche
                 rear.append(self._abcd_line(omega, self.l_cav, self.a_bp))
                 hole_len = self.t_cav_wall
-            # Einlasslöcher: thermoviskoses Rohr + Strahlung ins Freifeld
+            # Einlasslöcher: thermoviskoses Rohr + Strahlung ins Freifeld;
+            # beide Mündungen öffnen in große Volumina (Hohlraum/Freifeld)
+            # -> beidseitiger viskoser Mündungswiderstand (Sampson)
             Z_ch = self._hole_impedance(
                 omega, self.r_ch, hole_len, self.n_ch,
-                end_correction=True, radiates=True,
+                end_correction=True, radiates=True, visc_ends=2,
             )
             rear.append(self._abcd_series(Z_ch, omega))
         else:
@@ -2391,7 +2531,7 @@ if __name__ == "__main__":
         n_blind_holes=60, blind_hole_diameter=1.3e-3,
         blind_hole_depth=3.7e-3,
         fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
-        body_diameter=40e-3,
+        body_diameter=56e-3,
     )
     k67_pl = MicrophoneCapsule(**k67_kwargs)
     k67_st = MicrophoneCapsule(through_holes_stepped=True, **k67_kwargs)
@@ -2423,5 +2563,51 @@ if __name__ == "__main__":
     print(f"Stufenbohrung: Grenzfall ≡ normale Bohrung, K67-Stufengeometrie "
           f"|Z_th| um {100 * (1 - Zst / Zpl):.0f} % kleiner, Niere bleibt "
           f"(180° @1 kHz = {st_180:.1f} dB), 2D reziprok  OK")
+
+    # --------- Gegenprobe 12: vollständige Verlustmechanismen --------------
+    # a) Viskose Mündung (Sampson/Weissberg): der DC-Grenzfall zweier
+    #    Mündungen muss exakt 3·mu/r³ betragen.
+    om_lo = np.array([2.0 * np.pi * 2.0])
+    r12 = 0.4e-3
+    Z_no = MicrophoneCapsule._hole_impedance(om_lo, r12, 1e-3, 1)
+    Z_ve = MicrophoneCapsule._hole_impedance(om_lo, r12, 1e-3, 1,
+                                             visc_ends=2)
+    R_samp = 3.0 * MU_AIR / r12**3
+    assert abs((Z_ve - Z_no).real[0] - R_samp) / R_samp < 0.02, \
+        "viskose Mündung muss im DC-Grenzfall Sampson (3µ/r³) treffen"
+    if _HAS_SCIPY:
+        # b) Geschlossener thermoviskoser Stub gegen fein diskretisierte
+        #    Leiter (40 Segmente, gleiche Beläge): coth-Lösung korrekt.
+        om12 = 2.0 * np.pi * np.array([100.0, 1000.0, 10000.0])
+        r_s, L_s = 0.65e-3, 3.7e-3
+        Z_stub = capsule._closed_hole_stub(om12, r_s, L_s)
+        g_s, Zc_s = MicrophoneCapsule._narrow_duct_propagation(om12, r_s)
+        Zp, Yp = g_s * Zc_s, g_s / Zc_s
+        n_seg = 40
+        dl = L_s / n_seg
+        Z_lad = Zp * dl + 1.0 / (Yp * dl)     # letztes Segment (Ende zu)
+        for _ in range(n_seg - 1):
+            Z_lad = Zp * dl + 1.0 / (Yp * dl + 1.0 / Z_lad)
+        assert np.max(np.abs(Z_stub / Z_lad - 1.0)) < 0.02, \
+            "Stub-coth muss der diskretisierten Leiter entsprechen"
+        # c) LF-Nachgiebigkeit des Stubs ISOTHERM (V/P_atm), nicht
+        #    adiabatisch — das alte Lumped-Modell lag hier um gamma daneben.
+        om3 = np.array([2.0 * np.pi * 3.0])
+        V_s = np.pi * r_s**2 * L_s
+        C_lf = -1.0 / (om3[0] * capsule._closed_hole_stub(om3, r_s,
+                                                          L_s).imag[0])
+        assert 0.9 < C_lf / (V_s / P_ATM) < 1.1, \
+            "Stub-Nachgiebigkeit muss bei tiefen Frequenzen isotherm sein"
+    # d) Filmkorrektur: Φ(ω→0) = 1; bei 25 kHz/60 µm dominiert die
+    #    laterale Trägheit (Faktor ~4, Phase > 60°).
+    phi_lo = MicrophoneCapsule._film_R_dynamic(np.array([2.0 * np.pi]),
+                                               60e-6)[0]
+    assert abs(phi_lo - 1.0) < 1e-3
+    phi_hi = MicrophoneCapsule._film_R_dynamic(
+        np.array([2.0 * np.pi * 25000.0]), 60e-6)[0]
+    assert 3.0 < abs(phi_hi) < 5.0 and np.degrees(np.angle(phi_hi)) > 60.0
+    print(f"Verlustmechanismen: Sampson-Mündung = 3µ/r³ (DC), Stub ≡ "
+          f"diskrete Leiter (<2 %), LF-Nachgiebigkeit isotherm, "
+          f"Filmkorrektur Φ(0)=1 / |Φ(25 kHz)|={abs(phi_hi):.1f}  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
