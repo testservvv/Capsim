@@ -126,6 +126,19 @@ class MicrophoneCapsule:
             Anzahlen). Der Lochdurchmesser gilt weiterhin je Lochtyp.
             Die radiale Sitzverteilung wirkt im 2D-Feldmodell und (über
             die Porositätsprofile) in der Elektrostatik.
+        through_holes_stepped : bool
+            ``True``: STUFENBOHRUNG wie bei K67/K87 — jedes Durchgangs-
+            loch sitzt konzentrisch am GRUND einer Senkung mit Sackloch-
+            Geometrie (Durchmesser ``blind_hole_diameter``, Tiefe
+            ``blind_hole_depth``); nur die Restdicke
+            ``backplate_thickness − blind_hole_depth`` ist mit
+            ``through_hole_diameter`` eng durchbohrt. Zählweise:
+            ``n_through_holes`` = Anzahl der gestuften Bohrungen,
+            ``n_blind_holes`` = nur die REINEN (nicht durchbohrten)
+            Sacklöcher. Die Senkungen zählen als Sackvolumen, in der
+            Elektrostatik als Stirnöffnung (feldfreier Kern + Blindloch-
+            Ring) und im Spaltfilm als je EINE weite Senke. Erfordert
+            Sackloch-Ø > Durchgangsloch-Ø.
 
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
@@ -244,6 +257,7 @@ class MicrophoneCapsule:
         blind_hole_depth=None,
         blind_hole_pcd=None,
         blind_hole_rings=None,
+        through_holes_stepped=False,
         # --- Akustische Netzwerke & Rückseite -------------------------------
         rear_network_enabled=True,
         rear_spacer_height=0.0,
@@ -373,6 +387,26 @@ class MicrophoneCapsule:
         self.d_bh = float(blind_hole_depth)
         if self.n_bh > 0 and not (0 < self.d_bh < self.t_bp):
             raise ValueError("Blindlochtiefe muss zwischen 0 und Backplate-Dicke liegen.")
+
+        # Stufenbohrung (K67/K87): jedes Durchgangsloch sitzt konzentrisch
+        # am Grund einer Senkung mit Sackloch-Geometrie (r_bh, d_bh); nur
+        # die Restdicke t_bp − d_bh ist mit r_th eng durchbohrt.
+        # n_through_holes zählt die gestuften Bohrungen, n_blind_holes nur
+        # die reinen Sacklöcher.
+        self.stepped = bool(through_holes_stepped) and self.n_th > 0
+        if self.stepped:
+            if not (0 < self.d_bh < self.t_bp):
+                raise ValueError(
+                    "Stufenbohrung: die Senkungstiefe (= Blindlochtiefe) "
+                    "muss zwischen 0 und Backplate-Dicke liegen."
+                )
+            if self.r_bh <= self.r_th:
+                raise ValueError(
+                    "Stufenbohrung: die Senkung muss weiter sein als der "
+                    "Kern (Sackloch-Ø > Durchgangsloch-Ø)."
+                )
+        # wirksame Länge der engen Durchgangsbohrung
+        self.t_th_eff = self.t_bp - self.d_bh if self.stepped else self.t_bp
 
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
@@ -534,10 +568,17 @@ class MicrophoneCapsule:
         # Ohne PCD ergeben sich exakt die bisherigen konstanten Anteile.
         u_es = np.linspace(0.0, self._ub, 401)
         r_es = self.a_mem * np.sqrt(u_es)
-        p_th = (self.n_th * np.pi * self.r_th**2
-                * np.interp(r_es, r_c, self._fld_dens_th))
-        p_bh = (self.n_bh * np.pi * self.r_bh**2
-                * np.interp(r_es, r_c, self._fld_dens_bh))
+        dth_es = np.interp(r_es, r_c, self._fld_dens_th)
+        dbh_es = np.interp(r_es, r_c, self._fld_dens_bh)
+        # Feldfreier Anteil (Durchbruch) und Blindloch-Anteil (Feldweg
+        # g + Tiefe). Bei STUFENBOHRUNG zeigt die Stirnseite die WEITE
+        # Senkung: nur der enge Kern ist feldfrei, der Senkungs-RING
+        # wirkt wie ein Blindloch (gleiche Tiefe d_bh).
+        p_th = self.n_th * np.pi * self.r_th**2 * dth_es
+        p_bh = self.n_bh * np.pi * self.r_bh**2 * dbh_es
+        if self.stepped:
+            p_bh = p_bh + (self.n_th * np.pi
+                           * (self.r_bh**2 - self.r_th**2) * dth_es)
         tot = p_th + p_bh
         scale = np.where(tot > 0.95, 0.95 / np.maximum(tot, 1e-30), 1.0)
         self._es_u = u_es
@@ -575,6 +616,10 @@ class MicrophoneCapsule:
         # ------------------------------------------------------------------
         self.phi_th = self.n_th * np.pi * self.r_th**2 / self.S_bp
         self.phi_bh = self.n_bh * np.pi * self.r_bh**2 / self.S_bp
+        if self.stepped:
+            # Senkungsringe der Stufenbohrungen zählen zur Blind-Stirnfläche
+            self.phi_bh += (self.n_th * np.pi
+                            * (self.r_bh**2 - self.r_th**2) / self.S_bp)
         if self.phi_th + self.phi_bh >= 0.9:
             raise ValueError(
                 "Durchgangs- und Blindlöcher bedecken >= 90 % der "
@@ -677,13 +722,20 @@ class MicrophoneCapsule:
             # Widerstand wird daher mit ALLEN Bohrungen als Senken
             # gebildet (n_drain, q_drain). Ohne Blindlöcher fällt die
             # Formel auf das klassische Škvor-Ergebnis zurück.
-            q = (self.n_th * self.r_th**2
-                 + self.n_bh * self.r_bh**2) / self.a_bp**2
+            # Filmseitige Senkenöffnungen: bei STUFENBOHRUNG ist jede
+            # Öffnung die weite Senkung (der enge Kern liegt am Grund) —
+            # jede Stufenbohrung zählt als EINE Senke mit Radius r_bh.
+            if self.stepped:
+                q = (self.n_th + self.n_bh) * self.r_bh**2 / self.a_bp**2
+            else:
+                q = (self.n_th * self.r_th**2
+                     + self.n_bh * self.r_bh**2) / self.a_bp**2
             if not (0.0 < q < 1.0):
                 raise ValueError(
                     f"Lochflächenanteil q={q:.3f} der Bohrungen "
                     "muss in (0, 1) liegen."
                 )
+            self._q_drain = q
             self.R_A_gap = self._skvor_R(self.h_gap)          # nominal
             # wirksamer Widerstand der polarisierten (Front-)Seite mit
             # statisch verkleinertem Spalt
@@ -713,6 +765,14 @@ class MicrophoneCapsule:
         V_blind = self.n_bh * np.pi * self.r_bh**2 * self.d_bh
         self.C_A_blind = (V_blind / (RHO0 * C_AIR**2)
                           if self.n_bh > 0 else 0.0)
+        # Senkungsvolumina der Stufenbohrungen (ebenfalls adiabatisch);
+        # sie shunten wie Blindlöcher an der Membranseite des Spalts,
+        # während der enge Kern den Serien-Durchgang bildet.
+        if self.stepped:
+            V_cb = self.n_th * np.pi * self.r_bh**2 * self.d_bh
+            self.C_A_cb = V_cb / (RHO0 * C_AIR**2)
+        else:
+            self.C_A_cb = 0.0
 
         # ------------------------------------------------------------------
         # ZWISCHENSPALT DER K67-BAUFORM ("dual_diaphragm")
@@ -871,12 +931,13 @@ class MicrophoneCapsule:
         """Škvor-Squeeze-Film-Widerstand für die Spalthöhe ``h_film``.
 
         Alle Bohrungen (Durchgang + Blind) zählen als Senken; s. Kommentar
-        in :meth:`_derive_parameters`. Der Spalt der polarisierten Seite
-        ist durch die statische Durchbiegung kleiner -> größeres R (h³!).
+        in :meth:`_derive_parameters` (dort wird auch der Lochflächen-
+        anteil q bestimmt — bei Stufenbohrung mit den weiten Senkungs-
+        öffnungen). Der Spalt der polarisierten Seite ist durch die
+        statische Durchbiegung kleiner -> größeres R (h³!).
         """
         n_drain = self.n_th + self.n_bh
-        q = (self.n_th * self.r_th**2
-             + self.n_bh * self.r_bh**2) / self.a_bp**2
+        q = self._q_drain
         B_q = q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0
         return 12.0 * MU_AIR / (n_drain * np.pi * h_film**3) * B_q
 
@@ -1058,8 +1119,8 @@ class MicrophoneCapsule:
 
         return Z / count  # parallele Löcher
 
-    def _blind_hole_impedance(self, omega):
-        """Shunt-Impedanz der Blindlöcher (Sacklöcher) in der Backplate.
+    def _blind_hole_impedance(self, omega, count=None, C_vol=None):
+        """Shunt-Impedanz von Sacklochvolumina in der Backplate.
 
         Blindlöcher vergrößern das wirksame Luftvolumen unter der Membran
         und entlasten so den Squeeze-Film (weniger Dämpfung, klassischer
@@ -1069,15 +1130,43 @@ class MicrophoneCapsule:
         vollen Lochvolumens:
             Z_blind = Z_tube(r, d/2) + 1/(j*omega*C_blind)
         Einseitige Mündungskorrektur (nur membranseitige Öffnung).
+        Ohne ``count``/``C_vol`` die reinen Blindlöcher; mit Argumenten
+        auch für die SENKUNGEN der Stufenbohrungen nutzbar (gleiche
+        Geometrie r_bh/d_bh, eigene Anzahl und Nachgiebigkeit).
         """
+        if count is None:
+            count, C_vol = self.n_bh, self.C_A_blind
         omega = np.asarray(omega, dtype=float)
         Z_visc = self._hole_impedance(
-            omega, self.r_bh, 0.5 * self.d_bh, self.n_bh, end_correction=False
+            omega, self.r_bh, 0.5 * self.d_bh, count, end_correction=False
         )
         S = np.pi * self.r_bh**2
-        Z_end = 1j * omega * RHO0 * (0.85 * self.r_bh) / (S * self.n_bh)
-        Z_comp = 1.0 / (1j * omega * self.C_A_blind)
+        Z_end = 1j * omega * RHO0 * (0.85 * self.r_bh) / (S * count)
+        Z_comp = 1.0 / (1j * omega * C_vol)
         return Z_visc + Z_end + Z_comp
+
+    def _through_hole_impedance(self, omega, count, radiates=False):
+        """Serienimpedanz der Durchgangsbohrungen der Backplate.
+
+        Normale Bohrung: Zwikker–Kosten-Rohr über die volle Plattendicke
+        mit beidseitig angeflanschter Mündungskorrektur. STUFENBOHRUNG:
+        eng gebohrt ist nur die Restdicke t_bp − d_bh unter der Senkung;
+        die äußere Mündung ist angeflanscht (0.85·r), die innere mündet
+        in die weite Senkung — ihre Mündungsmasse trägt den Karal-Faktor
+        (1 − r_th/r_bh) der Querschnittsstufe. Das Senkungsvolumen selbst
+        shuntet als Sacklochvolumen an der Membranseite
+        (s. _blind_hole_impedance mit C_A_cb).
+        """
+        omega = np.asarray(omega, dtype=float)
+        if not self.stepped:
+            return self._hole_impedance(omega, self.r_th, self.t_bp, count,
+                                        end_correction=True,
+                                        radiates=radiates)
+        Z = self._hole_impedance(omega, self.r_th, self.t_th_eff, count,
+                                 end_correction=False, radiates=radiates)
+        S = np.pi * self.r_th**2
+        delta = 0.85 * self.r_th * (2.0 - self.r_th / self.r_bh)
+        return Z + 1j * omega * RHO0 * delta / (S * count)
 
     def _radiation_impedance_membrane(self, omega):
         """Strahlungsimpedanz der Membranvorderseite.
@@ -1398,11 +1487,24 @@ class MicrophoneCapsule:
         # Zell-Engstellenwiderstand R_cell — die Flansch-Mündungsmasse
         # 0.85·r wird deshalb nur EINSEITIG (Portseite) angesetzt; für
         # Blindlöcher (Öffnung nur zum Film) entfällt sie ganz.
-        Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_bp, 1,
+        # STUFENBOHRUNG: enges Rohr nur über die Restdicke, innere Mündung
+        # mit Karal-Stufenfaktor; die filmseitige Zelle sieht die WEITE
+        # Senkungsöffnung, deren Volumen zusätzlich (auf der Durchgangs-
+        # dichte) wie ein Blindloch shuntet.
+        S_th = np.pi * self.r_th**2
+        r_well_th = self.r_bh if self.stepped else self.r_th
+        Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
                                       end_correction=False)
-                 + 1j * omega * RHO0 * (0.85 * self.r_th)
-                 / (np.pi * self.r_th**2)
-                 + _cell_B(self.r_th) / (np.pi * K_f))
+                 + 1j * omega * RHO0 * (0.85 * self.r_th) / S_th
+                 + _cell_B(r_well_th) / (np.pi * K_f))
+        if self.stepped:
+            # weites Senkungssegment in Serie + Karal-Stufenmündung
+            # (die filmseitige Ausbreitung deckt die Zelle mit r_bh ab)
+            Z_th1 = (Z_th1
+                     + self._hole_impedance(omega, self.r_bh, self.d_bh, 1,
+                                            end_correction=False)
+                     + 1j * omega * RHO0 * 0.85 * self.r_th
+                     * (1.0 - self.r_th / self.r_bh) / S_th)
         g_tot = self.n_th / Z_th1                         # Gesamtleitwert (Nf,)
         if self.n_bh > 0:
             Z_v = self._hole_impedance(omega, self.r_bh, 0.5 * self.d_bh, 1,
@@ -1412,6 +1514,15 @@ class MicrophoneCapsule:
                                  + _cell_B(self.r_bh) / (np.pi * K_f))
         else:
             y_tot = np.zeros(Nf, dtype=complex)
+        if self.stepped:
+            # Senkungsvolumina der Stufenbohrungen (sitzen auf dens_th)
+            Z_v_cb = self._hole_impedance(omega, self.r_bh, 0.5 * self.d_bh,
+                                          1, end_correction=False)
+            Z_comp_cb = self.n_th / (1j * omega * self.C_A_cb)
+            y_cb = self.n_th / (Z_v_cb + Z_comp_cb
+                                + _cell_B(self.r_bh) / (np.pi * K_f))
+        else:
+            y_cb = np.zeros(Nf, dtype=complex)
 
         src_a = phi * A / Sphi                            # Membran treibt (U=1)
         T = np.empty((2, 2, Nf), dtype=complex)
@@ -1422,7 +1533,7 @@ class MicrophoneCapsule:
             ab[0, 1:] = -Gface[1:N]                       # Superdiagonale
             ab[2, :-1] = -Gface[1:N]                      # Subdiagonale
             g_h = g_tot[f] * dens_th                      # (N,) verteilt
-            y_bh = y_tot[f] * dens_bh
+            y_bh = y_tot[f] * dens_bh + y_cb[f] * dens_th
             Y = 1j * omega[f] * c_gap[f] + y_bh + g_h
             ab[1, :] = Gface[:N] + Gface[1:N + 1] + Y * A
             rhs = np.column_stack((src_a, g_h * A))       # (N, 2)
@@ -1482,12 +1593,22 @@ class MicrophoneCapsule:
         if self.n_th == 0:
             mats.append(self._abcd_shunt(Y_gap, omega))
             return reduce(self._mmul, mats)
-        Z_holes = self._hole_impedance(
-            omega, self.r_th, self.t_bp, self.n_th,
-            end_correction=True, radiates=holes_radiate,
-        )
+        Z_holes = self._through_hole_impedance(omega, self.n_th,
+                                               radiates=holes_radiate)
         mats.append(self._abcd_series(self._skvor_R(h_eff), omega))
         mats.append(self._abcd_shunt(Y_gap, omega))
+        if self.stepped:
+            # Senkungssegment der Stufenbohrungen in SERIE: weites Rohr
+            # mit spaltseitiger Mündung, dann shuntet das Senkungsvolumen,
+            # bevor der enge Kern (Z_holes) folgt. Grenzfall Senkung -> 0
+            # reproduziert exakt die normale Durchgangsbohrung.
+            S_cb = np.pi * self.r_bh**2
+            Z_wide = (self._hole_impedance(omega, self.r_bh, self.d_bh,
+                                           self.n_th, end_correction=False)
+                      + 1j * omega * RHO0 * (0.85 * self.r_bh)
+                      / (S_cb * self.n_th))
+            mats.append(self._abcd_series(Z_wide, omega))
+            mats.append(self._abcd_shunt(1j * omega * self.C_A_cb, omega))
         mats.append(self._abcd_series(Z_holes, omega))
         if outside_to_membrane:
             mats = mats[::-1]
@@ -1835,7 +1956,9 @@ class MicrophoneCapsule:
             f"Elektroden-Porosität:         {100 * (self.phi_th + self.phi_bh):9.1f} % "
             f"(Durchgang {100 * self.phi_th:.1f} %, Blind {100 * self.phi_bh:.1f} %)",
             f"Lochmuster Durchgang:         {self.n_th:6d} × ⌀{2e3 * self.r_th:.2f} mm "
-            f"({self._ring_note(self._th_rings)})",
+            f"({self._ring_note(self._th_rings)})"
+            + (f" — Stufenbohrung: Kern {self.t_th_eff * 1e3:.2f} mm unter "
+               f"⌀{2e3 * self.r_bh:.2f}-mm-Senkung" if self.stepped else ""),
             f"Lochmuster Blind:             {self.n_bh:6d} × ⌀{2e3 * self.r_bh:.2f} mm "
             f"({self._ring_note(self._bh_rings)})",
             f"Resonanz (Modell):            {self.f_res:9.1f} Hz",
@@ -1873,7 +1996,8 @@ class MicrophoneCapsule:
             # frequenzunabhängigen Anteil δ = C_int/C_mem des Flusses ab.
             # Unterhalb von f_δ (wo 1.5·k·d_ext = δ) dominiert das Leck
             # und die Richtwirkung geht in Richtung Kugel.
-            C_int = (2.0 * self.C_A_gap + 2.0 * self.C_A_blind
+            C_int = (2.0 * self.C_A_gap
+                     + 2.0 * (self.C_A_blind + self.C_A_cb)
                      + self.C_A_center)
             delta = C_int / self.C_A_mem
             f_floor = delta * C_AIR / (2.0 * np.pi * 1.5 * self.d_ext)
@@ -2236,5 +2360,63 @@ if __name__ == "__main__":
     print(f"Spacer/Rückplatte (K103): 0-Werte ≡ Bestand, dichte Platte -> "
           f"Kugel, K103-Konfiguration richtet (180°/0° @1 kHz = "
           f"{20 * np.log10(ratio_k103):.1f} dB)  OK")
+
+    # --------- Gegenprobe 11: Stufenbohrung (K67/K87) ----------------------
+    # a) Grenzfall verschwindende Senkung (Tiefe -> 0, Senkungs-Ø knapp
+    #    über Kern-Ø): muss die normale Durchgangsbohrung reproduzieren.
+    base11 = dict(architecture="single", backplate_diameter=20e-3,
+                  n_through_holes=24, through_hole_diameter=1.0e-3,
+                  n_blind_holes=0, rear_network_enabled=False)
+    plain11 = MicrophoneCapsule(**base11)
+    tiny11 = MicrophoneCapsule(through_holes_stepped=True,
+                               blind_hole_diameter=1.02e-3,
+                               blind_hole_depth=0.02e-3, **base11)
+    H_p = plain11.transfer_function(_fchk)[0]
+    H_t = tiny11.transfer_function(_fchk)[0]
+    assert np.max(np.abs(H_t / H_p - 1.0)) < 0.05, \
+        "verschwindende Senkung muss die normale Bohrung reproduzieren"
+    # b) K67-Geometrie (60 gestufte + 60 reine Sacklöcher): das enge Rohr
+    #    ist nur noch t_bp − Tiefe lang -> spürbar kleinere Durchgangs-
+    #    impedanz; Stirnporosität zählt die Senkungsringe; die Niere der
+    #    Doppelmembran-Bauform bleibt erhalten.
+    k67_kwargs = dict(
+        membrane_material="pet", membrane_resonance_hz=1150.0,
+        membrane_diameter=26e-3, membrane_thickness=6e-6,
+        membrane_tension=13.7, air_gap=60e-6, backplate_diameter=25e-3,
+        backplate_thickness=3e-3, bias_voltage=60.0,
+        architecture="dual_diaphragm", center_gap=50e-6,
+        n_through_holes=60, through_hole_diameter=1.2e-3,
+        n_blind_holes=60, blind_hole_diameter=1.8e-3,
+        blind_hole_depth=1.1e-3,
+        fabric_front_rayl=2500.0, fabric_rear_rayl=1500.0,
+        body_diameter=34e-3,
+    )
+    k67_pl = MicrophoneCapsule(**k67_kwargs)
+    k67_st = MicrophoneCapsule(through_holes_stepped=True, **k67_kwargs)
+    om1k = np.array([2.0 * np.pi * 1000.0])
+    Zst = abs(k67_st._through_hole_impedance(om1k, 60)[0])
+    Zpl = abs(k67_pl._through_hole_impedance(om1k, 60)[0])
+    assert Zst < 0.85 * Zpl, \
+        "Stufenbohrung muss die Durchgangsimpedanz senken (kürzeres Rohr)"
+    assert k67_st.phi_bh > k67_pl.phi_bh    # Senkungsringe in der Porosität
+    assert k67_st.C_A_cb > 0.0
+    H0 = k67_st.transfer_function(1000.0, angle_deg=0.0)[0]
+    H180 = k67_st.transfer_function(1000.0, angle_deg=180.0)[0]
+    st_180 = 20.0 * np.log10(abs(H180) / abs(H0))
+    assert st_180 < -12.0, \
+        f"K67 mit Stufenbohrung muss Niere bleiben (180° = {st_180:.1f} dB)"
+    # c) 2D-Feldmodell mit Stufenbohrung: reziprok und endlich
+    if _HAS_SCIPY:
+        st2d = MicrophoneCapsule(through_holes_stepped=True,
+                                 squeeze_model="2d", **k67_kwargs)
+        Tg2 = st2d._gap_field_2port(2.0 * np.pi
+                                    * np.logspace(1.5, 4.3, 12))
+        det2 = Tg2[0, 0] * Tg2[1, 1] - Tg2[0, 1] * Tg2[1, 0]
+        assert np.max(np.abs(det2 - 1.0)) < 1e-6
+        fr_st = st2d.frequency_response(20.0, 20000.0, n_points=40)
+        assert np.all(np.isfinite(fr_st["amplitude_db"]))
+    print(f"Stufenbohrung: Grenzfall ≡ normale Bohrung, K67-Stufengeometrie "
+          f"|Z_th| um {100 * (1 - Zst / Zpl):.0f} % kleiner, Niere bleibt "
+          f"(180° @1 kHz = {st_180:.1f} dB), 2D reziprok  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

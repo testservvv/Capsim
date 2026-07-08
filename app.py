@@ -117,6 +117,7 @@ DEFAULTS = {
     # 0.860/0.688/0.516/0.344/0.172 Zoll = 21.84/17.48/13.11/8.74/4.37 mm.
     "d_through_mm": 0.71,
     "th_rings": [[6, 21.84], [3, 17.48], [3, 8.74]],
+    "th_stepped": False,
     "d_blind_mm": 1.2,
     "blind_depth_mm": 3.0,
     "bh_rings": [[12, 21.84], [12, 17.48], [12, 13.11], [6, 8.74],
@@ -340,6 +341,7 @@ def build_capsule(p):
                           for n, d in p["bh_rings"]],
         blind_hole_diameter=p["d_blind_mm"] * 1e-3,
         blind_hole_depth=p["blind_depth_mm"] * 1e-3,
+        through_holes_stepped=p["th_stepped"],
         # Rückseite deaktiviert -> keine rückwärtige Baugruppe: die
         # Durchgangslöcher der Backplate münden (durch das rückwärtige
         # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
@@ -558,6 +560,15 @@ with st.sidebar:
                         key="p_d_through_mm",
                         help="Bohrungsdurchmesser (gilt für alle "
                              "Lochkreise dieses Typs).")
+        st.toggle("Stufenbohrung (konzentrisch im Sackloch)",
+                  key="p_th_stepped",
+                  help="K67/K87-Bauweise: jedes Durchgangsloch sitzt am "
+                       "GRUND einer Senkung mit Sackloch-Ø und Sackloch-"
+                       "Tiefe — nur die Restdicke der Platte ist eng "
+                       "durchbohrt. Zählweise: Durchgangslöcher = Anzahl "
+                       "der gestuften Bohrungen, Blindlöcher = nur die "
+                       "reinen (nicht durchbohrten) Sacklöcher. Erfordert "
+                       "Sackloch-Ø > Durchgangsloch-Ø.")
 
         st.markdown("Blindlöcher",
                     help="Sacklöcher auf der Membranseite: Dämpfungs- und "
