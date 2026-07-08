@@ -61,11 +61,16 @@ Bohrungen ⌀1,3 mm × 3,7 mm tief, jede zweite mit konzentrischem
 `through_holes_stepped` — enges Rohr nur über die Restdicke, Senkung
 als Sackvolumen, korrekte Stirnporosität, eine Škvor-Senke je Bohrung).
 Validierung gegen Herstellerdaten: Ruhekapazität C₀ = 50 pF (trifft
-den nachgemessenen Wert), Niere −18 dB @ 180°/1 kHz mit nur noch
-leichtem Gewebe (300/200 Rayl statt Ersatzdämpfung), flacher
-Frequenzgang 100 Hz–5 kHz; der rohe Kapselpeak (+7 dB @ 8,5 kHz) wird
-real durch Korb und Elektronik (nicht modelliert) auf die
-veröffentlichten ~+2..3 dB geglättet. Über „Projekt laden" importierbar.
+den nachgemessenen Wert), Niere −6 dB @ 90° (ideal) mit tiefster
+Rückdämpfung −24 dB @ 500 Hz und −20 dB @ 1 kHz — **ganz ohne Gewebe**,
+die Dämpfung liefert die Bohrgeometrie selbst. Der Beugungskörper ist
+mit 40 mm auf den wirksamen Streukörper des Mikrofonkopfes gesetzt
+(zwischen Kapsel 26 mm und U87-Körper 56 mm), was die Mitten-
+Rückdämpfung am besten trifft. Die 180°-Kerbe ist eine Resonanz des
+Phasenschieber-Netzwerks (nicht die externe Laufzeit-Viertelwelle bei
+~10 kHz). Der rohe Kapselpeak (+10 dB @ 8,6 kHz) wird real durch Korb
+und Elektronik (nicht modelliert) auf die veröffentlichten ~+2..3 dB
+geglättet. Über „Projekt laden" importierbar.
 
 `examples/debenham_stereo_condenser.json` — Braunmühl-Weber-Kapsel aus
 Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi

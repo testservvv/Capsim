@@ -2390,8 +2390,8 @@ if __name__ == "__main__":
         n_through_holes=60, through_hole_diameter=0.6e-3,
         n_blind_holes=60, blind_hole_diameter=1.3e-3,
         blind_hole_depth=3.7e-3,
-        fabric_front_rayl=300.0, fabric_rear_rayl=200.0,
-        body_diameter=34e-3,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+        body_diameter=40e-3,
     )
     k67_pl = MicrophoneCapsule(**k67_kwargs)
     k67_st = MicrophoneCapsule(through_holes_stepped=True, **k67_kwargs)
