@@ -60,17 +60,30 @@ Bohrungen ⌀1,3 mm × 3,7 mm tief, jede zweite mit konzentrischem
 0,6-mm-Durchbruch am Grund (GUI-Schalter „Stufenbohrung", Klasse
 `through_holes_stepped` — enges Rohr nur über die Restdicke, Senkung
 als Sackvolumen, korrekte Stirnporosität, eine Škvor-Senke je Bohrung).
-Validierung gegen Herstellerdaten: Ruhekapazität C₀ = 50 pF (trifft
-den nachgemessenen Wert), Niere −6…−7 dB @ 90° mit Rückdämpfung
-≈ −20 dB über 500 Hz–1 kHz — **ganz ohne Gewebe**, die Dämpfung
-liefert die Bohrgeometrie selbst. Der Beugungskörper steht auf dem
-**echten Korbmaß 56 mm**: mit den vollständigen Verlustmechanismen
-fällt sein Optimum von selbst auf das reale Maß (kein Fit-Parameter).
-Die 180°-Kerbe ist eine Resonanz des Phasenschieber-Netzwerks (nicht
-die externe Laufzeit-Viertelwelle bei ~10 kHz). Der rohe Kapselpeak
-(+8 dB @ 9 kHz) wird real durch Korb und Elektronik (nicht modelliert)
-auf die veröffentlichten ~+2..3 dB geglättet. Über „Projekt laden"
-importierbar.
+Das Lochbild wird als **120 Senkungen je Seite** eingegeben
+(`n_blind = 120`), davon **60 durchgebohrt** (`n_through = 60`,
+Stufenbohrung an) — genau wie die reale K67 (jede zweite Senkung mit
+0,6-mm-Durchbruch). Validierung: Ruhekapazität C₀ = 50 pF (trifft den
+nachgemessenen Wert), **echte Niere** −6 dB @ 90° mit der Nullstelle
+bei **180°** über 125 Hz–1 kHz. Der Beugungskörper steht auf dem echten
+Korbmaß 56 mm. Der rohe Kapselpeak (+7,5 dB @ 9 kHz) wird real durch
+Korb und Elektronik (nicht modelliert) auf die veröffentlichten
+~+2..3 dB geglättet. Über „Projekt laden" importierbar.
+
+### Nierenform der dünnen Doppelmembran-Scheibe
+
+Front- und Rückmembran der K67 sitzen auf den zwei Flächen einer nur
+~8 mm dünnen Scheibe. Für den Front-Rück-Gradienten (der die Niere
+erzeugt) ist die **geometrische axiale Laufzeit** dieser Scheibendicke
+maßgeblich, nicht der viel größere Umweg um das Kugel-Ersatzgehäuse der
+Beugungsrechnung. Würde man den rückwärtigen Einlass wie bei den
+Einzelmembran-Bauformen als Ring/Kalotte auf der Beugungskugel
+platzieren, zöge das die Nullstelle vor 180° und machte aus der Niere
+eine Superniere. Das Modell nutzt deshalb bei `dual_diaphragm` die
+Scheiben-Laufzeit für die Front-Rück-Phase und die Kugelbeugung nur
+noch für die gemeinsame HF-Bündelung/Druckstau — so bleibt die
+Nullstelle im Grundton-/Mittenbereich korrekt bei 180°, und erst zu
+hohen Frequenzen bündelt die Niere (wie real).
 
 ## Verlustmechanismen (vollständig erfasst)
 

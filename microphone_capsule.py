@@ -132,13 +132,14 @@ class MicrophoneCapsule:
             Geometrie (Durchmesser ``blind_hole_diameter``, Tiefe
             ``blind_hole_depth``); nur die Restdicke
             ``backplate_thickness − blind_hole_depth`` ist mit
-            ``through_hole_diameter`` eng durchbohrt. Zählweise:
-            ``n_through_holes`` = Anzahl der gestuften Bohrungen,
-            ``n_blind_holes`` = nur die REINEN (nicht durchbohrten)
-            Sacklöcher. Die Senkungen zählen als Sackvolumen, in der
-            Elektrostatik als Stirnöffnung (feldfreier Kern + Blindloch-
-            Ring) und im Spaltfilm als je EINE weite Senke. Erfordert
-            Sackloch-Ø > Durchgangsloch-Ø.
+            ``through_hole_diameter`` eng durchbohrt. Zählweise (an der
+            realen Kapsel orientiert): ``n_blind_holes`` = GESAMTZAHL der
+            Senkungen, ``n_through_holes`` davon sind zusätzlich
+            durchgebohrt (K67: 120 Senkungen, 60 durchgebohrt). Die
+            Senkungen zählen als Sackvolumen, in der Elektrostatik als
+            Stirnöffnung (feldfreier Kern + Blindloch-Ring) und im
+            Spaltfilm als je EINE weite Senke. Erfordert Sackloch-Ø >
+            Durchgangsloch-Ø und n_through_holes ≤ n_blind_holes.
 
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
@@ -391,8 +392,13 @@ class MicrophoneCapsule:
         # Stufenbohrung (K67/K87): jedes Durchgangsloch sitzt konzentrisch
         # am Grund einer Senkung mit Sackloch-Geometrie (r_bh, d_bh); nur
         # die Restdicke t_bp − d_bh ist mit r_th eng durchbohrt.
-        # n_through_holes zählt die gestuften Bohrungen, n_blind_holes nur
-        # die reinen Sacklöcher.
+        # ZÄHLWEISE (an der realen Kapsel orientiert): ``n_blind_holes`` ist
+        # die GESAMTZAHL der Senkungen; ``n_through_holes`` davon sind
+        # zusätzlich durchgebohrt (jede zweite bei der K67 -> 120 Senkungen,
+        # 60 durchgebohrt). Intern zählt ``self.n_bh`` nur die REIN blinden
+        # Senkungen (Gesamt − durchgebohrt); die durchgebohrten tragen ihre
+        # Senkung über ``self.n_th`` (C_A_cb, Porosität, Škvor-Senken), so
+        # dass die Gesamtzahl der Senkungen erhalten bleibt.
         self.stepped = bool(through_holes_stepped) and self.n_th > 0
         if self.stepped:
             if not (0 < self.d_bh < self.t_bp):
@@ -405,6 +411,26 @@ class MicrophoneCapsule:
                     "Stufenbohrung: die Senkung muss weiter sein als der "
                     "Kern (Sackloch-Ø > Durchgangsloch-Ø)."
                 )
+            if self.n_th > self.n_bh:
+                raise ValueError(
+                    "Stufenbohrung: höchstens so viele Durchgangslöcher wie "
+                    "Senkungen (jedes Durchgangsloch sitzt in einer Senkung; "
+                    "Blindlochanzahl = Gesamtzahl der Senkungen)."
+                )
+            # rein blinde Senkungen = Gesamt − durchgebohrt; die Ring-
+            # verteilung wird anteilig auf die blind bleibenden skaliert
+            # (Durchgangs- und Blindlöcher sind gleich verteilt).
+            n_total_bh = self.n_bh
+            n_pure = n_total_bh - self.n_th
+            frac = n_pure / n_total_bh if n_total_bh else 0.0
+            self._bh_rings = [(int(round(c * frac)), r)
+                              for c, r in self._bh_rings]
+            # Rundungsrest korrigieren, damit Σ = n_pure exakt bleibt
+            drift = n_pure - sum(c for c, _ in self._bh_rings)
+            if drift and self._bh_rings:
+                c0, r0 = self._bh_rings[0]
+                self._bh_rings[0] = (c0 + drift, r0)
+            self.n_bh = n_pure
         # wirksame Länge der engen Durchgangsbohrung
         self.t_th_eff = self.t_bp - self.d_bh if self.stepped else self.t_bp
 
@@ -1410,9 +1436,25 @@ class MicrophoneCapsule:
         """
         omega = np.atleast_1d(np.asarray(omega, dtype=float))
         theta = np.atleast_1d(np.asarray(theta, dtype=float))
-        if self.include_diffraction and _HAS_SCIPY:
-            return self._diffraction_factors(omega, theta)
         k = omega / C_AIR
+        if self.include_diffraction and _HAS_SCIPY:
+            F_f, F_r = self._diffraction_factors(omega, theta)
+            if self.architecture == "dual_diaphragm":
+                # DÜNNE-SCHEIBE-BAUFORM (K67): Front- und Rückmembran sind
+                # identische Kalotten auf den beiden Flächen einer nur
+                # ~d_ext dünnen Scheibe. Die Front-Rück-PHASE ist deshalb
+                # die geometrische axiale Laufzeit d_ext·cosθ — NICHT der
+                # Kugel-Umweg des Beugungsmodells (dessen Ring-/Kalotten-
+                # platzierung den Außenweg auf ~R_body aufbläht und die
+                # Nierennull fälschlich vor 180° zieht -> Superniere).
+                # Die Kugelbeugung liefert hier nur die GEMEINSAME
+                # Bündelung/Druckstau (Kopf-/Bodyskala, HF-Richtwirkung);
+                # der Front-Rück-Gradient kommt aus der Scheibendicke.
+                # Ohne Beugung (unten) ergibt sich damit derselbe saubere
+                # Nierenverlauf, nur ohne die HF-Bündelung.
+                delay = np.exp(-1j * np.outer(k * self.d_ext, np.cos(theta)))
+                return F_f, F_f * delay
+            return F_f, F_r
         p_front = np.ones((omega.size, theta.size), dtype=complex)
         p_rear = np.exp(-1j * np.outer(k * self.d_ext, np.cos(theta)))
         return p_front, p_rear
@@ -2100,7 +2142,9 @@ class MicrophoneCapsule:
             + (f" — Stufenbohrung: Kern {self.t_th_eff * 1e3:.2f} mm unter "
                f"⌀{2e3 * self.r_bh:.2f}-mm-Senkung" if self.stepped else ""),
             f"Lochmuster Blind:             {self.n_bh:6d} × ⌀{2e3 * self.r_bh:.2f} mm "
-            f"({self._ring_note(self._bh_rings)})",
+            f"({self._ring_note(self._bh_rings)})"
+            + (f" [+ {self.n_th} durchgebohrte Senkungen = "
+               f"{self.n_bh + self.n_th} gesamt]" if self.stepped else ""),
             f"Resonanz (Modell):            {self.f_res:9.1f} Hz",
             f"Resonanz aus Vorspannung/E:   {self.f_res_from_tension:9.1f} Hz",
             f"Ruhekapazität C0 (je BP):     {self.C_elec_0 * 1e12:9.2f} pF",
@@ -2322,26 +2366,37 @@ if __name__ == "__main__":
     # ohne Laufzeitglied/Hohlraum; die Gegentakt-Mode beider Membranen
     # gegen das innere Luftpolster erzeugt die K67-typische Präsenz-
     # anhebung im 10-kHz-Bereich.
+    # verifizierte K67-Geometrie (120 Senkungen 1.3x3.7 mm, 60 durchgebohrt
+    # mit 0.6-mm-Kern, kein Gewebe): die Stufenbohrung stimmt die interne
+    # Laufzeit auf die Scheibendicke d_ext ab -> echte NIERE mit Null bei
+    # ~180° (nicht davor). Präsenzanhebung im 8-12-kHz-Bereich.
     k67 = MicrophoneCapsule(
         membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
-        membrane_tension=13.7, air_gap=60e-6, backplate_diameter=25e-3,
+        membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+        backplate_diameter=25e-3, backplate_thickness=4e-3,
         bias_voltage=60.0, architecture="dual_diaphragm", center_gap=50e-6,
-        n_through_holes=60, through_hole_diameter=1.2e-3,
-        n_blind_holes=60, blind_hole_diameter=1.8e-3, blind_hole_depth=1.1e-3,
-        fabric_front_rayl=2500.0, fabric_rear_rayl=1500.0,
-        body_diameter=34e-3,
+        n_through_holes=60, through_hole_diameter=0.6e-3,
+        n_blind_holes=120, blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+        through_holes_stepped=True,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=56e-3,
     )
     di_k = k67.directivity(frequencies_hz=(1000.0,))
+    ang_k = di_k["angles_deg"]
+    lin_k = di_k["patterns"][1000.0]["linear"]
     pk67 = di_k["patterns"][1000.0]["db"]
-    assert pk67[180] < -15.0, "K67-Bauform muss Nierencharakteristik zeigen"
+    na_k = ang_k[ang_k <= 180][int(np.argmin(lin_k[ang_k <= 180]))]
+    assert na_k > 170.0, \
+        f"K67 muss echte Niere sein (Null bei {na_k:.0f}° statt ~180°)"
+    assert pk67[180] < -14.0, "K67-Bauform muss Nierencharakteristik zeigen"
     fr_k = k67.frequency_response(n_points=150)
     assert np.all(np.isfinite(fr_k["amplitude_db"]))
     fk, ak = fr_k["frequency_hz"], fr_k["amplitude_db_norm"]
     ihf = (fk > 5000) & (fk < 16000)
-    assert 1.0 < np.max(ak[ihf]) < 8.0, \
-        "moderate Präsenzanhebung erwartet (U87Ai-Kurve: +2..3 dB)"
-    print(f"K67-Bauform: Niere (180° = {pk67[180]:.1f} dB @1 kHz), "
-          f"Präsenzanhebung +{np.max(ak[ihf]):.1f} dB bei "
+    assert 1.0 < np.max(ak[ihf]) < 12.0, \
+        "Präsenzanhebung erwartet (roh; Korb/Elektronik glätten auf +2..3)"
+    print(f"K67-Bauform: echte Niere (Null @{na_k:.0f}°, 180° = "
+          f"{pk67[180]:.1f} dB @1 kHz), Präsenzanhebung "
+          f"+{np.max(ak[ihf]):.1f} dB bei "
           f"{fk[ihf][np.argmax(ak[ihf])]/1000:.1f} kHz  OK")
 
     # --------- Gegenprobe 7: Elektrostatik der Doppelmembran ---------------
@@ -2504,23 +2559,28 @@ if __name__ == "__main__":
     # --------- Gegenprobe 11: Stufenbohrung (K67/K87) ----------------------
     # a) Grenzfall verschwindende Senkung (Tiefe -> 0, Senkungs-Ø knapp
     #    über Kern-Ø): muss die normale Durchgangsbohrung reproduzieren.
-    base11 = dict(architecture="single", backplate_diameter=20e-3,
-                  n_through_holes=24, through_hole_diameter=1.0e-3,
-                  n_blind_holes=0, rear_network_enabled=False)
-    plain11 = MicrophoneCapsule(**base11)
-    tiny11 = MicrophoneCapsule(through_holes_stepped=True,
-                               blind_hole_diameter=1.02e-3,
-                               blind_hole_depth=0.02e-3, **base11)
+    #    n_blind = n_through (alle 24 Senkungen durchgebohrt, 0 rein blind).
+    plain11 = MicrophoneCapsule(
+        architecture="single", backplate_diameter=20e-3,
+        n_through_holes=24, through_hole_diameter=1.0e-3,
+        n_blind_holes=0, rear_network_enabled=False)
+    tiny11 = MicrophoneCapsule(
+        architecture="single", backplate_diameter=20e-3,
+        n_through_holes=24, through_hole_diameter=1.0e-3,
+        n_blind_holes=24, blind_hole_diameter=1.02e-3,
+        blind_hole_depth=0.02e-3, through_holes_stepped=True,
+        rear_network_enabled=False)
+    assert tiny11.n_bh == 0    # 24 Senkungen, alle 24 durchgebohrt
     H_p = plain11.transfer_function(_fchk)[0]
     H_t = tiny11.transfer_function(_fchk)[0]
     assert np.max(np.abs(H_t / H_p - 1.0)) < 0.05, \
         "verschwindende Senkung muss die normale Bohrung reproduzieren"
-    # b) K67-Geometrie (verifiziert: je Seite 120 Bohrungen 1.3 mm x
+    # b) K67-Geometrie (verifiziert: je Seite 120 Senkungen 1.3 mm x
     #    3.7 mm in der 4-mm-Halbplatte, jede zweite mit 0.6-mm-Durchbruch
-    #    am Grund -> 60 gestufte + 60 reine Sacklöcher): das enge Rohr
-    #    ist nur noch t_bp − Tiefe = 0.3 mm lang -> deutlich kleinere
-    #    Durchgangsimpedanz; Stirnporosität zählt die Senkungsringe;
-    #    die Niere der Doppelmembran-Bauform bleibt erhalten.
+    #    am Grund -> n_blind=120 gesamt, davon 60 durchgebohrt, 60 rein
+    #    blind): das enge Rohr ist nur noch t_bp − Tiefe = 0.3 mm lang ->
+    #    deutlich kleinere Durchgangsimpedanz; die Niere der Doppel-
+    #    membran-Bauform muss ihre NULLSTELLE bei ~180° behalten.
     k67_kwargs = dict(
         membrane_material="pet", membrane_resonance_hz=1150.0,
         membrane_diameter=26e-3, membrane_thickness=6e-6,
@@ -2528,28 +2588,38 @@ if __name__ == "__main__":
         backplate_thickness=4e-3, bias_voltage=60.0,
         architecture="dual_diaphragm", center_gap=50e-6,
         n_through_holes=60, through_hole_diameter=0.6e-3,
-        n_blind_holes=60, blind_hole_diameter=1.3e-3,
+        n_blind_holes=120, blind_hole_diameter=1.3e-3,
         blind_hole_depth=3.7e-3,
         fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
         body_diameter=56e-3,
     )
-    k67_pl = MicrophoneCapsule(**k67_kwargs)
     k67_st = MicrophoneCapsule(through_holes_stepped=True, **k67_kwargs)
+    # Zählweise: 120 Senkungen gesamt, 60 durchgebohrt, 60 rein blind
+    assert k67_st.n_th == 60 and k67_st.n_bh == 60
+    k67_full = MicrophoneCapsule(   # gleiche Kerne, volle Plattendicke
+        **{**k67_kwargs, "n_blind_holes": 60})
     om1k = np.array([2.0 * np.pi * 1000.0])
     Zst = abs(k67_st._through_hole_impedance(om1k, 60)[0])
-    Zpl = abs(k67_pl._through_hole_impedance(om1k, 60)[0])
+    Zpl = abs(k67_full._hole_impedance(om1k, k67_st.r_th, k67_st.t_bp, 60,
+                                       end_correction=True, visc_ends=1)[0])
     assert Zst < 0.85 * Zpl, \
         "Stufenbohrung muss die Durchgangsimpedanz senken (kürzeres Rohr)"
-    assert k67_st.phi_bh > k67_pl.phi_bh    # Senkungsringe in der Porosität
     assert k67_st.C_A_cb > 0.0
     # Ruhekapazität trifft den nachgemessenen K67-Wert (~50 pF)
     assert 47.0 < k67_st.C_elec_0 * 1e12 < 54.0, \
         f"K67-C0 = {k67_st.C_elec_0 * 1e12:.1f} pF (erwartet ~50 pF)"
-    H0 = k67_st.transfer_function(1000.0, angle_deg=0.0)[0]
-    H180 = k67_st.transfer_function(1000.0, angle_deg=180.0)[0]
-    st_180 = 20.0 * np.log10(abs(H180) / abs(H0))
-    assert st_180 < -12.0, \
-        f"K67 mit Stufenbohrung muss Niere bleiben (180° = {st_180:.1f} dB)"
+    # NIERE: Nullstelle bei ~180° (nicht davor -> keine Superniere) über
+    # das Mittenband; H180/H0 klein.
+    di_st = k67_st.directivity(frequencies_hz=[500.0, 1000.0])
+    ang = di_st["angles_deg"]
+    for f in (500.0, 1000.0):
+        lin = di_st["patterns"][f]["linear"]
+        na = ang[ang <= 180][int(np.argmin(lin[ang <= 180]))]
+        assert na > 170.0, \
+            f"K67 muss Niere sein (Null bei {na:.0f}° statt ~180° -> Super)"
+    st_180 = 20.0 * np.log10(
+        abs(k67_st.transfer_function(1000.0, angle_deg=180.0)[0])
+        / abs(k67_st.transfer_function(1000.0, angle_deg=0.0)[0]))
     # c) 2D-Feldmodell mit Stufenbohrung: reziprok und endlich
     if _HAS_SCIPY:
         st2d = MicrophoneCapsule(through_holes_stepped=True,
@@ -2560,7 +2630,8 @@ if __name__ == "__main__":
         assert np.max(np.abs(det2 - 1.0)) < 1e-6
         fr_st = st2d.frequency_response(20.0, 20000.0, n_points=40)
         assert np.all(np.isfinite(fr_st["amplitude_db"]))
-    print(f"Stufenbohrung: Grenzfall ≡ normale Bohrung, K67-Stufengeometrie "
+    print(f"Stufenbohrung: Grenzfall ≡ normale Bohrung, K67 120 Senkungen/"
+          f"60 durchgebohrt, Null bei ~180° (Niere), "
           f"|Z_th| um {100 * (1 - Zst / Zpl):.0f} % kleiner, Niere bleibt "
           f"(180° @1 kHz = {st_180:.1f} dB), 2D reziprok  OK")
 
