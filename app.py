@@ -55,7 +55,16 @@ st.markdown(
     """
     <style>
       .block-container { padding-top: 2.2rem; padding-bottom: 2rem; }
-      [data-testid="stToolbar"], #MainMenu, footer { visibility: hidden; }
+      /* Nur die Entwickler-/Deploy-Bedienelemente ausblenden — NICHT die
+         ganze Toolbar, denn darin sitzt der Pfeil zum Wiedereinblenden der
+         Seitenleiste. Ohne diese Ausnahme ließe sich die einmal einge-
+         klappte Seitenleiste auf Mobil/Cloud nicht mehr öffnen. */
+      [data-testid="stMainMenu"], [data-testid="stAppDeployButton"],
+      #MainMenu, footer { display: none !important; }
+      [data-testid="stExpandSidebarButton"],
+      [data-testid="stSidebarCollapseButton"] {
+        visibility: visible !important; opacity: 1 !important;
+      }
       h1 { font-weight: 650; letter-spacing: -0.02em; }
       [data-testid="stSidebar"] h2 { font-size: 1.0rem; }
       [data-testid="stMetric"] {
