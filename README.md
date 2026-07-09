@@ -88,14 +88,19 @@ Phasenschieber-Netzwerks trifft — und weil dieser Phasenhub winzig ist
 (bei 1 kHz nur ~9° über 8 mm), ist die Null überempfindlich gegen
 Fehlanpassung. Zwei Beiträge, die der reine axiale Membranabstand nicht
 enthält, sind entscheidend: (1) die **radiale Druckausbreitung im Spalt**
-verlängert die interne Laufzeit — nur das 2D-Feldmodell erfasst sie, das
-1D-Modell unterschätzt sie deutlich; (2) die **Klemmringe** verlängern
-die externe Distanz um `2·Dicke + Breite`. Erst wenn beide zusammenpassen
-(K67: intern ~14,5 mm, extern 8,2 mm axial + 6 mm Ringe = 14,2 mm), wird
-die Null tief (−27 dB statt ~−11 dB). Bei intern fehlangepassten Kapseln
-(Debenham: interne Helmholtz-Resonanz der wenigen Durchgangslöcher) hilft
-das nicht — dort begrenzt die Loch­resonanz die Nullentiefe unabhängig von
-`d_ext`.
+verlängert die interne Laufzeit — nur das **2D-Feldmodell** erfasst sie,
+das 1D-Modell unterschätzt sie deutlich (deshalb brauchen beide
+Doppelmembran-Beispiele `squeeze_2d = true`); (2) die **Klemmringe** vor
+den Membranen verlängern die externe Distanz um `2·Dicke +
+0,13·Außenradius` (Ringdicke axial + Rand-Beugung um den Kapselkörper).
+Erst wenn beide zusammenpassen (K67: intern ~14,5 mm, extern 8,2 mm
+axial + Ringe = 14,4 mm), wird die Null tief: **−28 dB** statt ~−11 dB
+ohne Ringe. Das gilt für **beide** Kapseln — auch die Debenham hat 2-mm-
+Klemmringe, und erst im 2D-Feldmodell mit diesen Ringen erreicht ihre
+Niere die im Artikel gemessene Tiefe (−20 dB @ 180°/1 kHz statt −7 dB im
+1D-Modell). Der aktive Membrandurchmesser (26 mm) und der Außen­durchmesser
+inklusive Klemmring (34 mm K67 / 32 mm Debenham) sind getrennte Größen:
+`membrane_diameter` bzw. `body_diameter` + `clamp_ring_width`.
 
 ### Nierenform der dünnen Doppelmembran-Scheibe
 

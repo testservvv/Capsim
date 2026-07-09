@@ -248,6 +248,12 @@ class MicrophoneCapsule:
     # nur numerische Gutartigkeit ohne Spaltdämpfung sicher).
     _Q_MEMBRANE_INTERNAL = 100.0
 
+    # Rand-Beugungsdetour der Doppelmembran-Scheibe (Anteil des Außen-
+    # radius, um den der rückwärtige Schall zur Frontmembran länger läuft;
+    # Niederfrequenz-Dipolstreuung bei ka < 1). An K67 (Außen-Ø 34 mm) und
+    # Debenham (32 mm) mit ihren gemessenen Maßen abgeglichen.
+    _RIM_DIFFRACTION = 0.13
+
 
     def __init__(
         self,
@@ -946,28 +952,29 @@ class MicrophoneCapsule:
         if self.architecture == "dual":
             # vordere Backplate verschiebt den vorderen Einlass nach vorn
             d += self.h_gap + self.t_bp
-        # EFFEKTIVE FRONT-RÜCK-DISTANZ mit KLEMMRINGEN (Doppelmembran)
+        # EFFEKTIVE FRONT-RÜCK-DISTANZ der Doppelmembran-Scheibe
         # ----------------------------------------------------------------
         # Für die Nierennull muss die EXTERNE Wegdifferenz d_ext die
-        # akustische Laufzeit des INTERNEN Phasenschiebernetzwerks treffen.
-        # Sitzen vor beiden Membranen Klemmringe (K67/K87), verlängern sie
-        # den Weg, den der rückwärtige Schall zur Frontmembran nimmt:
-        #   * die Membran ist um die Ringdicke VERSENKT und der Kapsel-
-        #     körper entsprechend dicker  -> 2× Ringdicke,
-        #   * der Schall läuft über die Ringbreite hinweg zur Membran-
-        #     öffnung           -> + Ringbreite.
-        # Das ist der DOMINANTE Zusatzweg der K67 (ohne Ringe zu kurz ->
-        # tiefe Null jenseits 180°, am Pol bleiben nur ~11 dB). Die reine
-        # Rand-Beugung der klemmringlosen Scheibe (Niederfrequenz-Dipol)
-        # ist dagegen klein (~0.1·a_mem) und wird hier NICHT pauschal
-        # addiert — bei intern fehlangepassten Kapseln (z. B. Debenham,
-        # dünne durchbohrte Mittelelektrode: interne Helmholtz-Resonanz
-        # der wenigen Durchgangslöcher) würde ein größeres d_ext die ohne-
-        # hin flache Null nur nach vorn ziehen. Nur die Doppelmembran-
-        # Bauform; Einzel-/Dual-Backplate behalten ihren Rückeinlass.
-        if self.architecture == "dual_diaphragm" \
-                and (self.clamp_ring_thickness > 0 or self.clamp_ring_width > 0):
-            d += 2.0 * self.clamp_ring_thickness + self.clamp_ring_width
+        # akustische Laufzeit des INTERNEN Phasenschiebernetzwerks treffen
+        # (das 2D-Feldmodell liefert diese Laufzeit inkl. der radialen
+        # Druckausbreitung im Spalt; die 1D-Näherung unterschätzt sie).
+        # Der reine axiale Membranabstand ist zu KURZ; hinzu kommen:
+        #   * KLEMMRINGE vor beiden Membranen (K67/K87): die Membran ist um
+        #     die Ringdicke versenkt und der Körper entsprechend dicker
+        #     -> 2× Ringdicke. Das ist der DOMINANTE Zusatzweg.
+        #   * RAND-BEUGUNG um den Kapselkörper: bei ka < 1 (Kapsel akustisch
+        #     kompakt) ein kleiner Bruchteil des AUSSENradius (Membranradius
+        #     + Ringbreite), Niederfrequenz-Dipolstreuung. Koeffizient
+        #     _RIM_DIFFRACTION an beiden validierten Kapseln (K67, Debenham)
+        #     mit ihren echten Maßen abgeglichen.
+        # Ohne diese Terme fällt die tiefe Null auf einen unerreichbaren
+        # Winkel jenseits 180° und am Pol bleibt nur eine flache Schulter.
+        # Nur Doppelmembran-Bauform; Einzel-/Dual-Backplate behalten ihren
+        # Rückeinlass.
+        if self.architecture == "dual_diaphragm":
+            a_outer = self.a_mem + self.clamp_ring_width
+            d += (2.0 * self.clamp_ring_thickness
+                  + self._RIM_DIFFRACTION * a_outer)
         self.d_ext = d
         # Auch der Rückeinlass der K67-Bauform (Rückmembran) wird in der
         # Beugungsrechnung als Ring bei seiner axialen Einbautiefe
@@ -2440,8 +2447,8 @@ if __name__ == "__main__":
         n_through_holes=60, through_hole_diameter=0.6e-3,
         n_blind_holes=120, blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
         through_holes_stepped=True,
-        clamp_ring_thickness=2e-3, clamp_ring_width=2e-3,
-        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=32e-3,
+        clamp_ring_thickness=2e-3, clamp_ring_width=4e-3,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=34e-3,
         squeeze_model="2d",   # K67 braucht die radiale Druckauflösung
     )
     di_k = k67.directivity(frequencies_hz=(1000.0,))
@@ -2481,15 +2488,18 @@ if __name__ == "__main__":
     def _p180(bias):
         c = MicrophoneCapsule(
             membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
-            membrane_tension=13.7, air_gap=60e-6, backplate_diameter=25e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
             bias_voltage=bias, architecture="dual_diaphragm", center_gap=50e-6,
-            n_through_holes=60, through_hole_diameter=1.2e-3,
-            n_blind_holes=60, blind_hole_diameter=1.8e-3,
-            blind_hole_depth=1.1e-3, fabric_front_rayl=2500.0,
-            fabric_rear_rayl=1500.0, body_diameter=34e-3)
+            n_through_holes=60, through_hole_diameter=0.6e-3,
+            n_blind_holes=120, blind_hole_diameter=1.3e-3,
+            blind_hole_depth=3.7e-3, through_holes_stepped=True,
+            clamp_ring_thickness=2e-3, clamp_ring_width=4e-3,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=34e-3, squeeze_model="2d")
         return c.directivity(frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
     d20, d60 = _p180(20.0), _p180(60.0)
-    assert d20 < -12.0 and d60 < -12.0, "Niere muss bei beiden Spannungen bestehen"
+    assert d20 < -18.0 and d60 < -18.0, "Niere muss bei beiden Spannungen bestehen"
     assert abs(d20 - d60) < 8.0, \
         "Bias-Wirkung aufs Richtdiagramm muss im realistischen Rahmen bleiben"
     print(f"Elektrostatik Doppelmembran: nur Front polarisiert (n_bp=1); "
@@ -2655,10 +2665,14 @@ if __name__ == "__main__":
         n_through_holes=60, through_hole_diameter=0.6e-3,
         n_blind_holes=120, blind_hole_diameter=1.3e-3,
         blind_hole_depth=3.7e-3,
+        clamp_ring_thickness=2e-3, clamp_ring_width=4e-3,
         fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
-        body_diameter=56e-3,
+        body_diameter=34e-3,
     )
-    k67_st = MicrophoneCapsule(through_holes_stepped=True, **k67_kwargs)
+    # K67 braucht das 2D-Feldmodell (radiale Druckausbreitung -> volle
+    # interne Laufzeit, passend zur Klemmring-verlängerten d_ext)
+    k67_st = MicrophoneCapsule(through_holes_stepped=True,
+                               squeeze_model="2d", **k67_kwargs)
     # Zählweise: 120 Senkungen gesamt, 60 durchgebohrt, 60 rein blind
     assert k67_st.n_th == 60 and k67_st.n_bh == 60
     k67_full = MicrophoneCapsule(   # gleiche Kerne, volle Plattendicke

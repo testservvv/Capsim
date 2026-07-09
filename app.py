@@ -131,9 +131,10 @@ DEFAULTS = {
     "blind_depth_mm": 3.0,
     "bh_rings": [[12, 21.84], [12, 17.48], [12, 13.11], [6, 8.74],
                  [4, 4.37]],
-    # Klemmringe vor den Membranen (nur K67-Bauform); 0 = keine
-    "clamp_ring_mm": 0.0,
-    "clamp_width_mm": 0.0,
+    # Klemmringe vor den Membranen (nur K67-Bauform); 0 = keine.
+    # Debenham: 2 mm dick, Aussen-Ø 32 mm -> 3 mm breit.
+    "clamp_ring_mm": 2.0,
+    "clamp_width_mm": 3.0,
     # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
     # Spacer + massive gelochte Rückplatte (K103-Bauform); 0 = nicht vorhanden
@@ -152,9 +153,9 @@ DEFAULTS = {
     "fabric_rear_rayl": 0.0,
     # Gehäuse & Beugung
     "diffraction_on": True,
-    "body_diameter_mm": 31.75,
-    # Spaltfilm-Modell
-    "squeeze_2d": False,
+    "body_diameter_mm": 32.0,
+    # Spaltfilm-Modell (Debenham braucht 2D für die tiefe Niere)
+    "squeeze_2d": True,
     # Simulation
     "n_points": 400,
     "normalize_1khz": True,
