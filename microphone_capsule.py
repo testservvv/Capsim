@@ -141,6 +141,20 @@ class MicrophoneCapsule:
             Spaltfilm als je EINE weite Senke. Erfordert Sackloch-Ø >
             Durchgangsloch-Ø und n_through_holes ≤ n_blind_holes.
 
+    Klemmringe (nur Doppelmembran-Bauform)
+        clamp_ring_thickness, clamp_ring_width : float
+            Vor jeder Membran montierter Klemmring [m] (Dicke = axiale
+            Auftragung, Breite = radiale Ausdehnung). Bei K67/K87 sitzen
+            solche Ringe vor beiden Membranen. Sie verlängern die WIRKSAME
+            Front-Rück-Wegdifferenz d_ext, weil der rückwärtige Schall zur
+            (versenkten) Frontmembran erst um den dickeren Körper und über
+            die Ringbreite laufen muss: ``d_ext += 2·Dicke + Breite``.
+            Das ist entscheidend für die Nierentiefe: bei der K67 stimmt
+            erst dadurch die externe Wegdifferenz auf die (längere)
+            interne Laufzeit des Phasenschiebers ab und die 180°-Null wird
+            tief (−25…−30 dB statt ~−11 dB ohne Ringe). ``0`` = keine
+            Ringe. Wirkt nur bei ``dual_diaphragm``.
+
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
             ``True``: hinter der Backplate sitzt die rückwärtige Baugruppe
@@ -234,6 +248,7 @@ class MicrophoneCapsule:
     # nur numerische Gutartigkeit ohne Spaltdämpfung sicher).
     _Q_MEMBRANE_INTERNAL = 100.0
 
+
     def __init__(
         self,
         # --- Membran -------------------------------------------------------
@@ -259,6 +274,9 @@ class MicrophoneCapsule:
         blind_hole_pcd=None,
         blind_hole_rings=None,
         through_holes_stepped=False,
+        # --- Klemmringe (Doppelmembran-Bauform) -----------------------------
+        clamp_ring_thickness=0.0,
+        clamp_ring_width=0.0,
         # --- Akustische Netzwerke & Rückseite -------------------------------
         rear_network_enabled=True,
         rear_spacer_height=0.0,
@@ -433,6 +451,17 @@ class MicrophoneCapsule:
             self.n_bh = n_pure
         # wirksame Länge der engen Durchgangsbohrung
         self.t_th_eff = self.t_bp - self.d_bh if self.stepped else self.t_bp
+
+        # Klemmringe vor den Membranen (Doppelmembran-Bauform): sie sitzen
+        # außen vor jeder Membran, versenken sie um ihre Dicke und machen
+        # den Kapselkörper dicker. Für die Front-Rück-Wegdifferenz zählt
+        # deshalb 2× die Ringdicke (Rücksprung + dickerer Körper); die
+        # Breite vergrößert den Außenradius für den Rand-Beugungsdetour.
+        self.clamp_ring_thickness = float(clamp_ring_thickness)
+        self.clamp_ring_width = float(clamp_ring_width)
+        if self.clamp_ring_thickness < 0 or self.clamp_ring_width < 0:
+            raise ValueError("Klemmring-Dicke und -Breite dürfen nicht "
+                             "negativ sein.")
 
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
@@ -917,6 +946,28 @@ class MicrophoneCapsule:
         if self.architecture == "dual":
             # vordere Backplate verschiebt den vorderen Einlass nach vorn
             d += self.h_gap + self.t_bp
+        # EFFEKTIVE FRONT-RÜCK-DISTANZ mit KLEMMRINGEN (Doppelmembran)
+        # ----------------------------------------------------------------
+        # Für die Nierennull muss die EXTERNE Wegdifferenz d_ext die
+        # akustische Laufzeit des INTERNEN Phasenschiebernetzwerks treffen.
+        # Sitzen vor beiden Membranen Klemmringe (K67/K87), verlängern sie
+        # den Weg, den der rückwärtige Schall zur Frontmembran nimmt:
+        #   * die Membran ist um die Ringdicke VERSENKT und der Kapsel-
+        #     körper entsprechend dicker  -> 2× Ringdicke,
+        #   * der Schall läuft über die Ringbreite hinweg zur Membran-
+        #     öffnung           -> + Ringbreite.
+        # Das ist der DOMINANTE Zusatzweg der K67 (ohne Ringe zu kurz ->
+        # tiefe Null jenseits 180°, am Pol bleiben nur ~11 dB). Die reine
+        # Rand-Beugung der klemmringlosen Scheibe (Niederfrequenz-Dipol)
+        # ist dagegen klein (~0.1·a_mem) und wird hier NICHT pauschal
+        # addiert — bei intern fehlangepassten Kapseln (z. B. Debenham,
+        # dünne durchbohrte Mittelelektrode: interne Helmholtz-Resonanz
+        # der wenigen Durchgangslöcher) würde ein größeres d_ext die ohne-
+        # hin flache Null nur nach vorn ziehen. Nur die Doppelmembran-
+        # Bauform; Einzel-/Dual-Backplate behalten ihren Rückeinlass.
+        if self.architecture == "dual_diaphragm" \
+                and (self.clamp_ring_thickness > 0 or self.clamp_ring_width > 0):
+            d += 2.0 * self.clamp_ring_thickness + self.clamp_ring_width
         self.d_ext = d
         # Auch der Rückeinlass der K67-Bauform (Rückmembran) wird in der
         # Beugungsrechnung als Ring bei seiner axialen Einbautiefe
@@ -2377,9 +2428,10 @@ if __name__ == "__main__":
     # gegen das innere Luftpolster erzeugt die K67-typische Präsenz-
     # anhebung im 10-kHz-Bereich.
     # verifizierte K67-Geometrie (120 Senkungen 1.3x3.7 mm, 60 durchgebohrt
-    # mit 0.6-mm-Kern, kein Gewebe): die Stufenbohrung stimmt die interne
-    # Laufzeit auf die Scheibendicke d_ext ab -> echte NIERE mit Null bei
-    # ~180° (nicht davor). Präsenzanhebung im 8-12-kHz-Bereich.
+    # mit 0.6-mm-Kern, kein Gewebe, Klemmringe 2x2 mm vor beiden Membranen):
+    # die Stufenbohrung erzeugt die lange interne Laufzeit, die Klemmringe
+    # verlängern die externe Wegdifferenz d_ext passend dazu -> echte,
+    # TIEFE Niere (Null bei ~180°, -25..-30 dB). Präsenz im 8-12-kHz-Band.
     k67 = MicrophoneCapsule(
         membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
         membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
@@ -2388,7 +2440,9 @@ if __name__ == "__main__":
         n_through_holes=60, through_hole_diameter=0.6e-3,
         n_blind_holes=120, blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
         through_holes_stepped=True,
-        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=56e-3,
+        clamp_ring_thickness=2e-3, clamp_ring_width=2e-3,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=32e-3,
+        squeeze_model="2d",   # K67 braucht die radiale Druckauflösung
     )
     di_k = k67.directivity(frequencies_hz=(1000.0,))
     ang_k = di_k["angles_deg"]
@@ -2397,7 +2451,8 @@ if __name__ == "__main__":
     na_k = ang_k[ang_k <= 180][int(np.argmin(lin_k[ang_k <= 180]))]
     assert na_k > 170.0, \
         f"K67 muss echte Niere sein (Null bei {na_k:.0f}° statt ~180°)"
-    assert pk67[180] < -14.0, "K67-Bauform muss Nierencharakteristik zeigen"
+    assert pk67[180] < -22.0, \
+        f"K67 mit Klemmringen muss tiefe Niere zeigen ({pk67[180]:.1f} dB)"
     fr_k = k67.frequency_response(n_points=150)
     assert np.all(np.isfinite(fr_k["amplitude_db"]))
     fk, ak = fr_k["frequency_hz"], fr_k["amplitude_db_norm"]

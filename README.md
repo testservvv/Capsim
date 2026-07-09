@@ -69,13 +69,33 @@ Das Lochbild wird als **120 Sacklöcher je Seite** eingegeben
 (`n_through = 60`, Stufenbohrung an) — genau wie die reale K67 (jedes
 zweite Sackloch mit 0,6-mm-Durchbruch). Diese Zählweise gilt **nur bei
 aktiver Stufenbohrung**; sonst bleiben beide Lochtypen unabhängig.
-Gerechnet wird mit dem **2D-Feldmodell** (`squeeze_2d = true`, s. o.)
-und dem vermessenen Kapselkopf-Durchmesser 32 mm als Beugungskörper.
-Validierung: Ruhekapazität C₀ = 50 pF (trifft den nachgemessenen
-Wert), **echte Niere** mit Nullstelle bei **180°** von 125 Hz bis
-4 kHz, glatter Präsenzpeak +6 dB @ 11,5 kHz (roh; Korb und Elektronik
-— nicht modelliert — glätten auf die veröffentlichten ~+2..3 dB).
+Vor beiden Membranen sitzen **Klemmringe** (je 2 mm dick, 2 mm breit,
+Parameter `clamp_ring_thickness`/`clamp_ring_width`) — sie sind für die
+Nierentiefe entscheidend (s. u.). Gerechnet wird mit dem **2D-Feldmodell**
+(`squeeze_2d = true`) und dem vermessenen Kapselkopf-Durchmesser 32 mm
+als Beugungskörper. Validierung: Ruhekapazität C₀ = 50 pF (trifft den
+nachgemessenen Wert), **echte tiefe Niere** −6 dB @ 90° / **−27 dB @
+180°** mit Nullstelle bei 180° von 125 Hz bis 4 kHz, glatter
+Präsenzpeak +3,5 dB @ 11,6 kHz (roh; Korb und Elektronik — nicht
+modelliert — glätten auf die veröffentlichten ~+2..3 dB).
 Über „Projekt laden" importierbar.
+
+### Nierentiefe: interne Laufzeit ↔ Front-Rück-Distanz
+
+Die Tiefe der 180°-Nullstelle hängt daran, wie exakt die **externe**
+Front-Rück-Wegdifferenz `d_ext` die **interne** akustische Laufzeit des
+Phasenschieber-Netzwerks trifft — und weil dieser Phasenhub winzig ist
+(bei 1 kHz nur ~9° über 8 mm), ist die Null überempfindlich gegen
+Fehlanpassung. Zwei Beiträge, die der reine axiale Membranabstand nicht
+enthält, sind entscheidend: (1) die **radiale Druckausbreitung im Spalt**
+verlängert die interne Laufzeit — nur das 2D-Feldmodell erfasst sie, das
+1D-Modell unterschätzt sie deutlich; (2) die **Klemmringe** verlängern
+die externe Distanz um `2·Dicke + Breite`. Erst wenn beide zusammenpassen
+(K67: intern ~14,5 mm, extern 8,2 mm axial + 6 mm Ringe = 14,2 mm), wird
+die Null tief (−27 dB statt ~−11 dB). Bei intern fehlangepassten Kapseln
+(Debenham: interne Helmholtz-Resonanz der wenigen Durchgangslöcher) hilft
+das nicht — dort begrenzt die Loch­resonanz die Nullentiefe unabhängig von
+`d_ext`.
 
 ### Nierenform der dünnen Doppelmembran-Scheibe
 

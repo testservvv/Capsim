@@ -131,6 +131,9 @@ DEFAULTS = {
     "blind_depth_mm": 3.0,
     "bh_rings": [[12, 21.84], [12, 17.48], [12, 13.11], [6, 8.74],
                  [4, 4.37]],
+    # Klemmringe vor den Membranen (nur K67-Bauform); 0 = keine
+    "clamp_ring_mm": 0.0,
+    "clamp_width_mm": 0.0,
     # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
     # Spacer + massive gelochte Rückplatte (K103-Bauform); 0 = nicht vorhanden
@@ -351,6 +354,8 @@ def build_capsule(p):
         blind_hole_diameter=p["d_blind_mm"] * 1e-3,
         blind_hole_depth=p["blind_depth_mm"] * 1e-3,
         through_holes_stepped=p["th_stepped"],
+        clamp_ring_thickness=p["clamp_ring_mm"] * 1e-3,
+        clamp_ring_width=p["clamp_width_mm"] * 1e-3,
         # Rückseite deaktiviert -> keine rückwärtige Baugruppe: die
         # Durchgangslöcher der Backplate münden (durch das rückwärtige
         # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
@@ -596,6 +601,23 @@ with st.sidebar:
             st.session_state["p_blind_depth_mm"], _bd_max)
         st.number_input("Blindlöcher — Tiefe [mm]", 0.05, _bd_max, step=0.05,
                         key="p_blind_depth_mm")
+
+        # Klemmringe vor den Membranen — nur bei K67-Bauform relevant
+        if st.session_state["p_architecture"] == K67_LABEL:
+            st.markdown("**Klemmringe (vor den Membranen)**",
+                        help="Ringe vor beiden Membranen (K67/K87). Sie "
+                             "versenken die Membran und machen den Körper "
+                             "dicker → der rückwärtige Schall läuft weiter "
+                             "zur Frontmembran. Verlängert die wirksame "
+                             "Front-Rück-Distanz um 2×Dicke + Breite und "
+                             "vertieft dadurch die Niere entscheidend "
+                             "(−25…−30 dB statt ~−11 dB). 0 = keine Ringe.")
+            st.number_input("Klemmring — Dicke je Seite [mm]", 0.0, 10.0,
+                            step=0.5, key="p_clamp_ring_mm",
+                            help="Axiale Auftragung vor jeder Membran.")
+            st.number_input("Klemmring — Breite [mm]", 0.0, 10.0, step=0.5,
+                            key="p_clamp_width_mm",
+                            help="Radiale Ausdehnung des Rings.")
 
     # ---------------- Rückseite / Laufzeitglied -------------------------
     _is_k67 = st.session_state["p_architecture"] == K67_LABEL
