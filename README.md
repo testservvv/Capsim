@@ -29,11 +29,15 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   Einzel-Backplate-Architekturen die Lochkreis-Radien (PCD) — je Lochtyp
   auch MEHRERE Lochkreise (in der GUI per ➕-Button, in der Klasse über
   `through_hole_rings`/`blind_hole_rings`), um reale Bohrbilder
-  nachzubilden. Bei der
-  spiegelsymmetrischen Doppelmembran-Bauform kürzt sich die radiale
-  Anordnung heraus — das Feldmodell zeigt dort die zugrunde liegende
-  Acht; die im 1D-Modell entstehende Niere hängt an dessen Leiter-
-  Topologie. Reziprok und passiv (im Test geprüft). Braucht SciPy.
+  nachzubilden. Für die Doppelmembran-Bauform (K67) ist das Feldmodell
+  die EMPFOHLENE Berechnung: Oberhalb ~8 kHz ist die Wellenlänge kleiner
+  als die Platte — das interne Luftpolster ist dann kein Lumped-Element
+  mehr, und das 1D-Kettenmodell erzeugt eine unphysikalisch scharfe
+  Absorber-Kerbe (Rückmembran gegen inneres Polster bei
+  f ≈ f_res/√δ); das Feldmodell löst den radialen Druckverlauf auf und
+  liefert den glatten Präsenzpeak der echten Kapsel — bei gleicher
+  Niere (Null bei 180°). Reziprok und passiv (im Test geprüft).
+  Braucht SciPy.
 
 ## Installation & Start
 
@@ -60,15 +64,18 @@ Bohrungen ⌀1,3 mm × 3,7 mm tief, jede zweite mit konzentrischem
 0,6-mm-Durchbruch am Grund (GUI-Schalter „Stufenbohrung", Klasse
 `through_holes_stepped` — enges Rohr nur über die Restdicke, Senkung
 als Sackvolumen, korrekte Stirnporosität, eine Škvor-Senke je Bohrung).
-Das Lochbild wird als **120 Senkungen je Seite** eingegeben
-(`n_blind = 120`), davon **60 durchgebohrt** (`n_through = 60`,
-Stufenbohrung an) — genau wie die reale K67 (jede zweite Senkung mit
-0,6-mm-Durchbruch). Validierung: Ruhekapazität C₀ = 50 pF (trifft den
-nachgemessenen Wert), **echte Niere** −6 dB @ 90° mit der Nullstelle
-bei **180°** über 125 Hz–1 kHz. Der Beugungskörper steht auf dem echten
-Korbmaß 56 mm. Der rohe Kapselpeak (+7,5 dB @ 9 kHz) wird real durch
-Korb und Elektronik (nicht modelliert) auf die veröffentlichten
-~+2..3 dB geglättet. Über „Projekt laden" importierbar.
+Das Lochbild wird als **120 Sacklöcher je Seite** eingegeben
+(`n_blind = 120` = Gesamtzahl), davon **60 durchgebohrt**
+(`n_through = 60`, Stufenbohrung an) — genau wie die reale K67 (jedes
+zweite Sackloch mit 0,6-mm-Durchbruch). Diese Zählweise gilt **nur bei
+aktiver Stufenbohrung**; sonst bleiben beide Lochtypen unabhängig.
+Gerechnet wird mit dem **2D-Feldmodell** (`squeeze_2d = true`, s. o.)
+und dem vermessenen Kapselkopf-Durchmesser 32 mm als Beugungskörper.
+Validierung: Ruhekapazität C₀ = 50 pF (trifft den nachgemessenen
+Wert), **echte Niere** mit Nullstelle bei **180°** von 125 Hz bis
+4 kHz, glatter Präsenzpeak +6 dB @ 11,5 kHz (roh; Korb und Elektronik
+— nicht modelliert — glätten auf die veröffentlichten ~+2..3 dB).
+Über „Projekt laden" importierbar.
 
 ### Nierenform der dünnen Doppelmembran-Scheibe
 

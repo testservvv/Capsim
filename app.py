@@ -572,12 +572,16 @@ with st.sidebar:
         st.toggle("Stufenbohrung (konzentrisch im Sackloch)",
                   key="p_th_stepped",
                   help="K67/K87-Bauweise: jedes Durchgangsloch sitzt am "
-                       "GRUND einer Senkung mit Sackloch-Ø und Sackloch-"
+                       "GRUND eines Sacklochs mit Sackloch-Ø und Sackloch-"
                        "Tiefe — nur die Restdicke der Platte ist eng "
-                       "durchbohrt. Zählweise: Durchgangslöcher = Anzahl "
-                       "der gestuften Bohrungen, Blindlöcher = nur die "
-                       "reinen (nicht durchbohrten) Sacklöcher. Erfordert "
-                       "Sackloch-Ø > Durchgangsloch-Ø.")
+                       "durchbohrt. Zählweise NUR bei aktivem Schalter: "
+                       "Blindlöcher = GESAMTZAHL aller Sacklöcher, "
+                       "Durchgangslöcher = wie viele davon zusätzlich "
+                       "durchgebohrt sind (K67: 120 Sacklöcher, davon 60 "
+                       "durchgebohrt). Bei ausgeschaltetem Schalter bleiben "
+                       "beide Lochtypen unabhängig wie bisher. Erfordert "
+                       "Sackloch-Ø > Durchgangsloch-Ø und Durchgangs- ≤ "
+                       "Blindlochzahl.")
 
         st.markdown("Blindlöcher",
                     help="Sacklöcher auf der Membranseite: Dämpfungs- und "

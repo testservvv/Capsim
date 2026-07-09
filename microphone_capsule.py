@@ -1742,9 +1742,10 @@ class MicrophoneCapsule:
 
         Y_gap = self._film_compliance_Y(omega, h_eff, self.S_bp)
         mats = []  # Reihenfolge: Membranseite -> Außenseite
-        if self.n_bh > 0:
-            mats.append(self._abcd_shunt(1.0 / self._blind_hole_impedance(omega), omega))
         if self.n_th == 0:
+            if self.n_bh > 0:
+                mats.append(self._abcd_shunt(
+                    1.0 / self._blind_hole_impedance(omega), omega))
             mats.append(self._abcd_shunt(Y_gap, omega))
             return reduce(self._mmul, mats)
         Z_holes = self._through_hole_impedance(omega, self.n_th,
@@ -1753,7 +1754,16 @@ class MicrophoneCapsule:
         mats.append(self._abcd_series(
             self._skvor_R(h_eff) * self._film_R_dynamic(omega, h_eff),
             omega))
+        # ALLE Senken liegen HINTER dem Filmwiderstand: Škvors Formel
+        # beschreibt die laterale Strömung von der Membranfläche ZU den
+        # Senken — auch die Blindloch-Stubs werden erst durch den Film
+        # erreicht. (Sie vor R_gap zu shunten, ließe die Rückmembran-
+        # Polstermode der Doppelmembran-Bauform ungedämpft und erzeugte
+        # eine unphysikalisch scharfe Absorber-Kerbe im Frequenzgang.)
         mats.append(self._abcd_shunt(Y_gap, omega))
+        if self.n_bh > 0:
+            mats.append(self._abcd_shunt(
+                1.0 / self._blind_hole_impedance(omega), omega))
         if self.stepped:
             # Senkungssegment der Stufenbohrungen in SERIE: spaltseitige
             # Mündungsmasse, dann das weite Rohr als thermoviskose
