@@ -145,12 +145,17 @@ class MicrophoneCapsule:
         clamp_ring_thickness, clamp_ring_width : float
             Vor jeder Membran montierter Klemmring [m] (Dicke = axiale
             Auftragung, Breite = radiale Ausdehnung). Bei K67/K87 sitzen
-            solche Ringe vor beiden Membranen. Sie verlängern die WIRKSAME
-            Front-Rück-Wegdifferenz d_ext, weil der rückwärtige Schall zur
-            (versenkten) Frontmembran erst um den dickeren Körper und über
-            die Ringbreite laufen muss: ``d_ext += 2·Dicke + Breite``.
-            Das ist entscheidend für die Nierentiefe: bei der K67 stimmt
-            erst dadurch die externe Wegdifferenz auf die (längere)
+            solche Ringe vor beiden Membranen und vergrößern den
+            AUSSENradius der Kapsel. Für die WIRKSAME Front-Rück-Distanz
+            d_ext zählt allein dieser Außenradius: der rückwärtige Schall
+            umläuft den kompakten Kapselkörper (Randbeugung, ka < 1), und
+            der Detour skaliert mit ``a_mem + clamp_ring_width`` —
+            ``d_ext += _RIM_DIFFRACTION · (a_mem + Breite)`` (ein einziger
+            empirischer Koeffizient, s. ``_RIM_DIFFRACTION``). Die axiale
+            ``clamp_ring_thickness`` geht dabei NICHT separat ein; sie ist
+            als Geometrieangabe erhalten, wirkt aber nicht mehr direkt auf
+            d_ext. Das ist entscheidend für die Nierentiefe: bei der K67
+            stimmt erst dadurch die externe Wegdifferenz auf die (längere)
             interne Laufzeit des Phasenschiebers ab und die 180°-Null wird
             tief (−25…−30 dB statt ~−11 dB ohne Ringe). ``0`` = keine
             Ringe. Wirkt nur bei ``dual_diaphragm``.
@@ -248,11 +253,22 @@ class MicrophoneCapsule:
     # nur numerische Gutartigkeit ohne Spaltdämpfung sicher).
     _Q_MEMBRANE_INTERNAL = 100.0
 
-    # Rand-Beugungsdetour der Doppelmembran-Scheibe (Anteil des Außen-
-    # radius, um den der rückwärtige Schall zur Frontmembran länger läuft;
-    # Niederfrequenz-Dipolstreuung bei ka < 1). An K67 (Außen-Ø 34 mm) und
-    # Debenham (32 mm) mit ihren gemessenen Maßen abgeglichen.
-    _RIM_DIFFRACTION = 0.13
+    # Rand-Beugungsdetour der Doppelmembran-Scheibe: der Anteil des AUSSEN-
+    # radius, um den der rückwärtige Schall zur (zentralen) Frontmembran
+    # länger läuft (Niederfrequenz-Dipolstreuung, ka < 1). Der Koeffizient
+    # ist an K67 (Außen-Ø 34 mm) und Debenham (32 mm) mit ihren gemessenen
+    # Maßen kalibriert — beide liefern denselben Wert auf < 0.3 % genau:
+    #     d_eff = axialer Membranabstand + _RIM · Außenradius.
+    # Die SKALIERUNG (∝ Außenradius) ist physikalisch fundiert und mit einem
+    # eigenen axialsymmetrischen Diffraktionslöser (an der Kugel exakt gegen
+    # den bekannten 3/2-Faktor verifiziert) bestätigt; der genaue Zahlenwert
+    # ist es nicht: glatte Ersatzkörper (Kugel/Ellipsoid) überschätzen ihn
+    # ~2×, das Zentrum einer flachen Scheibe unterschätzt ihn ~2×, weil die
+    # ausgedehnte Membran über die flächenveränderliche Beugung MITTELT
+    # (Zentrum abgeschattet, Rand verstärkt). Ein geschlossener First-
+    # Principles-Wert bräuchte einen regularisierten Randelemente-Löser für
+    # die exakte (versenkte Membran, berandete flache Scheibe) Geometrie.
+    _RIM_DIFFRACTION = 0.386
 
 
     def __init__(
@@ -461,8 +477,9 @@ class MicrophoneCapsule:
         # Klemmringe vor den Membranen (Doppelmembran-Bauform): sie sitzen
         # außen vor jeder Membran, versenken sie um ihre Dicke und machen
         # den Kapselkörper dicker. Für die Front-Rück-Wegdifferenz zählt
-        # deshalb 2× die Ringdicke (Rücksprung + dickerer Körper); die
-        # Breite vergrößert den Außenradius für den Rand-Beugungsdetour.
+        # allein der dadurch vergrößerte AUSSENradius (a_mem + Breite) über
+        # den Rand-Beugungsdetour; die axiale Dicke geht nicht separat ein
+        # (s. _RIM_DIFFRACTION), bleibt aber als Geometrieangabe erhalten.
         self.clamp_ring_thickness = float(clamp_ring_thickness)
         self.clamp_ring_width = float(clamp_ring_width)
         if self.clamp_ring_thickness < 0 or self.clamp_ring_width < 0:
@@ -958,23 +975,23 @@ class MicrophoneCapsule:
         # akustische Laufzeit des INTERNEN Phasenschiebernetzwerks treffen
         # (das 2D-Feldmodell liefert diese Laufzeit inkl. der radialen
         # Druckausbreitung im Spalt; die 1D-Näherung unterschätzt sie).
-        # Der reine axiale Membranabstand ist zu KURZ; hinzu kommen:
-        #   * KLEMMRINGE vor beiden Membranen (K67/K87): die Membran ist um
-        #     die Ringdicke versenkt und der Körper entsprechend dicker
-        #     -> 2× Ringdicke. Das ist der DOMINANTE Zusatzweg.
-        #   * RAND-BEUGUNG um den Kapselkörper: bei ka < 1 (Kapsel akustisch
-        #     kompakt) ein kleiner Bruchteil des AUSSENradius (Membranradius
-        #     + Ringbreite), Niederfrequenz-Dipolstreuung. Koeffizient
-        #     _RIM_DIFFRACTION an beiden validierten Kapseln (K67, Debenham)
-        #     mit ihren echten Maßen abgeglichen.
-        # Ohne diese Terme fällt die tiefe Null auf einen unerreichbaren
-        # Winkel jenseits 180° und am Pol bleibt nur eine flache Schulter.
-        # Nur Doppelmembran-Bauform; Einzel-/Dual-Backplate behalten ihren
-        # Rückeinlass.
+        # Der reine axiale Membranabstand ist zu KURZ; der Zusatzweg entsteht
+        # dadurch, dass der rückwärtige Schall den ganzen Kapselkörper UMLÄUFT,
+        # ehe er die (zentrale) Frontmembran erreicht — eine Niederfrequenz-
+        # Randbeugung (ka < 1, Kapsel akustisch kompakt), deren Detour mit dem
+        # AUSSENradius skaliert (Membranradius + Klemmring-Breite). Der Anteil
+        # ist EIN einziger empirischer Koeffizient _RIM_DIFFRACTION, an beiden
+        # validierten Kapseln (K67, Debenham) mit ihren gemessenen Maßen
+        # abgeglichen (beide fordern denselben Wert). Die axiale Ringdicke
+        # (clamp_ring_thickness) geht hier NICHT separat ein — sie ist im
+        # radiusproportionalen Term bereits enthalten; der Parameter bleibt als
+        # reine Geometrieangabe erhalten, wirkt aber nicht mehr direkt auf d_ext.
+        # Ohne diesen Term fällt die tiefe Null auf einen unerreichbaren Winkel
+        # jenseits 180° und am Pol bleibt nur eine flache Schulter. Nur
+        # Doppelmembran-Bauform; Einzel-/Dual-Backplate behalten ihren Rückeinlass.
         if self.architecture == "dual_diaphragm":
             a_outer = self.a_mem + self.clamp_ring_width
-            d += (2.0 * self.clamp_ring_thickness
-                  + self._RIM_DIFFRACTION * a_outer)
+            d += self._RIM_DIFFRACTION * a_outer
         self.d_ext = d
         # Auch der Rückeinlass der K67-Bauform (Rückmembran) wird in der
         # Beugungsrechnung als Ring bei seiner axialen Einbautiefe

@@ -91,10 +91,14 @@ enthält, sind entscheidend: (1) die **radiale Druckausbreitung im Spalt**
 verlängert die interne Laufzeit — nur das **2D-Feldmodell** erfasst sie,
 das 1D-Modell unterschätzt sie deutlich (deshalb brauchen beide
 Doppelmembran-Beispiele `squeeze_2d = true`); (2) die **Klemmringe** vor
-den Membranen verlängern die externe Distanz um `2·Dicke +
-0,13·Außenradius` (Ringdicke axial + Rand-Beugung um den Kapselkörper).
-Erst wenn beide zusammenpassen (K67: intern ~14,5 mm, extern 8,2 mm
-axial + Ringe = 14,4 mm), wird die Null tief: **−28 dB** statt ~−11 dB
+den Membranen vergrößern den **Außenradius** der Kapsel, und der
+rückwärtige Schall umläuft diesen kompakten Körper (Randbeugung, ka < 1),
+ehe er die zentrale Frontmembran erreicht — ein einziger empirischer
+Detour-Term `d_ext += 0,386·(Membranradius + Ringbreite)`. Die axiale
+Ringdicke geht dabei nicht separat ein; sie ist bereits im
+radiusproportionalen Term enthalten. Erst wenn interne Laufzeit und
+externe Distanz zusammenpassen (K67: intern ~14,7 mm, extern 8,2 mm
+axial + Detour = 14,7 mm), wird die Null tief: **−28 dB** statt ~−11 dB
 ohne Ringe. Das gilt für **beide** Kapseln — auch die Debenham hat 2-mm-
 Klemmringe, und erst im 2D-Feldmodell mit diesen Ringen erreicht ihre
 Niere die im Artikel gemessene Tiefe (−20 dB @ 180°/1 kHz statt −7 dB im
