@@ -732,7 +732,14 @@ class MicrophoneCapsule:
         # maximal stabile Polarisationsspannung (Diagnose)
         self.U_pullin = self.pullin_voltage()
 
-        # kleine interne Membrandämpfung (s. _Q_MEMBRANE_INTERNAL)
+        # NUMERISCHER BODEN der Membrandämpfung (s. _Q_MEMBRANE_INTERNAL).
+        # Die DOMINANTE Dämpfung der Membran-Grundmode kommt aus dem Spalt-
+        # film: die Piston-Bewegung der Membran drückt die Spaltluft lateral
+        # zu den Löchern (Škvor-Widerstand R_A_gap). Dieser Widerstand wird
+        # in _membrane_impedance frequenzkorrigiert direkt in Reihe geschaltet
+        # (die polarisierte Front-Membran über h_gap_front, die passive Rück-
+        # membran über h_gap). Der Wert hier trägt nur, wenn KEIN Spaltfilm
+        # existiert (geschlossene Backplate, n_th = 0 -> R_A_gap_front = None).
         self.R_A_mem = (
             np.sqrt(self.M_A_mem / self.C_A_eff) / self._Q_MEMBRANE_INTERNAL
         )
@@ -1397,23 +1404,50 @@ class MicrophoneCapsule:
         return R + 1j * X
 
     def _membrane_impedance(self, omega):
-        """Serienimpedanz der Membran: Z = R + j*omega*M + 1/(j*omega*C_eff)."""
+        """Serienimpedanz der Membran: Z = R + j*omega*M + 1/(j*omega*C_eff).
+
+        Der Dämpfungsterm R ist der SPALTFILM-Widerstand, den die Piston-
+        Bewegung der Membran erfährt (Škvor R_A_gap_front am polarisierten
+        Frontspalt, frequenzkorrigiert Φ(ω) — bei tiefen Frequenzen reiner
+        Widerstand, zu hohen hin mit lateraler Filmträgheit). So bedämpft
+        der Spaltfilm die Grundmode DIREKT. Ohne Spaltfilm (geschlossene
+        Backplate) bleibt nur der numerische Boden R_A_mem.
+        """
         omega = np.asarray(omega, dtype=float)
+        R = self._membrane_film_damping(omega, self.h_gap_front,
+                                        self.R_A_gap_front)
         return (
-            self.R_A_mem
+            R
             + 1j * omega * self.M_A_mem
             + 1.0 / (1j * omega * self.C_A_eff)
         )
+
+    def _membrane_film_damping(self, omega, h_film, R_A_gap):
+        """Spaltfilm-Dämpfungsimpedanz der Membran-Piston-Mode.
+
+        Die bewegte Membran drückt die Spaltluft lateral durch den Film zu
+        den Löchern — der Škvor-Widerstand R_A_gap (frequenzkorrigiert
+        Φ(ω, h) für die laterale Filmträgheit) ist die dominante Dämpfung
+        der Grundmode. Ohne Spaltfilm (R_A_gap = None, geschlossene
+        Backplate) bleibt nur der numerische Boden R_A_mem.
+        """
+        if R_A_gap is None:
+            return self.R_A_mem
+        omega = np.asarray(omega, dtype=float)
+        return self.R_A_mem + R_A_gap * self._film_R_dynamic(omega, h_film)
 
     def _membrane_impedance_passive(self, omega):
         """Serienimpedanz der PASSIVEN Rückmembran (K67-Bauform, Niere).
 
         Im Nierenmodus liegt die Rückmembran auf Backplate-Potential —
         kein Feld, keine Feder-Erweichung: es gilt die unpolarisierte
-        Nachgiebigkeit C_A_mem (gleiches Material/Tuning wie vorn).
+        Nachgiebigkeit C_A_mem (gleiches Material/Tuning wie vorn). Die
+        Dämpfung kommt wie bei der Frontmembran aus dem Spaltfilm — hier am
+        NOMINALEN Rückspalt h_gap (unpolarisiert, keine Durchbiegung), also
+        R_A_gap.
         """
         omega = np.asarray(omega, dtype=float)
-        R = np.sqrt(self.M_A_mem / self.C_A_mem) / self._Q_MEMBRANE_INTERNAL
+        R = self._membrane_film_damping(omega, self.h_gap, self.R_A_gap)
         return (
             R + 1j * omega * self.M_A_mem
             + 1.0 / (1j * omega * self.C_A_mem)
