@@ -74,63 +74,75 @@ Parameter `clamp_ring_thickness`/`clamp_ring_width`) — sie versenken
 die Membranen und definieren die ehrliche externe Distanz
 `d_ext = axial + 2·Ringdicke` (s. u.). Gerechnet wird mit dem
 **2D-Feldmodell** (`squeeze_2d = true`) und dem vermessenen
-Kapselkopf-Durchmesser als Beugungskörper. Ergebnis: Ruhekapazität
-C₀ = 50 pF (trifft den nachgemessenen Wert), Niere mit **Null bei 180°
-von 100 Hz bis 2 kHz** (−14…−16 dB mit den nominellen inneren Maßen),
-glatter Präsenzpeak +4,0 dB @ 11,4 kHz (roh; Korb und Elektronik —
-nicht modelliert — glätten auf die veröffentlichten ~+2..3 dB). Die
-Nierentiefe reagiert empfindlich auf die nicht sicher verifizierten
-inneren Maße (Spacer-Höhe, Sacklochvolumen) — `examples/cardiodtest.json`
-zeigt eine Variante (Spacer 40 µm, kleinere Sacklöcher), die **−23…−31 dB
-@ 180°** erreicht. Über „Projekt laden" importierbar.
+Kapselkopf-Durchmesser als Beugungskörper. Ergebnis mit den nominellen
+inneren Maßen: Ruhekapazität C₀ = 50,3 pF (trifft den nachgemessenen
+Wert), Niere **−6,4/−17,2/−25,7 dB @ 90/135/180° (1 kHz)** — praktisch
+die publizierten U87-Werte —, glatter Präsenzpeak +3,6 dB @ 11,4 kHz
+(roh; Korb und Elektronik — nicht modelliert — glätten auf die
+veröffentlichten ~+2..3 dB), Empfindlichkeit 20,9 mV/Pa. Das tiefste
+Minimum liegt in den Mitten knapp vor 180° (~160°);
+`examples/cardiodtest.json` pinnt es mit Spacer 45 µm exakt auf 180°.
+Über „Projekt laden" importierbar.
 
-`examples/cardiodtest.json` — die K67-Bauform mit auf tiefe
-180°-Auslöschung abgestimmten **inneren** Maßen (Spacer 40 µm,
-Sacklöcher ⌀1,0 mm × 2,0 mm — alles innerhalb der dokumentierten
-Unsicherheit der echten Kapsel): Null bei 180° von 100 Hz bis 4 kHz,
-−31 dB @ 500 Hz, 90° = −5,9 dB (Lehrbuch-Niere), Frequenzgang flach.
-Die Niere entsteht dabei vollständig aus den internen akustischen
-Parametern (s. Abschnitt „Nierenbildung").
+`examples/cardiodtest.json` — identisch zum nominellen K67-Datensatz
+bis auf **ein einziges Maß**: den Spacer zwischen den Elektrodenhälften
+(45 statt 50 µm — das am wenigsten sicher verifizierte innere Maß,
+plausibel 40–65 µm). Damit trifft die interne Phasenschieber-Laufzeit
+die externe exakt, und die Null sitzt bei **allen** Frequenzen im
+Übertragungsband auf 180° (−17/−19/−19/−17 dB @ 250/500/1k/2k,
+90° = −5,3 dB, C₀ = 50,3 pF, Frequenzgang flach). Die Niere entsteht
+dabei vollständig aus den akustischen Parametern (s. Abschnitt
+„Nierenbildung").
 
-### Nierenbildung: interne Laufzeit aus den akustischen Parametern
+### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 
 Die Niere der Doppelmembran-Bauform entsteht, wenn die **interne**
 akustische Laufzeit des Phasenschieber-Netzwerks (Bohrungen, Spaltfilme,
 Spacer — die Reibungs-/Nachgiebigkeits-Verzögerung des Rückschalls auf
-dem Weg zur Frontmembran) die **externe** geometrische Wegdifferenz
-`d_ext = axialer Membranabstand + 2·Klemmringdicke` trifft. Beide Größen
-fallen **aus den physikalischen Parametern** — es gibt keinen
-Fit-Koeffizienten. Möglich macht das die Korrektur des
-**Rückwärts-Durchlaufs** in der 2D-Kette (`_abcd_reverse`): der
-Rückspalt wird als Port-Tausch `[D B; C A]` durchlaufen (identisch zur
-umgekehrten Elementreihenfolge des 1D-Pfads), **nicht** als
-Matrix-Inverse — deren negative (aktive) Elemente löschten zuvor
-Laufzeit und Dämpfung des Hinwegs exakt aus, sodass die Niere nur über
-eine f_res-abhängige Spaltasymmetrie-Krücke entstand und der Rückzweig
-eine ungedämpfte Resonanzüberhöhung zeigte. Mit der Korrektur ist die
-Nullstelle bei 180° **unabhängig von Membranresonanz und
-Polarisationsspannung** (im Testlauf verankert), und die Tiefe wird
-allein von den inneren Maßen bestimmt: Spacer-Höhe und Sackloch-Volumen
-laden den internen Phasenschieber — `examples/cardiodtest.json` zeigt
-eine darauf abgestimmte K67-Variante. Der aktive Membrandurchmesser
-(26 mm) und der Außendurchmesser inklusive Klemmring (34 mm K67 /
-32 mm Debenham) bleiben getrennte Größen: `membrane_diameter` bzw.
+dem Weg zur Frontmembran) die **externe** Laufzeit des Schalls um den
+Kapselkörper trifft. Beide Größen fallen **aus den physikalischen
+Parametern** — es gibt keinen Fit-Koeffizienten:
+
+- **Intern:** die Korrektur des **Rückwärts-Durchlaufs** in der 2D-Kette
+  (`_abcd_reverse`): der Rückspalt wird als Port-Tausch `[D B; C A]`
+  durchlaufen (identisch zur umgekehrten Elementreihenfolge des
+  1D-Pfads), **nicht** als Matrix-Inverse — deren negative (aktive)
+  Elemente löschten zuvor Laufzeit und Dämpfung des Hinwegs exakt aus,
+  sodass die Niere nur über eine f_res-abhängige Spaltasymmetrie-Krücke
+  entstand und der Rückzweig eine ungedämpfte Resonanzüberhöhung zeigte.
+- **Extern:** die Beugung um die **axiale Körperausdehnung**
+  (`_axial_body_transfer`): der Pol-zu-Pol-Transfer der exakten
+  Morse-Streureihe an der Kugel mit Durchmesser
+  `d_ext = axialer Membranabstand + 2·Klemmringdicke`. Für ka → 0 ergibt
+  das automatisch den bekannten 3/2-Dipolfaktor (effektiv 1,5·d_ext,
+  K67: 18,3 mm) samt konsistenter Amplituden-Asymmetrie. Die
+  Ring-/Kalotten-Platzierung auf der breiten R_body-Kugel wäre falsch
+  (gemessen: ~0,6·d_ext bzw. ~2,5·R_body — die Breitenkugel überzeichnet
+  die axiale Ausdehnung der dünnen Scheibe).
+
+Mit beiden Korrekturen ist die Nullstelle bei 180° **unabhängig von
+Membranresonanz und Polarisationsspannung** (im Testlauf verankert), und
+die nominelle K67 erreicht die publizierte Tiefe (−26 dB @ 180°/1 kHz)
+ohne jede Kalibrierung. Der aktive Membrandurchmesser (26 mm) und der
+Außendurchmesser inklusive Klemmring (34 mm K67 / 32 mm Debenham)
+bleiben getrennte Größen: `membrane_diameter` bzw.
 `body_diameter` + `clamp_ring_width`.
 
 ### Nierenform der dünnen Doppelmembran-Scheibe
 
 Front- und Rückmembran der K67 sitzen auf den zwei Flächen einer nur
-~8 mm dünnen Scheibe. Für den Front-Rück-Gradienten (der die Niere
-erzeugt) ist die **geometrische axiale Laufzeit** dieser Scheibendicke
-maßgeblich, nicht der viel größere Umweg um das Kugel-Ersatzgehäuse der
-Beugungsrechnung. Würde man den rückwärtigen Einlass wie bei den
-Einzelmembran-Bauformen als Ring/Kalotte auf der Beugungskugel
-platzieren, zöge das die Nullstelle vor 180° und machte aus der Niere
-eine Superniere. Das Modell nutzt deshalb bei `dual_diaphragm` die
-Scheiben-Laufzeit für die Front-Rück-Phase und die Kugelbeugung nur
-noch für die gemeinsame HF-Bündelung/Druckstau — so bleibt die
-Nullstelle im Grundton-/Mittenbereich korrekt bei 180°, und erst zu
-hohen Frequenzen bündelt die Niere (wie real).
+~12 mm dünnen Scheibe. Für den Front-Rück-Gradienten (der die Niere
+erzeugt) ist die **axiale Ausdehnung** dieser Scheibe maßgeblich, nicht
+die viel größere Breite des Kugel-Ersatzgehäuses der Beugungsrechnung.
+Würde man den rückwärtigen Einlass wie bei den Einzelmembran-Bauformen
+als Ring/Kalotte auf der breiten Beugungskugel platzieren, zöge das die
+Nullstelle weit vor 180° (Superniere) bzw. ließe sie zu flach werden.
+Das Modell trennt deshalb bei `dual_diaphragm` die beiden Skalen: die
+R_body-Kugel liefert die gemeinsame HF-Bündelung/Druckstau, der
+Front-Rück-Gradient kommt aus dem Pol-zu-Pol-Transfer der Kugel mit der
+**korrekten axialen Ausdehnung** `d_ext` (s. `_axial_body_transfer`) —
+so bleibt die Nullstelle im Grundton-/Mittenbereich nahe 180°, und erst
+zu hohen Frequenzen bündelt die Niere (wie real).
 
 ## Verlustmechanismen (vollständig erfasst)
 
