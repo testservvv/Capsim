@@ -70,41 +70,52 @@ Das Lochbild wird als **120 Sacklöcher je Seite** eingegeben
 zweite Sackloch mit 0,6-mm-Durchbruch). Diese Zählweise gilt **nur bei
 aktiver Stufenbohrung**; sonst bleiben beide Lochtypen unabhängig.
 Vor beiden Membranen sitzen **Klemmringe** (je 2 mm dick, 2 mm breit,
-Parameter `clamp_ring_thickness`/`clamp_ring_width`) — sie sind für die
-Nierentiefe entscheidend (s. u.). Gerechnet wird mit dem **2D-Feldmodell**
-(`squeeze_2d = true`) und dem vermessenen Kapselkopf-Durchmesser 32 mm
-als Beugungskörper. Validierung: Ruhekapazität C₀ = 50 pF (trifft den
-nachgemessenen Wert), **echte tiefe Niere** −6 dB @ 90° / **−27 dB @
-180°** mit Nullstelle bei 180° von 125 Hz bis 4 kHz, glatter
-Präsenzpeak +3,5 dB @ 11,6 kHz (roh; Korb und Elektronik — nicht
-modelliert — glätten auf die veröffentlichten ~+2..3 dB).
-Über „Projekt laden" importierbar.
+Parameter `clamp_ring_thickness`/`clamp_ring_width`) — sie versenken
+die Membranen und definieren die ehrliche externe Distanz
+`d_ext = axial + 2·Ringdicke` (s. u.). Gerechnet wird mit dem
+**2D-Feldmodell** (`squeeze_2d = true`) und dem vermessenen
+Kapselkopf-Durchmesser als Beugungskörper. Ergebnis: Ruhekapazität
+C₀ = 50 pF (trifft den nachgemessenen Wert), Niere mit **Null bei 180°
+von 100 Hz bis 2 kHz** (−14…−16 dB mit den nominellen inneren Maßen),
+glatter Präsenzpeak +4,0 dB @ 11,4 kHz (roh; Korb und Elektronik —
+nicht modelliert — glätten auf die veröffentlichten ~+2..3 dB). Die
+Nierentiefe reagiert empfindlich auf die nicht sicher verifizierten
+inneren Maße (Spacer-Höhe, Sacklochvolumen) — `examples/cardiodtest.json`
+zeigt eine Variante (Spacer 40 µm, kleinere Sacklöcher), die **−23…−31 dB
+@ 180°** erreicht. Über „Projekt laden" importierbar.
 
-### Nierentiefe: interne Laufzeit ↔ Front-Rück-Distanz
+`examples/cardiodtest.json` — die K67-Bauform mit auf tiefe
+180°-Auslöschung abgestimmten **inneren** Maßen (Spacer 40 µm,
+Sacklöcher ⌀1,0 mm × 2,0 mm — alles innerhalb der dokumentierten
+Unsicherheit der echten Kapsel): Null bei 180° von 100 Hz bis 4 kHz,
+−31 dB @ 500 Hz, 90° = −5,9 dB (Lehrbuch-Niere), Frequenzgang flach.
+Die Niere entsteht dabei vollständig aus den internen akustischen
+Parametern (s. Abschnitt „Nierenbildung").
 
-Die Tiefe der 180°-Nullstelle hängt daran, wie exakt die **externe**
-Front-Rück-Wegdifferenz `d_ext` die **interne** akustische Laufzeit des
-Phasenschieber-Netzwerks trifft — und weil dieser Phasenhub winzig ist
-(bei 1 kHz nur ~9° über 8 mm), ist die Null überempfindlich gegen
-Fehlanpassung. Zwei Beiträge, die der reine axiale Membranabstand nicht
-enthält, sind entscheidend: (1) die **radiale Druckausbreitung im Spalt**
-verlängert die interne Laufzeit — nur das **2D-Feldmodell** erfasst sie,
-das 1D-Modell unterschätzt sie deutlich (deshalb brauchen beide
-Doppelmembran-Beispiele `squeeze_2d = true`); (2) die **Klemmringe** vor
-den Membranen vergrößern den **Außenradius** der Kapsel, und der
-rückwärtige Schall umläuft diesen kompakten Körper (Randbeugung, ka < 1),
-ehe er die zentrale Frontmembran erreicht — ein einziger empirischer
-Detour-Term `d_ext += 0,386·(Membranradius + Ringbreite)`. Die axiale
-Ringdicke geht dabei nicht separat ein; sie ist bereits im
-radiusproportionalen Term enthalten. Erst wenn interne Laufzeit und
-externe Distanz zusammenpassen (K67: intern ~14,7 mm, extern 8,2 mm
-axial + Detour = 14,7 mm), wird die Null tief: **−28 dB** statt ~−11 dB
-ohne Ringe. Das gilt für **beide** Kapseln — auch die Debenham hat 2-mm-
-Klemmringe, und erst im 2D-Feldmodell mit diesen Ringen erreicht ihre
-Niere die im Artikel gemessene Tiefe (−20 dB @ 180°/1 kHz statt −7 dB im
-1D-Modell). Der aktive Membrandurchmesser (26 mm) und der Außen­durchmesser
-inklusive Klemmring (34 mm K67 / 32 mm Debenham) sind getrennte Größen:
-`membrane_diameter` bzw. `body_diameter` + `clamp_ring_width`.
+### Nierenbildung: interne Laufzeit aus den akustischen Parametern
+
+Die Niere der Doppelmembran-Bauform entsteht, wenn die **interne**
+akustische Laufzeit des Phasenschieber-Netzwerks (Bohrungen, Spaltfilme,
+Spacer — die Reibungs-/Nachgiebigkeits-Verzögerung des Rückschalls auf
+dem Weg zur Frontmembran) die **externe** geometrische Wegdifferenz
+`d_ext = axialer Membranabstand + 2·Klemmringdicke` trifft. Beide Größen
+fallen **aus den physikalischen Parametern** — es gibt keinen
+Fit-Koeffizienten. Möglich macht das die Korrektur des
+**Rückwärts-Durchlaufs** in der 2D-Kette (`_abcd_reverse`): der
+Rückspalt wird als Port-Tausch `[D B; C A]` durchlaufen (identisch zur
+umgekehrten Elementreihenfolge des 1D-Pfads), **nicht** als
+Matrix-Inverse — deren negative (aktive) Elemente löschten zuvor
+Laufzeit und Dämpfung des Hinwegs exakt aus, sodass die Niere nur über
+eine f_res-abhängige Spaltasymmetrie-Krücke entstand und der Rückzweig
+eine ungedämpfte Resonanzüberhöhung zeigte. Mit der Korrektur ist die
+Nullstelle bei 180° **unabhängig von Membranresonanz und
+Polarisationsspannung** (im Testlauf verankert), und die Tiefe wird
+allein von den inneren Maßen bestimmt: Spacer-Höhe und Sackloch-Volumen
+laden den internen Phasenschieber — `examples/cardiodtest.json` zeigt
+eine darauf abgestimmte K67-Variante. Der aktive Membrandurchmesser
+(26 mm) und der Außendurchmesser inklusive Klemmring (34 mm K67 /
+32 mm Debenham) bleiben getrennte Größen: `membrane_diameter` bzw.
+`body_diameter` + `clamp_ring_width`.
 
 ### Nierenform der dünnen Doppelmembran-Scheibe
 
@@ -141,8 +152,14 @@ Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi
 News): einteilige durchbohrte Mittelelektrode (`center_gap = 0`), 1"-
 Membranen, je Seite 12 Durchgangs- + 46 Dämpfungslöcher auf den echten
 Lochkreisen der Konstruktionszeichnung (0.860/0.688/0.516/0.344/0.172"),
-50 V. Validiert gegen die im Artikel gemessenen Richtdiagramme (Fig. 9)
-und den Frequenzgang (Fig. 10). Dieser Parametersatz ist zugleich die
+50 V. Nach der Port-Tausch-Korrektur liefert das Modell die Nierenform
+(Null bei 180°, flacher Frequenzgang, HF-Bündelung wie Fig. 9), aber
+unterhalb 2 kHz nur −2…−3 dB Tiefe statt der im Artikel gemessenen
+−23 dB: die interne Phasenschieber-Laufzeit dieser einteiligen
+Elektrode fällt im Modell zu lang aus (die 46 großvolumigen
+Dämpfungs-Sacklöcher belasten den Rückkopplungsweg zu den nur 12 engen
+Durchgangslöchern). Ein ehrlich offener Punkt — nicht mehr durch
+Fit-Parameter kaschiert. Dieser Parametersatz ist zugleich die
 Voreinstellung beim App-Start.
 
 `examples/k103_bauform_demo.json` — Demonstration der **K103-Bauform**

@@ -145,20 +145,14 @@ class MicrophoneCapsule:
         clamp_ring_thickness, clamp_ring_width : float
             Vor jeder Membran montierter Klemmring [m] (Dicke = axiale
             Auftragung, Breite = radiale Ausdehnung). Bei K67/K87 sitzen
-            solche Ringe vor beiden Membranen und vergrößern den
-            AUSSENradius der Kapsel. Für die WIRKSAME Front-Rück-Distanz
-            d_ext zählt allein dieser Außenradius: der rückwärtige Schall
-            umläuft den kompakten Kapselkörper (Randbeugung, ka < 1), und
-            der Detour skaliert mit ``a_mem + clamp_ring_width`` —
-            ``d_ext += _RIM_DIFFRACTION · (a_mem + Breite)`` (ein einziger
-            empirischer Koeffizient, s. ``_RIM_DIFFRACTION``). Die axiale
-            ``clamp_ring_thickness`` geht dabei NICHT separat ein; sie ist
-            als Geometrieangabe erhalten, wirkt aber nicht mehr direkt auf
-            d_ext. Das ist entscheidend für die Nierentiefe: bei der K67
-            stimmt erst dadurch die externe Wegdifferenz auf die (längere)
-            interne Laufzeit des Phasenschiebers ab und die 180°-Null wird
-            tief (−25…−30 dB statt ~−11 dB ohne Ringe). ``0`` = keine
-            Ringe. Wirkt nur bei ``dual_diaphragm``.
+            solche Ringe vor beiden Membranen; sie versenken die Membranen
+            um ihre Dicke und verlängern damit die EHRLICHE geometrische
+            Front-Rück-Distanz: ``d_ext += 2 · Dicke``. Die Breite
+            vergrößert nur den Außenradius (Geometrieangabe, kein eigener
+            d_ext-Beitrag). Die Nierennull entsteht, wenn die interne
+            akustische Laufzeit des Phasenschieber-Netzwerks (Bohrungen,
+            Spaltfilme, Spacer) diese externe Laufzeit d_ext/c trifft.
+            ``0`` = keine Ringe. Wirkt nur bei ``dual_diaphragm``.
 
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
@@ -252,23 +246,6 @@ class MicrophoneCapsule:
     # die dominante Dämpfung kommt aus dem Luftspalt, dieser Wert stellt
     # nur numerische Gutartigkeit ohne Spaltdämpfung sicher).
     _Q_MEMBRANE_INTERNAL = 100.0
-
-    # Rand-Beugungsdetour der Doppelmembran-Scheibe: der Anteil des AUSSEN-
-    # radius, um den der rückwärtige Schall zur (zentralen) Frontmembran
-    # länger läuft (Niederfrequenz-Dipolstreuung, ka < 1). Der Koeffizient
-    # ist an K67 (Außen-Ø 34 mm) und Debenham (32 mm) mit ihren gemessenen
-    # Maßen kalibriert — beide liefern denselben Wert auf < 0.3 % genau:
-    #     d_eff = axialer Membranabstand + _RIM · Außenradius.
-    # Die SKALIERUNG (∝ Außenradius) ist physikalisch fundiert und mit einem
-    # eigenen axialsymmetrischen Diffraktionslöser (an der Kugel exakt gegen
-    # den bekannten 3/2-Faktor verifiziert) bestätigt; der genaue Zahlenwert
-    # ist es nicht: glatte Ersatzkörper (Kugel/Ellipsoid) überschätzen ihn
-    # ~2×, das Zentrum einer flachen Scheibe unterschätzt ihn ~2×, weil die
-    # ausgedehnte Membran über die flächenveränderliche Beugung MITTELT
-    # (Zentrum abgeschattet, Rand verstärkt). Ein geschlossener First-
-    # Principles-Wert bräuchte einen regularisierten Randelemente-Löser für
-    # die exakte (versenkte Membran, berandete flache Scheibe) Geometrie.
-    _RIM_DIFFRACTION = 0.386
 
 
     def __init__(
@@ -475,11 +452,10 @@ class MicrophoneCapsule:
         self.t_th_eff = self.t_bp - self.d_bh if self.stepped else self.t_bp
 
         # Klemmringe vor den Membranen (Doppelmembran-Bauform): sie sitzen
-        # außen vor jeder Membran, versenken sie um ihre Dicke und machen
-        # den Kapselkörper dicker. Für die Front-Rück-Wegdifferenz zählt
-        # allein der dadurch vergrößerte AUSSENradius (a_mem + Breite) über
-        # den Rand-Beugungsdetour; die axiale Dicke geht nicht separat ein
-        # (s. _RIM_DIFFRACTION), bleibt aber als Geometrieangabe erhalten.
+        # außen vor jeder Membran und versenken sie um ihre Dicke — das
+        # verlängert die ehrliche geometrische Front-Rück-Distanz d_ext um
+        # 2× die Ringdicke. Die Breite vergrößert nur den Außenradius
+        # (reine Geometrieangabe).
         self.clamp_ring_thickness = float(clamp_ring_thickness)
         self.clamp_ring_width = float(clamp_ring_width)
         if self.clamp_ring_thickness < 0 or self.clamp_ring_width < 0:
@@ -976,29 +952,20 @@ class MicrophoneCapsule:
         if self.architecture == "dual":
             # vordere Backplate verschiebt den vorderen Einlass nach vorn
             d += self.h_gap + self.t_bp
-        # EFFEKTIVE FRONT-RÜCK-DISTANZ der Doppelmembran-Scheibe
+        # EXTERNE FRONT-RÜCK-DISTANZ der Doppelmembran-Scheibe
         # ----------------------------------------------------------------
-        # Für die Nierennull muss die EXTERNE Wegdifferenz d_ext die
-        # akustische Laufzeit des INTERNEN Phasenschiebernetzwerks treffen
-        # (das 2D-Feldmodell liefert diese Laufzeit inkl. der radialen
-        # Druckausbreitung im Spalt; die 1D-Näherung unterschätzt sie).
-        # Der reine axiale Membranabstand ist zu KURZ; der Zusatzweg entsteht
-        # dadurch, dass der rückwärtige Schall den ganzen Kapselkörper UMLÄUFT,
-        # ehe er die (zentrale) Frontmembran erreicht — eine Niederfrequenz-
-        # Randbeugung (ka < 1, Kapsel akustisch kompakt), deren Detour mit dem
-        # AUSSENradius skaliert (Membranradius + Klemmring-Breite). Der Anteil
-        # ist EIN einziger empirischer Koeffizient _RIM_DIFFRACTION, an beiden
-        # validierten Kapseln (K67, Debenham) mit ihren gemessenen Maßen
-        # abgeglichen (beide fordern denselben Wert). Die axiale Ringdicke
-        # (clamp_ring_thickness) geht hier NICHT separat ein — sie ist im
-        # radiusproportionalen Term bereits enthalten; der Parameter bleibt als
-        # reine Geometrieangabe erhalten, wirkt aber nicht mehr direkt auf d_ext.
-        # Ohne diesen Term fällt die tiefe Null auf einen unerreichbaren Winkel
-        # jenseits 180° und am Pol bleibt nur eine flache Schulter. Nur
-        # Doppelmembran-Bauform; Einzel-/Dual-Backplate behalten ihren Rückeinlass.
+        # d_ext ist die EHRLICHE GEOMETRISCHE Wegdifferenz einer ebenen
+        # Welle zwischen Vorder- und Rückmembranfläche: axiale Tiefe der
+        # Elektrodenbaugruppe (d_ax) plus der Rücksprung beider Membranen
+        # hinter die Klemmringe (2 · clamp_ring_thickness). KEIN gefitteter
+        # Beugungszuschlag. Die Nierennull entsteht, wenn die INTERNE
+        # akustische Laufzeit des Phasenschieber-Netzwerks (Bohrungen,
+        # Spaltfilme, Spacer — sie fällt seit der Port-Tausch-Korrektur in
+        # _abcd_reverse aus den physikalischen Parametern) diese externe
+        # Laufzeit d_ext/c trifft. Nur Doppelmembran-Bauform;
+        # Einzel-/Dual-Backplate behalten ihren Rückeinlass.
         if self.architecture == "dual_diaphragm":
-            a_outer = self.a_mem + self.clamp_ring_width
-            d += self._RIM_DIFFRACTION * a_outer
+            d += 2.0 * self.clamp_ring_thickness
         self.d_ext = d
         # Auch der Rückeinlass der K67-Bauform (Rückmembran) wird in der
         # Beugungsrechnung als Ring bei seiner axialen Einbautiefe
@@ -1640,10 +1607,21 @@ class MicrophoneCapsule:
     # Netzwerk-Zusammenbau
     # ======================================================================
     @staticmethod
-    def _abcd_inv(T):
-        """Kehrmatrix eines reziproken (2,2,N)-Zweitors (det = 1):
-        T^-1 = [[D, -B], [-C, A]]. Für die gespiegelte Kettenrichtung."""
-        return np.array([[T[1, 1], -T[0, 1]], [-T[1, 0], T[0, 0]]])
+    def _abcd_reverse(T):
+        """Kettenmatrix für den RÜCKWÄRTS-Durchlauf eines reziproken
+        (2,2,N)-Zweitors (det = 1): der Port-Tausch [[D, B], [C, A]].
+
+        NICHT die Matrix-Inverse [[D, -B], [-C, A]] verwenden: deren
+        negative Elemente wirken als AKTIVE Bauteile (negativer Widerstand,
+        negative Nachgiebigkeit) und löschen in einer Kaskade
+        T_hin · T_rück Laufzeit UND Dämpfung des Hinwegs exakt aus —
+        bei der Doppelmembran-Bauform kollabierte dadurch die interne
+        Phasenschieber-Laufzeit (Acht statt Niere) und der Rückzweig
+        verlor seine Dämpfung (ungedämpfte Resonanzüberhöhung). Der
+        Port-Tausch ist für Elementketten identisch mit der umgekehrten
+        Elementreihenfolge (``mats[::-1]``), die der 1D-Pfad verwendet —
+        beide Pfade sind damit konsistent."""
+        return np.array([[T[1, 1], T[0, 1]], [T[1, 0], T[0, 0]]])
 
     def _gap_field_2port(self, omega, h_film=None):
         """Zweitor des Luftspalts aus der modifizierten Reynolds-Gleichung.
@@ -1846,7 +1824,9 @@ class MicrophoneCapsule:
                     (k * self.r_th) ** 2 / 2.0, 1.0)
                 T = self._mmul(T, self._abcd_series(Z_rad, omega))
             if outside_to_membrane:
-                T = self._abcd_inv(T)
+                # Rückwärts-Durchlauf = Port-Tausch (s. _abcd_reverse) —
+                # analog zu mats[::-1] im 1D-Pfad, NICHT die Inverse.
+                T = self._abcd_reverse(T)
             return T
 
         Y_gap = self._film_compliance_Y(omega, h_eff, self.S_bp)
@@ -2487,9 +2467,13 @@ if __name__ == "__main__":
     # anhebung im 10-kHz-Bereich.
     # verifizierte K67-Geometrie (120 Senkungen 1.3x3.7 mm, 60 durchgebohrt
     # mit 0.6-mm-Kern, kein Gewebe, Klemmringe 2x2 mm vor beiden Membranen):
-    # die Stufenbohrung erzeugt die lange interne Laufzeit, die Klemmringe
-    # verlängern die externe Wegdifferenz d_ext passend dazu -> echte,
-    # TIEFE Niere (Null bei ~180°, -25..-30 dB). Präsenz im 8-12-kHz-Band.
+    # die interne Laufzeit fällt seit der Port-Tausch-Korrektur aus den
+    # physikalischen Parametern (Bohrungen, Spaltfilme, Spacer) und trifft
+    # die EHRLICHE externe Distanz d_ext = axial + 2·Klemmringdicke ->
+    # Niere mit Null bei ~180° aus reiner interner Physik (ohne Fit-
+    # Detour; Tiefe mit den nominellen Maßen ~-14 dB, über Spacer/
+    # Sacklochmaße abstimmbar, s. examples/cardiodtest.json).
+    # Präsenz im 8-12-kHz-Band.
     k67 = MicrophoneCapsule(
         membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
         membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
@@ -2509,8 +2493,8 @@ if __name__ == "__main__":
     na_k = ang_k[ang_k <= 180][int(np.argmin(lin_k[ang_k <= 180]))]
     assert na_k > 170.0, \
         f"K67 muss echte Niere sein (Null bei {na_k:.0f}° statt ~180°)"
-    assert pk67[180] < -22.0, \
-        f"K67 mit Klemmringen muss tiefe Niere zeigen ({pk67[180]:.1f} dB)"
+    assert pk67[180] < -12.0, \
+        f"K67 muss rückwärts deutlich auslöschen ({pk67[180]:.1f} dB)"
     fr_k = k67.frequency_response(n_points=150)
     assert np.all(np.isfinite(fr_k["amplitude_db"]))
     fk, ak = fr_k["frequency_hz"], fr_k["amplitude_db_norm"]
@@ -2550,7 +2534,7 @@ if __name__ == "__main__":
             body_diameter=34e-3, squeeze_model="2d")
         return c.directivity(frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
     d20, d60 = _p180(20.0), _p180(60.0)
-    assert d20 < -18.0 and d60 < -18.0, "Niere muss bei beiden Spannungen bestehen"
+    assert d20 < -10.0 and d60 < -10.0, "Niere muss bei beiden Spannungen bestehen"
     assert abs(d20 - d60) < 8.0, \
         "Bias-Wirkung aufs Richtdiagramm muss im realistischen Rahmen bleiben"
     print(f"Elektrostatik Doppelmembran: nur Front polarisiert (n_bp=1); "
@@ -2810,5 +2794,50 @@ if __name__ == "__main__":
     print(f"Verlustmechanismen: Sampson-Mündung = 3µ/r³ (DC), Stub ≡ "
           f"diskrete Leiter (<2 %), LF-Nachgiebigkeit isotherm, "
           f"Filmkorrektur Φ(0)=1 / |Φ(25 kHz)|={abs(phi_hi):.1f}  OK")
+
+    # --------- Gegenprobe 13: Rückwärts-Durchlauf (Port-Tausch) ------------
+    # a) Algebra: der Port-Tausch eines Zweitor-Produkts muss der
+    #    umgekehrten Elementreihenfolge entsprechen (so macht es der
+    #    1D-Pfad) — die Matrix-Inverse täte das NICHT (negative Elemente).
+    om13 = np.array([2.0 * np.pi * 700.0])
+    E1 = MicrophoneCapsule._abcd_series(2.5e6 + 1j * 4e5, om13)
+    E2 = MicrophoneCapsule._abcd_shunt(1j * 3e-10, om13)
+    E3 = MicrophoneCapsule._abcd_series(8.0e5, om13)
+    chain = reduce(MicrophoneCapsule._mmul, [E1, E2, E3])
+    chain_rev = reduce(MicrophoneCapsule._mmul, [E3, E2, E1])
+    assert np.allclose(
+        np.array(MicrophoneCapsule._abcd_reverse(chain), dtype=complex),
+        np.array(chain_rev, dtype=complex)), \
+        "Port-Tausch muss der umgekehrten Elementreihenfolge entsprechen"
+    # b) Physik: mit korrektem Rückwärts-Durchlauf entsteht die interne
+    #    Phasenschieber-Laufzeit aus den akustischen Parametern — die
+    #    K67-Niere (Null bei 180°) darf deshalb NICHT mehr an der
+    #    Membranresonanz hängen (vorher kollabierte sie: die Laufzeit kam
+    #    aus der f_res-abhängigen statischen Spaltasymmetrie).
+    def _k67_null(fres):
+        c = MicrophoneCapsule(
+            membrane_resonance_hz=fres, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, body_diameter=34e-3, squeeze_model="2d")
+        di = c.directivity(frequencies_hz=(1000.0,))
+        pat = di["patterns"][1000.0]
+        na = di["angles_deg"][:181][int(np.argmin(pat["linear"][:181]))]
+        return na, pat["db"][180]
+    na_lo, p_lo = _k67_null(1150.0)
+    na_hi, p_hi = _k67_null(4000.0)
+    assert na_lo > 170.0 and na_hi > 170.0, \
+        f"Nullwinkel muss f_res-robust bei ~180° liegen ({na_lo:.0f}°/{na_hi:.0f}°)"
+    assert p_lo < -10.0 and p_hi < -10.0 and abs(p_lo - p_hi) < 6.0, \
+        f"Nierentiefe muss f_res-robust sein ({p_lo:.1f} / {p_hi:.1f} dB)"
+    print(f"Rückwärts-Durchlauf: Port-Tausch ≡ umgekehrte Elementreihen"
+          f"folge; K67-Niere f_res-robust (180° @1 kHz: {p_lo:.1f} dB "
+          f"@1150 Hz / {p_hi:.1f} dB @4000 Hz, Null bei "
+          f"{na_lo:.0f}°/{na_hi:.0f}°)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

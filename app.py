@@ -607,12 +607,13 @@ with st.sidebar:
         if st.session_state["p_architecture"] == K67_LABEL:
             st.markdown("**Klemmringe (vor den Membranen)**",
                         help="Ringe vor beiden Membranen (K67/K87). Sie "
-                             "versenken die Membran und machen den Körper "
-                             "dicker → der rückwärtige Schall läuft weiter "
-                             "zur Frontmembran. Verlängert die wirksame "
-                             "Front-Rück-Distanz um 2×Dicke + Breite und "
-                             "vertieft dadurch die Niere entscheidend "
-                             "(−25…−30 dB statt ~−11 dB). 0 = keine Ringe.")
+                             "versenken die Membranen um ihre Dicke → die "
+                             "geometrische Front-Rück-Distanz d_ext wächst "
+                             "um 2×Dicke. Die Nierennull entsteht, wenn die "
+                             "interne Laufzeit des Phasenschieber-Netzwerks "
+                             "(Bohrungen, Spaltfilme, Spacer) diese externe "
+                             "Laufzeit trifft. Die Breite geht nur in den "
+                             "Außenradius ein. 0 = keine Ringe.")
             st.number_input("Klemmring — Dicke je Seite [mm]", 0.0, 10.0,
                             step=0.5, key="p_clamp_ring_mm",
                             help="Axiale Auftragung vor jeder Membran.")

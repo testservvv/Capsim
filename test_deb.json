@@ -3,6 +3,10 @@
   "version": 2,
   "saved": "2026-07-10",
   "_kommentar": [
+    "VERALTET: unter dem Modellstand VOR der Port-Tausch-Korrektur",
+    "(_abcd_reverse) abgestimmt - die unten genannten Ergebniszahlen",
+    "gelten im aktuellen Modell nicht mehr. Aktuelles, physikbasiertes",
+    "Nieren-Beispiel: examples/cardiodtest.json.",
     "TEST/THEORIE - Debenham-Kapsel mit auf TIEFE 180-Grad-Null optimierter",
     "LOCHGEOMETRIE. Basis ist debenham_stereo_condenser.json; veraendert",
     "wurden AUSSCHLIESSLICH: Durchmesser der Durchgangs- und Blindloecher,",
