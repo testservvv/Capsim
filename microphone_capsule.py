@@ -2840,4 +2840,38 @@ if __name__ == "__main__":
           f"@1150 Hz / {p_hi:.1f} dB @4000 Hz, Null bei "
           f"{na_lo:.0f}°/{na_hi:.0f}°)  OK")
 
+    # --------- Gegenprobe 14: übrige Architekturen unter dem Port-Tausch ---
+    # Der zweite Nutzer des Rückwärts-Durchlaufs ist die VORDERE Backplate
+    # der Dual-Architektur (2D). Das normierte Richtdiagramm darf davon
+    # nicht abhängen (Serienelemente des Frontzweigs kürzen sich) — 1D-
+    # und 2D-Pfad müssen übereinstimmen; der Frequenzgang bleibt endlich
+    # und Gewebe wirkt als passive Seriendämpfung. K103-Rückplatte dicht
+    # -> exakte Kugel auch im 2D-Modell (Vorwärtspfade unberührt).
+    if _HAS_SCIPY:
+        du1 = MicrophoneCapsule(architecture="dual", squeeze_model="1d")
+        du2 = MicrophoneCapsule(architecture="dual", squeeze_model="2d")
+        pd1 = du1.directivity(frequencies_hz=(1000.0,))["patterns"][1000.0]["db"]
+        pd2 = du2.directivity(frequencies_hz=(1000.0,))["patterns"][1000.0]["db"]
+        assert np.max(np.abs(pd1 - pd2)) < 1.0, \
+            "Dual-Backplate: 1D- und 2D-Richtdiagramm müssen übereinstimmen"
+        fr_du = du2.frequency_response(n_points=80)
+        assert np.all(np.isfinite(fr_du["amplitude_db"]))
+        s_du = abs(du2.transfer_function(1000.0)[0])
+        s_fab = abs(MicrophoneCapsule(
+            architecture="dual", squeeze_model="2d", fabric_front_rayl=150.0,
+            fabric_rear_rayl=150.0).transfer_function(1000.0)[0])
+        assert 0.5 < s_fab / s_du < 0.9999, \
+            "Gewebe muss passiv dämpfen (Empfindlichkeit leicht senken)"
+        k103_dicht = MicrophoneCapsule(
+            squeeze_model="2d", rear_spacer_height=100e-6,
+            rear_plate_thickness=2e-3, n_rear_plate_holes=0,
+            include_diffraction=False)
+        lin_k1 = k103_dicht.directivity(
+            frequencies_hz=(1000.0,))["patterns"][1000.0]["linear"]
+        assert np.max(np.abs(lin_k1 - 1.0)) < 1e-3, \
+            "K103 mit dichter Rückplatte muss auch in 2D exakte Kugel sein"
+        print(f"Architektur-Konsistenz: Dual-Backplate 1D≡2D (max Abw. "
+              f"{np.max(np.abs(pd1 - pd2)):.2f} dB), Gewebe dämpft passiv "
+              f"({s_fab / s_du:.3f}×), K103 dicht = Kugel (2D)  OK")
+
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
