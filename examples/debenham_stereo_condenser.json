@@ -44,7 +44,14 @@
     "(-30 dB @250 Hz); bei 1-2 kHz bleibt das Modell ~10 dB flacher als",
     "Fig. 9 - die axialsymmetrische Homogenisierung der 12 diskreten",
     "Loecher traegt dort nur einen Teil der realen Muendungs-Entlastung",
-    "(offener Rest, ehrlich dokumentiert). Frequenzgang flach."
+    "(offener Rest, ehrlich dokumentiert). Frequenzgang flach.",
+    "3D-LOESER (squeeze_3d = true, deutlich langsamer): rechnet die",
+    "Loecher DISKRET. Mit nur dem Rand-Freistich bleibt die Niere dort",
+    "flach (-4 dB @1 kHz: die inneren Muendungen bleiben verengt);",
+    "deckt der Clearance-Ring alle Lochkreise ab (z. B. Oe 13 mm,",
+    "Breite 18 mm - physikalisch angesenkte Muendungen), wird sie",
+    "breitbandig tief (-13..-15 dB @250 Hz-2 kHz, Null exakt 180 Grad,",
+    "Helmholtz-Flanke bedaempft)."
   ],
   "params": {
     "material": "PET (Mylar)",

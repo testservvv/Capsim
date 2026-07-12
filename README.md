@@ -38,6 +38,20 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   liefert den glatten Präsenzpeak der echten Kapsel — bei gleicher
   Niere (Null bei 180°). Reziprok und passiv (im Test geprüft).
   Braucht SciPy.
+- **3D:** volles (r, φ)-Sandwich der **einteiligen** Doppelmembran-
+  Elektrode (Debenham-Typ, `center_gap = 0`): beide Spaltfilme UND beide
+  Membranen als Felder, Durchgangs- und Sacklöcher **diskret** an ihren
+  Positionen (Azimutwinkel als dokumentierte Konvention, da nicht
+  gezeichnet). Löst die azimutale Zuströmung zu den einzelnen Bohrungen
+  und die dadurch teilentkoppelten Sacklöcher auf — bedämpft die interne
+  Helmholtz-Resonanz realistisch und macht die Mündungs-Engstellen der
+  Löcher (und ihre Entlastung durch Freistiche) explizit sichtbar.
+  Verifiziert über Reziprozität (±1 %), Gitterkonvergenz (±0,15 dB bei
+  N_φ 72→128) und die Gültigkeits-Gatter im Testlauf. DEUTLICH langsamer
+  (LU-Faktorisierung mit ~24 000 Unbekannten je Frequenzpunkt, ~1–2 s) —
+  in der GUI die Frequenzpunkte reduzieren. Absolute Empfindlichkeit
+  weicht modellbedingt ≤ 2–3 dB von 1D/2D ab (Membran als Feld statt
+  Grundmode).
 
 ## Installation & Start
 
@@ -175,8 +189,15 @@ trifft das Modell Fig. 9 bei 100 Hz fast exakt (−1,3/−5,4/−11,7/−13,6
 gemessene HF-Bündelung (10 kHz: Null 143° vs. 142°); bei 1–2 kHz bleibt
 es ~10 dB flacher als der Artikel (die axialsymmetrische
 Homogenisierung der 12 diskreten Löcher erfasst dort nur einen Teil der
-Mündungs-Entlastung — offener Rest, dokumentiert). Dieser Parametersatz
-ist zugleich die Voreinstellung beim App-Start.
+Mündungs-Entlastung — offener Rest, dokumentiert). Der strengere
+**3D-Löser** ordnet das ein: mit *nur* dem Rand-Freistich der Zeichnung
+bleibt die Niere flach (−4 dB @ 1 kHz — die inneren Lochmündungen
+bleiben verengt); deckt der Freistich dagegen alle Lochkreise ab (im
+GUI-Clearance-Ring einstellbar, physikalisch ≈ angesenkte/entgratete
+Mündungen), wird sie breitbandig tief (−13…−15 dB @ 250 Hz–2 kHz, Null
+exakt 180°). Die reale Kapsel dürfte solche Mündungs-Fasen haben (in
+Zeichnungen selten bemaßt). Dieser Parametersatz ist zugleich die
+Voreinstellung beim App-Start.
 
 `examples/k103_bauform_demo.json` — Demonstration der **K103-Bauform**
 (Neumann TLM 103): Einzelmembran-Niere auf K87-Basis, deren Rückseite

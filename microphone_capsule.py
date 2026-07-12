@@ -241,6 +241,14 @@ class MicrophoneCapsule:
             Druckaufbau. Wichtig bei WENIGEN, engen Durchgangslöchern
             (z. B. Braunmühl-Weber-Platten), wo das 1D-Modell die interne
             Übertragung überschätzt. Braucht SciPy (sonst Fallback 1D).
+            ``"3d"``: volles (r, phi)-Sandwich mit DISKRETEN Löchern und
+            Membranen als FD-Feldern — s. :meth:`_build_3d_geometry` /
+            :meth:`_solve_3d`. Löst die azimutale Zuströmung zu den
+            einzelnen Bohrungen und die dadurch teilentkoppelten Sack-
+            löcher auf (bedämpft die interne Helmholtz-Resonanz
+            realistisch). Nur für ``dual_diaphragm`` mit ``center_gap=0``
+            und ohne Stufenbohrung (einteilige Elektrode, Debenham-Typ);
+            DEUTLICH langsamer (LU-Faktorisierung je Frequenzpunkt).
     """
 
     # Membranmaterialien: Dichte rho [kg/m^3], E-Modul E [Pa],
@@ -538,9 +546,26 @@ class MicrophoneCapsule:
         self.include_diffraction = bool(include_diffraction)
 
         sm = str(squeeze_model).strip().lower()
-        if sm not in ("1d", "2d"):
-            raise ValueError("squeeze_model muss '1d' oder '2d' sein.")
-        # Das 2D-Feldmodell (modifizierte Reynolds-Gleichung) braucht SciPy.
+        if sm not in ("1d", "2d", "3d"):
+            raise ValueError("squeeze_model muss '1d', '2d' oder '3d' sein.")
+        if sm == "3d":
+            # Der 3D-(r,phi)-Löser rechnet das komplette Sandwich einer
+            # EINTEILIGEN durchbohrten Elektrode mit DISKRETEN Löchern —
+            # nur für die Doppelmembran-Bauform ohne Zwischenspalt und
+            # ohne Stufenbohrung definiert (Debenham-Typ).
+            if self.architecture != "dual_diaphragm":
+                raise ValueError("squeeze_model='3d' erfordert die "
+                                 "Doppelmembran-Bauform (dual_diaphragm).")
+            if self.h_center > 0.0:
+                raise ValueError("squeeze_model='3d' erfordert center_gap"
+                                 " = 0 (einteilige Elektrode).")
+            if self.stepped:
+                raise ValueError("squeeze_model='3d' unterstützt keine "
+                                 "Stufenbohrung.")
+            if self.n_th <= 0:
+                raise ValueError("squeeze_model='3d' erfordert "
+                                 "Durchgangslöcher.")
+        # Die Feldmodelle (2D/3D) brauchen SciPy.
         self.squeeze_model = sm if (sm == "1d" or _HAS_SCIPY) else "1d"
 
         # ------------------------ abgeleitete Größen ------------------------
@@ -1051,6 +1076,10 @@ class MicrophoneCapsule:
         # Pol geklammert.
         self._ring_cos = float(np.clip(
             (self.R_body - self.d_rear_ax) / self.R_body, -1.0, 1.0))
+
+        # 3D-Löser: Gitter-/Lochgeometrie einmalig aufbauen
+        if self.squeeze_model == "3d":
+            self._build_3d_geometry()
 
     # ======================================================================
     # Spaltfilm-Grundgrößen
@@ -1600,6 +1629,327 @@ class MicrophoneCapsule:
             den += np.outer(base, P[n])                 # vorderer Pol
             num += np.outer(base, (-1) ** n * P[n])     # hinterer Pol
         return np.conj(num / den)
+
+    # ======================================================================
+    # 3D-(r,phi)-Feldlöser: Sandwich mit diskreten Löchern
+    # ======================================================================
+    def _build_3d_geometry(self):
+        """Einmalige Gitter-/Lochgeometrie für ``squeeze_model='3d'``.
+
+        Das 3D-Modell löst das komplette Sandwich der einteiligen
+        durchbohrten Elektrode (Debenham-Typ) als EIN gekoppeltes
+        Feldproblem auf einem (r, phi)-Gitter:
+
+            p_front(r,phi), p_rear(r,phi)   — Reynolds-Filme beider Spalte
+            w_front(r,phi), w_rear(r,phi)   — Membranen als FD-FELDER
+                                              (Spannungsoperator, am Rand
+                                              eingespannt; KEINE Moden-
+                                              abschneidung)
+
+        Gegenüber dem axialsymmetrischen 2D-Modell fällt damit die
+        Homogenisierung der Löcher weg: Durchgangs- und Sacklöcher sitzen
+        DISKRET an ihren (r, phi)-Positionen (Mündungs-Fußabdruck über
+        die Zellen verteilt), die azimutale Zuströmung durch den Film und
+        die dadurch teilentkoppelten Sacklöcher werden aufgelöst — das
+        bedämpft insbesondere die interne Helmholtz-Resonanz realistisch.
+        Da die realen Azimutwinkel der Bohrbilder nicht dokumentiert
+        sind, gilt eine feste KONVENTION: gleichverteilte Löcher je
+        Lochkreis, Ring m der Durchgangslöcher um 20°·m verdreht, Sack-
+        löcher um weitere 15° (Rückseite zusätzlich um eine halbe
+        Teilung) — die Ergebnisse hängen nur schwach davon ab.
+        Membran-Elektrostatik: Feder-Erweichung als verteilte negative
+        Steifigkeit, an der Grundmode kalibriert (C_A_eff). Gewebe- und
+        Strahlungsimpedanz der Membranaußenseiten werden im 3D-Modell
+        vernachlässigt (klein; Gewebe in den validierten Beispielen 0).
+        """
+        from scipy.special import j1 as _j1, jn_zeros as _jn_zeros
+        Np_ = int(getattr(self, "_n_phi_3d", 96))   # azimutale Auflösung
+        Nr = self._fld_N
+        dr = self.a_bp / Nr
+        Nr_m = max(Nr + 1, int(round(self.a_mem / dr)))
+        r_f = (np.arange(Nr) + 0.5) * dr
+        r_m = (np.arange(Nr_m) + 0.5) * dr
+        dphi = 2.0 * np.pi / Np_
+        A_f = r_f * dr * dphi                       # Zellfläche je Ring
+        A_m = r_m * dr * dphi
+        NF = Nr * Np_
+        NM = Nr_m * Np_
+
+        # Membrankonstanten: Flächendichte, Spannung aus f_res, verteilte
+        # Feder-Erweichung (Grundmoden-kalibriert auf C_A_eff)
+        sigma = 0.75 * self.M_A_mem * self.S_mem
+        b01 = float(_jn_zeros(0, 1)[0])
+        T_mem = sigma * (2.0 * np.pi * self.f_res * self.a_mem / b01) ** 2
+        from scipy.special import j0 as _j0
+        psi1 = _j0(b01 * r_m / self.a_mem)
+        k1 = ((2.0 * np.pi * self.f_res) ** 2 * sigma
+              * np.pi * self.a_mem ** 2 * _j1(b01) ** 2)
+        E2 = float(np.sum((psi1[:Nr] ** 2) * A_f * Np_))
+        kappa = k1 * (1.0 - self.C_A_mem / self.C_A_eff) / E2
+
+        # Loch-Fußabdrücke: Zellen, deren Zentrum in der Mündung liegt
+        def _foot(radius, n, off_deg, r_hole):
+            out = []
+            i0 = int(np.clip(radius / dr, 0, Nr - 1))
+            for k in range(max(n, 0)):
+                ph0 = np.deg2rad(off_deg) + 2.0 * np.pi * k / max(n, 1)
+                cells = []
+                for di in range(-4, 5):
+                    i = i0 + di
+                    if i < 0 or i >= Nr:
+                        continue
+                    arc = r_f[i] * dphi
+                    for dj in range(-4, 5):
+                        if (di * dr) ** 2 + (dj * arc) ** 2 \
+                                <= r_hole ** 2 + 1e-18:
+                            cells.append(i * Np_
+                                         + int(ph0 / dphi + dj) % Np_)
+                if not cells:
+                    cells = [i0 * Np_ + int(ph0 / dphi) % Np_]
+                out.append(np.array(sorted(set(cells)), dtype=int))
+            return out
+
+        def _ring_list(rings, n_total):
+            # (Anzahl, Radius|None); None = gleichmäßig über die Elektrode
+            # -> flächenproportional auf mehrere Kreise aufgeteilt (die
+            # Zahl der Hilfskreise wächst mit der Lochzahl)
+            out = []
+            for cnt, r_pcd in rings:
+                if cnt <= 0:
+                    continue
+                if r_pcd is not None:
+                    out.append((cnt, r_pcd))
+                    continue
+                n_sub = max(2, int(round(np.sqrt(cnt))))
+                edges = self.a_bp * np.sqrt(np.linspace(0.0, 1.0,
+                                                        n_sub + 1))
+                mids = 0.5 * (edges[:-1] + edges[1:])
+                areas = np.diff(edges ** 2)
+                counts = np.maximum(np.round(cnt * areas
+                                             / areas.sum()), 1).astype(int)
+                # Rundungsdifferenz am äußersten (größten) Ring ausgleichen
+                counts[-1] += cnt - int(counts.sum())
+                for c_k, r_k in zip(counts, mids):
+                    if c_k > 0:
+                        out.append((int(c_k), float(r_k)))
+            return out
+
+        th_cells = []
+        for m, (cnt, rr) in enumerate(_ring_list(self._th_rings, self.n_th)):
+            th_cells += _foot(rr, cnt, 20.0 * m, self.r_th)
+        bhf_cells = []
+        bhr_cells = []
+        for m, (cnt, rr) in enumerate(_ring_list(self._bh_rings, self.n_bh)):
+            bhf_cells += _foot(rr, cnt, 15.0 + 20.0 * m, self.r_bh)
+            bhr_cells += _foot(rr, cnt, 15.0 + 20.0 * m
+                               + 180.0 / max(cnt, 1), self.r_bh)
+
+        # Statische COO-Anteile: Membran-Spannungsoperator (beidseitig,
+        # eingespannter Rand) + Feder-Erweichung (nur Front, Elektroden-
+        # bereich). Alle übrigen Einträge sind frequenzabhängig.
+        rows = []
+        cols = []
+        vals = []
+
+        def _lap(base_off, Tfac):
+            for i in range(Nr_m):
+                if i < Nr_m - 1:
+                    G = Tfac * (i + 1) * dphi
+                    for j in range(Np_):
+                        k1_ = base_off + i * Np_ + j
+                        k2_ = base_off + (i + 1) * Np_ + j
+                        rows.extend((k1_, k2_, k1_, k2_))
+                        cols.extend((k2_, k1_, k1_, k2_))
+                        vals.extend((-G, -G, G, G))
+                else:
+                    G = Tfac * Nr_m * dphi * 2.0    # geklemmter Rand
+                    for j in range(Np_):
+                        k1_ = base_off + i * Np_ + j
+                        rows.append(k1_)
+                        cols.append(k1_)
+                        vals.append(G)
+                Gp = Tfac * dr / (r_m[i] * dphi)
+                for j in range(Np_):
+                    k1_ = base_off + i * Np_ + j
+                    k2_ = base_off + i * Np_ + (j + 1) % Np_
+                    rows.extend((k1_, k2_, k1_, k2_))
+                    cols.extend((k2_, k1_, k1_, k2_))
+                    vals.extend((-Gp, -Gp, Gp, Gp))
+
+        off_wf = 2 * NF
+        off_wr = 2 * NF + NM
+        _lap(off_wf, T_mem)
+        _lap(off_wr, T_mem)
+        for i in range(Nr):                          # Erweichung nur vorn
+            for j in range(Np_):
+                k1_ = off_wf + i * Np_ + j
+                rows.append(k1_)
+                cols.append(k1_)
+                vals.append(-kappa * A_m[i])
+        # Druckkopplung Membranzeilen (omega-unabhängig): vorn -p_f, hinten +p_r
+        for i in range(Nr):
+            for j in range(Np_):
+                rows.append(off_wf + i * Np_ + j)
+                cols.append(i * Np_ + j)
+                vals.append(-A_f[i])
+                rows.append(off_wr + i * Np_ + j)
+                cols.append(NF + i * Np_ + j)
+                vals.append(+A_f[i])
+
+        self._g3d = dict(
+            Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, dphi=dphi,
+            r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM,
+            sigma=sigma, T_mem=T_mem, kappa=kappa,
+            th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
+            static=(np.array(rows), np.array(cols),
+                    np.array(vals, dtype=complex)),
+        )
+
+    def _solve_3d(self, omega, want_rear=False):
+        """3D-Sandwich-Lösung: Ausgangs-Volumenverschiebung je Einheits-
+        Außendruck, U_front = X_f·p_front + X_r·p_rear.
+
+        Rückgabe: (X_f, X_r) je Frequenz [m³/Pa]; mit ``want_rear``
+        zusätzlich die Rückmembran-Antworten (B_f, B_r) für
+        Reziprozitätsprüfungen. Je Frequenz wird das dünn besetzte
+        Gesamtsystem (2 Filme + 2 Membranfelder, ~24k Unbekannte)
+        einmal LU-faktorisiert — das 3D-Modell ist damit DEUTLICH
+        langsamer als 1D/2D (Sekundenbereich pro Frequenzpunkt);
+        für Frequenzgänge empfiehlt sich n_points <= 150.
+        """
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.linalg import splu
+        g = self._g3d
+        Np_, Nr, Nr_m = g["Np"], g["Nr"], g["Nr_m"]
+        NF, NM = g["NF"], g["NM"]
+        dr, dphi = g["dr"], g["dphi"]
+        r_f, A_f, A_m = g["r_f"], g["A_f"], g["A_m"]
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        Xf = np.empty(omega.size, dtype=complex)
+        Xr = np.empty_like(Xf)
+        Bf = np.empty_like(Xf)
+        Br = np.empty_like(Xf)
+
+        def _film_props(h_loc, om):
+            a_v = 0.5 * h_loc * np.sqrt(1j * om * RHO0 / MU_AIR)
+            K = h_loc / (1j * om * RHO0) * (1.0 - np.tanh(a_v) / a_v)
+            a_t = a_v * np.sqrt(PRANDTL)
+            n_poly = GAMMA / (1.0 + (GAMMA - 1.0) * np.tanh(a_t) / a_t)
+            return K, h_loc / (n_poly * P_ATM)
+
+        idx_all = np.arange(NF)
+        i_of = idx_all // Np_
+        srows, scols, svals = g["static"]
+        # Ausgangs- (Elektrodenbereich) und Anregungs-Gewichte (Vollfläche)
+        w_out = np.repeat(A_f, Np_)
+        rhs_w = np.repeat(A_m, Np_)
+
+        for fidx, om in enumerate(omega):
+            rows = [srows]
+            cols = [scols]
+            vals = [svals]
+            # Filmringe beider Seiten (h ggf. mit Clearance-Relief)
+            for side, h0 in ((0, self.h_gap_front), (1, self.h_gap)):
+                off = side * NF
+                h_ring = h0 + self._clr_relief
+                K = np.empty(Nr, dtype=complex)
+                cg = np.empty(Nr, dtype=complex)
+                for hh in np.unique(h_ring):
+                    msk = h_ring == hh
+                    Kh, ch = _film_props(hh, om)
+                    K[msk] = Kh
+                    cg[msk] = ch
+                # radiale Faces
+                Kmid = 0.5 * (K[:-1] + K[1:])
+                Gr = (np.arange(1, Nr) * dphi) * Kmid
+                k1_ = off + idx_all[:(Nr - 1) * Np_]
+                k2_ = k1_ + Np_
+                Gv = np.repeat(Gr, Np_)
+                rows += [k1_, k2_, k1_, k2_]
+                cols += [k2_, k1_, k1_, k2_]
+                vals += [-Gv, -Gv, Gv, Gv]
+                # azimutale Faces
+                Ga = np.repeat(dr / (r_f * dphi) * K, Np_)
+                k1_ = off + idx_all
+                k2_ = off + i_of * Np_ + (idx_all % Np_ + 1) % Np_
+                rows += [k1_, k2_, k1_, k2_]
+                cols += [k2_, k1_, k1_, k2_]
+                vals += [-Ga, -Ga, Ga, Ga]
+                # Speicherung
+                rows += [off + idx_all]
+                cols += [off + idx_all]
+                vals += [1j * om * np.repeat(cg * A_f, Np_)]
+                # Membranquelle (+jw vorn, -jw hinten)
+                sgn = 1.0 if side == 0 else -1.0
+                woff = 2 * NF + side * NM
+                rows += [off + idx_all]
+                cols += [woff + idx_all]
+                vals += [sgn * 1j * om * np.repeat(A_f, Np_)]
+                # Clearance-Ring als Schlitz-Stub (schmaler Ring)
+                if self._clr_stub_cell is not None:
+                    r_cst = 0.5 * self.clearance_ring_diameter
+                    C_st = (2.0 * np.pi * r_cst * self.clearance_ring_width
+                            * self.clearance_ring_depth / (GAMMA * P_ATM))
+                    R_st = (12.0 * MU_AIR * self.clearance_ring_depth
+                            / (2.0 * np.pi * r_cst
+                               * self.clearance_ring_width ** 3) / 3.0)
+                    y_st = 1.0 / (R_st + 1.0 / (1j * om * C_st)) / Np_
+                    cells = self._clr_stub_cell * Np_ + np.arange(Np_)
+                    rows += [off + cells]
+                    cols += [off + cells]
+                    vals += [np.full(Np_, y_st, dtype=complex)]
+            # Durchgangslöcher: Rohr durch die volle Platte, Fußabdruck
+            om_a = np.array([om])
+            Zth = self._hole_impedance(om_a, self.r_th,
+                                       2.0 * self.t_bp + self.h_center, 1,
+                                       end_correction=False)[0]
+            gth = 1.0 / Zth
+            for cells in g["th_cells"]:
+                gv = gth / cells.size
+                kf = cells
+                kr = NF + cells
+                gvv = np.full(cells.size, gv, dtype=complex)
+                rows += [kf, kr, kf, kr]
+                cols += [kf, kr, kr, kf]
+                vals += [gvv, gvv, -gvv, -gvv]
+            # Sacklöcher: geschlossene Stubs an ihren Zellen
+            if self.n_bh > 0:
+                ybh = 1.0 / self._closed_hole_stub(om_a, self.r_bh,
+                                                   self.d_bh)[0]
+                for side, bl in ((0, g["bhf_cells"]), (1, g["bhr_cells"])):
+                    off = side * NF
+                    for cells in bl:
+                        yv = np.full(cells.size, ybh / cells.size,
+                                     dtype=complex)
+                        rows += [off + cells]
+                        cols += [off + cells]
+                        vals += [yv]
+            # Membran-Massenterme (Verlust wie 2D: kleiner interner Q)
+            mterm = (-om ** 2 * g["sigma"]
+                     * (1.0 - 1j / self._Q_MEMBRANE_INTERNAL))
+            midx = np.arange(NM)
+            for woff in (2 * NF, 2 * NF + NM):
+                rows += [woff + midx]
+                cols += [woff + midx]
+                vals += [mterm * rhs_w]
+            S = coo_matrix(
+                (np.concatenate(vals),
+                 (np.concatenate(rows), np.concatenate(cols))),
+                shape=(2 * NF + 2 * NM, 2 * NF + 2 * NM)).tocsc()
+            lu = splu(S)
+            rhs = np.zeros((2 * NF + 2 * NM, 2), dtype=complex)
+            rhs[2 * NF:2 * NF + NM, 0] = -rhs_w      # p_front = 1
+            rhs[2 * NF + NM:, 1] = +rhs_w            # p_rear  = 1
+            x = lu.solve(rhs)
+            wf = x[2 * NF:2 * NF + NF, :]            # Elektrodenbereich
+            wr = x[2 * NF + NM:2 * NF + NM + NF, :]
+            Xf[fidx] = np.sum(w_out[:, None] * wf, axis=0)[0]
+            Xr[fidx] = np.sum(w_out[:, None] * wf, axis=0)[1]
+            Bf[fidx] = np.sum(w_out[:, None] * wr, axis=0)[0]
+            Br[fidx] = np.sum(w_out[:, None] * wr, axis=0)[1]
+        if want_rear:
+            return Xf, Xr, Bf, Br
+        return Xf, Xr
 
     def _source_pressures(self, omega, theta):
         """Effektive Quelldrücke p_front/p_rear für Einfallswinkel theta.
@@ -2260,9 +2610,14 @@ class MicrophoneCapsule:
         """
         f = np.atleast_1d(np.asarray(frequencies_hz, dtype=float))
         omega = 2.0 * np.pi * f
-        T_total, T_rear = self._assemble_network(omega)
         theta = np.array([np.deg2rad(angle_deg)])
         p_f, p_r = self._source_pressures(omega, theta)
+        if self.squeeze_model == "3d":
+            # 3D-Sandwich: Volumenverschiebung direkt aus dem Feldlöser
+            Xf, Xr = self._solve_3d(omega)
+            q_mem = 1j * omega * (Xf * p_f[:, 0] + Xr * p_r[:, 0])
+            return self._output_voltage(omega, q_mem)
+        T_total, T_rear = self._assemble_network(omega)
         q_mem = self._membrane_volume_velocity(omega, T_total, T_rear,
                                                p_f[:, 0], p_r[:, 0])
         return self._output_voltage(omega, q_mem)
@@ -2313,17 +2668,26 @@ class MicrophoneCapsule:
         patterns = {}
         for f in frequencies_hz:
             omega = np.array([2.0 * np.pi * float(f)])
-            T_total, T_rear = self._assemble_network(omega)
             p_f2, p_r2 = self._source_pressures(omega, theta)
             p_front, p_rear = p_f2[0], p_r2[0]
-            if self.rear_open:
-                A, B = T_total[0, 0][0], T_total[0, 1][0]
-                q_rear = (p_front - A * p_rear) / B
-                q_mem = T_rear[1, 0][0] * p_rear + T_rear[1, 1][0] * q_rear
+            if self.squeeze_model == "3d":
+                # 3D-Sandwich: EIN Feldlösungs-Paar (X_f, X_r) je
+                # Frequenz; die Winkelabhängigkeit steckt allein in den
+                # Quelldrücken
+                Xf3, Xr3 = self._solve_3d(omega)
+                q_mem = 1j * omega[0] * (Xf3[0] * p_front
+                                         + Xr3[0] * p_rear)
             else:
-                # Druckempfänger: winkelabhängig nur über den Druckstau
-                # an der Membran (ohne Beugung: exakte Kugel)
-                q_mem = T_rear[1, 0][0] * (p_front / T_total[0, 0][0])
+                T_total, T_rear = self._assemble_network(omega)
+                if self.rear_open:
+                    A, B = T_total[0, 0][0], T_total[0, 1][0]
+                    q_rear = (p_front - A * p_rear) / B
+                    q_mem = (T_rear[1, 0][0] * p_rear
+                             + T_rear[1, 1][0] * q_rear)
+                else:
+                    # Druckempfänger: winkelabhängig nur über den
+                    # Druckstau an der Membran (ohne Beugung: exakte Kugel)
+                    q_mem = T_rear[1, 0][0] * (p_front / T_total[0, 0][0])
             e = self._output_voltage(np.full_like(theta, omega[0]), q_mem)
             mag = np.abs(e)
             ref = mag[0] if mag[0] > 0 else np.max(mag)
@@ -2356,8 +2720,10 @@ class MicrophoneCapsule:
             "-" * 55,
             f"Architektur:                  {self.architecture} ({arch_note})",
             f"Spaltfilm-Modell:             {self.squeeze_model} "
-            + ("(modifizierte Reynolds-Feldlösung)" if self.squeeze_model == "2d"
-               else "(Lumped-Element)"),
+            + {"1d": "(Lumped-Element)",
+               "2d": "(modifizierte Reynolds-Feldlösung)",
+               "3d": "((r,phi)-Sandwich, diskrete Löcher)"}[
+                   self.squeeze_model],
             f"Membranfläche:                {self.S_mem * 1e6:9.2f} mm²",
             f"akust. Masse Membran M_A:     {self.M_A_mem:9.2f} kg/m⁴",
             f"akust. Nachgiebigkeit C_A:    {self.C_A_mem:9.3e} m³/Pa",
@@ -3060,5 +3426,57 @@ if __name__ == "__main__":
         print(f"Clearance-Ring: 0 ≡ Bestand; Freistich am Elektrodenrand "
               f"vertieft die Debenham-Null @500 Hz von {p0:.1f} auf "
               f"{p1:.1f} dB (Null {na1:.0f}°)  OK")
+
+    # --------- Gegenprobe 16: 3D-(r,phi)-Löser (diskrete Löcher) -----------
+    # a) Gültigkeits-Gatter: '3d' nur für die einteilige Doppelmembran-
+    #    Elektrode (dual_diaphragm, center_gap = 0, keine Stufenbohrung).
+    # b) Reziprozität des Feldsystems: Frontantwort auf Rückdruck ==
+    #    Rückantwort auf Frontdruck (±3 %).
+    # c) Physik: Null bei 180°; ein Freistich, der ALLE Loch-Mündungen
+    #    abdeckt, vertieft die Auslöschung gegenüber dem reinen Rand-Ring
+    #    deutlich (Mündungs-Engstellen-Mechanismus, s. Gegenprobe 15).
+    if _HAS_SCIPY:
+        try:
+            MicrophoneCapsule(squeeze_model="3d")
+            raise AssertionError("'3d' ohne dual_diaphragm müsste scheitern")
+        except ValueError:
+            pass
+        try:
+            MicrophoneCapsule(architecture="dual_diaphragm",
+                              center_gap=50e-6, squeeze_model="3d",
+                              membrane_resonance_hz=2100.0)
+            raise AssertionError("'3d' mit center_gap > 0 müsste scheitern")
+        except ValueError:
+            pass
+        deb3 = MicrophoneCapsule(**{**deb_kwargs,
+                                    "squeeze_model": "3d",
+                                    "clearance_ring_diameter": 22.63e-3,
+                                    "clearance_ring_width": 1.27e-3,
+                                    "clearance_ring_depth": 38e-6})
+        Xf3, Xr3, Bf3, Br3 = deb3._solve_3d(
+            np.array([2.0 * np.pi * 1000.0]), want_rear=True)
+        assert 0.97 < abs(Xr3[0]) / abs(Bf3[0]) < 1.03, \
+            "3D-Feldsystem muss reziprok sein"
+        di3 = deb3.directivity(frequencies_hz=(1000.0,))
+        p3 = di3["patterns"][1000.0]
+        na3 = di3["angles_deg"][:181][int(np.argmin(p3["linear"][:181]))]
+        assert na3 > 172.0, f"3D-Niere muss bei 180° nullen ({na3:.0f}°)"
+        deb3b = MicrophoneCapsule(**{**deb_kwargs,
+                                     "squeeze_model": "3d",
+                                     "clearance_ring_diameter": 13.0e-3,
+                                     "clearance_ring_width": 18.0e-3,
+                                     "clearance_ring_depth": 38e-6})
+        p3b = deb3b.directivity(
+            frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
+        assert p3b < p3["db"][180] - 6.0, \
+            (f"Mündungs-Freistich muss die 3D-Null deutlich vertiefen "
+             f"({p3['db'][180]:.1f} -> {p3b:.1f})")
+        fr3 = deb3.frequency_response(f_min=100.0, f_max=8000.0,
+                                      n_points=8)
+        assert np.all(np.isfinite(fr3["amplitude_db"]))
+        print(f"3D-Löser: Gatter greifen, reziprok "
+              f"({abs(Xr3[0]) / abs(Bf3[0]):.3f}), Null @{na3:.0f}°; "
+              f"Mündungs-Freistich vertieft 180°/1 kHz von "
+              f"{p3['db'][180]:.1f} auf {p3b:.1f} dB  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

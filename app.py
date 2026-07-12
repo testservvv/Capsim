@@ -160,8 +160,10 @@ DEFAULTS = {
     # Gehäuse & Beugung
     "diffraction_on": True,
     "body_diameter_mm": 32.0,
-    # Spaltfilm-Modell (Debenham braucht 2D für die tiefe Niere)
+    # Spaltfilm-Modell (Debenham braucht 2D für die tiefe Niere;
+    # 3D = diskrete Löcher, nur einteilige Doppelmembran-Elektrode)
     "squeeze_2d": True,
+    "squeeze_3d": False,
     # Simulation
     "n_points": 400,
     "normalize_1khz": True,
@@ -386,7 +388,8 @@ def build_capsule(p):
         fabric_rear_rayl=p["fabric_rear_rayl"],
         body_diameter=p["body_diameter_mm"] * 1e-3,
         include_diffraction=p["diffraction_on"],
-        squeeze_model=("2d" if p["squeeze_2d"] else "1d"),
+        squeeze_model=("3d" if p.get("squeeze_3d") else
+                       ("2d" if p["squeeze_2d"] else "1d")),
     )
 
 
@@ -775,6 +778,23 @@ with st.sidebar:
         if st.session_state["p_squeeze_2d"]:
             st.caption("Die Lochkreise im Abschnitt Backplate steuern "
                        "jetzt die radiale Lochverteilung im Spaltfeld.")
+        st.toggle("3D-Feldmodell (diskrete Löcher, r-φ-Sandwich)",
+                  key="p_squeeze_3d",
+                  help="Volles (r, φ)-Feldmodell: beide Spaltfilme UND "
+                       "beide Membranen als Felder, Durchgangs- und "
+                       "Sacklöcher sitzen DISKRET an ihren Positionen "
+                       "(azimutale Zuströmung und teilentkoppelte Sack-"
+                       "löcher werden aufgelöst; bedämpft die interne "
+                       "Helmholtz-Resonanz realistisch). Nur für die "
+                       "Doppelmembran-Bauform mit einteiliger Elektrode "
+                       "(center_gap = 0, keine Stufenbohrung). Hat "
+                       "Vorrang vor dem 2D-Schalter. DEUTLICH langsamer "
+                       "(~1–2 s je Frequenzpunkt) — Frequenzpunkte "
+                       "reduzieren!")
+        if st.session_state["p_squeeze_3d"]:
+            st.caption("⏳ 3D rechnet je Frequenzpunkt eine LU-Faktori"
+                       "sierung (~24 000 Unbekannte). Empfehlung: "
+                       "Frequenzpunkte ≤ 150.")
 
     # ---------------- Simulation ---------------------------------------
     with st.expander("Simulation", expanded=False):
