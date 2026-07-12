@@ -153,6 +153,18 @@ class MicrophoneCapsule:
             akustische Laufzeit des Phasenschieber-Netzwerks (Bohrungen,
             Spaltfilme, Spacer) diese externe Laufzeit d_ext/c trifft.
             ``0`` = keine Ringe. Wirkt nur bei ``dual_diaphragm``.
+        clearance_ring_diameter, clearance_ring_width, clearance_ring_depth : float
+            Ringförmiger FREISTICH in den Elektroden-Stirnflächen (je
+            Seite) [m]: mittlerer Ring-Ø (Position), radiale Breite,
+            axialer Abtrag. Breite Ringe (≥ 1 Feldgitterzelle) werden als
+            lokale Spaltvertiefung ``h -> h + Tiefe`` aufgelöst und
+            ENTLASTEN die Mündungs-Engstellen dort sitzender Bohrungen —
+            bei wenigen engen Durchgangslöchern (Braunmühl-Weber-Platten
+            wie der Debenham) ist genau diese Engstelle der begrenzende
+            Widerstand des Nieren-Phasenschiebers, und der Freistich
+            vertieft die 180°-Auslöschung dramatisch. Schmalere Ringe
+            wirken als konzentrierter Schlitz-Stub (R–C) an ihrer Zelle.
+            ``0`` = kein Ring. Wirkt nur im 2D-Feldmodell.
 
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
@@ -276,6 +288,10 @@ class MicrophoneCapsule:
         # --- Klemmringe (Doppelmembran-Bauform) -----------------------------
         clamp_ring_thickness=0.0,
         clamp_ring_width=0.0,
+        # --- Clearance-Ring (Freistich in den Elektroden-Stirnflächen) ------
+        clearance_ring_diameter=0.0,
+        clearance_ring_width=0.0,
+        clearance_ring_depth=0.0,
         # --- Akustische Netzwerke & Rückseite -------------------------------
         rear_network_enabled=True,
         rear_spacer_height=0.0,
@@ -462,6 +478,21 @@ class MicrophoneCapsule:
             raise ValueError("Klemmring-Dicke und -Breite dürfen nicht "
                              "negativ sein.")
 
+        # Clearance-Ring: ringförmiger Freistich in den Elektroden-
+        # Stirnflächen (je Seite). Position über den Ring-Ø, radiale
+        # Breite, axiale Tiefe; 0 = kein Ring. Breite Ringe (>= 1 Feld-
+        # gitterzelle) wirken als lokale Spaltvertiefung h -> h + Tiefe
+        # und ENTLASTEN die Mündungs-Engstellen dort sitzender Bohrungen
+        # (entscheidend für die Nierentiefe bei wenigen engen Durchgangs-
+        # löchern, z. B. Debenham); schmalere Ringe wirken als
+        # konzentrierter Schlitz-Stub. Nur im 2D-Feldmodell.
+        self.clearance_ring_diameter = float(clearance_ring_diameter)
+        self.clearance_ring_width = float(clearance_ring_width)
+        self.clearance_ring_depth = float(clearance_ring_depth)
+        if (self.clearance_ring_diameter < 0 or self.clearance_ring_width < 0
+                or self.clearance_ring_depth < 0):
+            raise ValueError("Clearance-Ring-Maße dürfen nicht negativ sein.")
+
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
 
@@ -611,6 +642,28 @@ class MicrophoneCapsule:
 
         self._fld_dens_th = _hole_density(self._th_rings, self.n_th)
         self._fld_dens_bh = _hole_density(self._bh_rings, self.n_bh)
+
+        # CLEARANCE-RING auf dem Feldgitter (s. __init__): Relief-Karte
+        # für breite Ringe, Stub-Zelle für schmale; Flags, ob Loch-
+        # Mündungen im Relief liegen (dann entlastete Engstelle).
+        self._clr_relief = np.zeros(N)
+        self._clr_stub_cell = None
+        self._clr_th_relieved = False
+        self._clr_bh_relieved = False
+        if (self.clearance_ring_width > 0.0
+                and self.clearance_ring_depth > 0.0
+                and self.clearance_ring_diameter > 0.0):
+            r_ring = 0.5 * self.clearance_ring_diameter
+            if self.clearance_ring_width >= dr:
+                mask = np.abs(r_c - r_ring) <= 0.5 * self.clearance_ring_width
+                self._clr_relief[mask] = self.clearance_ring_depth
+                thr = 0.5 / float(np.sum(self._fld_area))
+                if np.any(mask & (self._fld_dens_th > thr)):
+                    self._clr_th_relieved = True
+                if np.any(mask & (self._fld_dens_bh > thr)):
+                    self._clr_bh_relieved = True
+            else:
+                self._clr_stub_cell = int(np.clip(r_ring / dr, 0, N - 1))
 
         # Elektrodenrand in Modenkoordinate u = r^2/a_mem^2
         self._ub = min((self.a_bp / self.a_mem) ** 2, 1.0)
@@ -1739,12 +1792,52 @@ class MicrophoneCapsule:
 
         # Filmleitwert mit viskoser Trägheit und polytrope Kompressibilität
         # (s. Docstring); beide sind komplex und frequenzabhängig.
+        # CLEARANCE-RING: Zellen im Freistich haben lokal den tieferen
+        # Spalt h + Tiefe -> zellweise Leitwerte/Nachgiebigkeiten; liegen
+        # Loch-Mündungen im Relief, wird deren Zell-Engstelle mit dem
+        # dortigen (größeren) Filmleitwert gerechnet.
         h = self.h_gap if h_film is None else h_film
-        a_v = 0.5 * h * np.sqrt(1j * omega * RHO0 / MU_AIR)
-        K_f = h / (1j * omega * RHO0) * (1.0 - np.tanh(a_v) / a_v)
-        a_t = a_v * np.sqrt(PRANDTL)
-        n_poly = GAMMA / (1.0 + (GAMMA - 1.0) * np.tanh(a_t) / a_t)
-        c_gap = h / (n_poly * P_ATM)                     # (Nf,) komplex
+
+        def _film_props(h_loc):
+            a_v = 0.5 * h_loc * np.sqrt(1j * omega * RHO0 / MU_AIR)
+            K = h_loc / (1j * omega * RHO0) * (1.0 - np.tanh(a_v) / a_v)
+            a_t = a_v * np.sqrt(PRANDTL)
+            n_poly = GAMMA / (1.0 + (GAMMA - 1.0) * np.tanh(a_t) / a_t)
+            return K, h_loc / (n_poly * P_ATM)
+
+        K_f, c_gap = _film_props(h)                      # (Nf,) nominal
+        h_cell = h + self._clr_relief
+        if np.any(self._clr_relief > 0.0):
+            K_cell = np.empty((Nf, N), dtype=complex)
+            c_cell = np.empty((Nf, N), dtype=complex)
+            for hh in np.unique(h_cell):
+                mloc = h_cell == hh
+                Kh, ch = _film_props(hh)
+                K_cell[:, mloc] = Kh[:, None]
+                c_cell[:, mloc] = ch[:, None]
+            K_face = np.empty((Nf, N + 1), dtype=complex)
+            K_face[:, 0] = K_cell[:, 0]
+            K_face[:, N] = K_cell[:, -1]
+            K_face[:, 1:N] = 0.5 * (K_cell[:, :-1] + K_cell[:, 1:])
+            K_entry_th = (_film_props(h + self.clearance_ring_depth)[0]
+                          if self._clr_th_relieved else K_f)
+            K_entry_bh = (_film_props(h + self.clearance_ring_depth)[0]
+                          if self._clr_bh_relieved else K_f)
+        else:
+            K_cell = np.broadcast_to(K_f[:, None], (Nf, N))
+            c_cell = np.broadcast_to(c_gap[:, None], (Nf, N))
+            K_face = np.broadcast_to(K_f[:, None], (Nf, N + 1))
+            K_entry_th = K_f
+            K_entry_bh = K_f
+        y_ring = np.zeros(Nf, dtype=complex)
+        if self._clr_stub_cell is not None:
+            r_cst = 0.5 * self.clearance_ring_diameter
+            C_st = (2.0 * np.pi * r_cst * self.clearance_ring_width
+                    * self.clearance_ring_depth / (GAMMA * P_ATM))
+            R_st = (12.0 * MU_AIR * self.clearance_ring_depth
+                    / (2.0 * np.pi * r_cst
+                       * self.clearance_ring_width**3) / 3.0)
+            y_ring = 1.0 / (R_st + 1.0 / (1j * omega * C_st))
 
         # Zell-Engstellenwiderstand je Bohrung (Škvor-Zellfunktion, alle
         # Bohrungen teilen sich die Zellen; q_c >= 1 -> Löcher berühren
@@ -1774,7 +1867,7 @@ class MicrophoneCapsule:
         Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
                                       end_correction=False, visc_ends=1)
                  + 1j * omega * RHO0 * (0.85 * self.r_th) / S_th
-                 + _cell_B(r_well_th) / (np.pi * K_f))
+                 + _cell_B(r_well_th) / (np.pi * K_entry_th))
         if self.stepped:
             # weites Senkungssegment in Serie + Karal-Stufenmündung
             # (Masse und viskoser Anteil; die filmseitige Ausbreitung
@@ -1795,13 +1888,13 @@ class MicrophoneCapsule:
                    if (self.n_bh > 0 or self.stepped) else None)
         if self.n_bh > 0:
             y_tot = self.n_bh / (Z_stub1
-                                 + _cell_B(self.r_bh) / (np.pi * K_f))
+                                 + _cell_B(self.r_bh) / (np.pi * K_entry_bh))
         else:
             y_tot = np.zeros(Nf, dtype=complex)
         if self.stepped:
             # Senkungsvolumina der Stufenbohrungen (sitzen auf dens_th)
             y_cb = self.n_th / (Z_stub1
-                                + _cell_B(self.r_bh) / (np.pi * K_f))
+                                + _cell_B(self.r_bh) / (np.pi * K_entry_th))
         else:
             y_cb = np.zeros(Nf, dtype=complex)
 
@@ -1810,12 +1903,15 @@ class MicrophoneCapsule:
         ab = np.zeros((3, N), dtype=complex)
         gg = self._fld_gface_geom
         for f in range(Nf):
-            Gface = gg * K_f[f]                           # (N+1,) komplex
+            Gface = gg * K_face[f]                        # (N+1,) komplex
             ab[0, 1:] = -Gface[1:N]                       # Superdiagonale
             ab[2, :-1] = -Gface[1:N]                      # Subdiagonale
             g_h = g_tot[f] * dens_th                      # (N,) verteilt
             y_bh = y_tot[f] * dens_bh + y_cb[f] * dens_th
-            Y = 1j * omega[f] * c_gap[f] + y_bh + g_h
+            Y = 1j * omega[f] * c_cell[f] + y_bh + g_h
+            if self._clr_stub_cell is not None:
+                Y[self._clr_stub_cell] += (y_ring[f]
+                                           / A[self._clr_stub_cell])
             ab[1, :] = Gface[:N] + Gface[1:N + 1] + Y * A
             rhs = np.column_stack((src_a, g_h * A))       # (N, 2)
             sol = _solve_banded((1, 1), ab, rhs)
@@ -2916,5 +3012,53 @@ if __name__ == "__main__":
         print(f"Architektur-Konsistenz: Dual-Backplate 1D≡2D (max Abw. "
               f"{np.max(np.abs(pd1 - pd2)):.2f} dB), Gewebe dämpft passiv "
               f"({s_fab / s_du:.3f}×), K103 dicht = Kugel (2D)  OK")
+
+    # --------- Gegenprobe 15: Clearance-Ring (Stirnflächen-Freistich) ------
+    # a) Ring aus (0) ≡ exakt das Bestandsverhalten.
+    # b) Debenham-artige Platte (12 enge Durchgangslöcher auf Lochkreisen):
+    #    der Freistich am Elektrodenrand entlastet die Mündungs-Engstellen
+    #    des Nieren-Phasenschiebers -> deutlich tiefere 180°-Auslöschung,
+    #    Null bleibt bei 180°.
+    if _HAS_SCIPY:
+        deb_kwargs = dict(
+            architecture="dual_diaphragm", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            membrane_tension=45.0, air_gap=38.1e-6,
+            backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+            bias_voltage=50.0, center_gap=0.0,
+            through_hole_diameter=0.71e-3,
+            through_hole_rings=[(6, 21.84e-3), (3, 17.48e-3),
+                                (3, 8.74e-3)],
+            blind_hole_diameter=1.2e-3, blind_hole_depth=3.0e-3,
+            blind_hole_rings=[(12, 21.84e-3), (12, 17.48e-3),
+                              (12, 13.11e-3), (6, 8.74e-3), (4, 4.37e-3)],
+            clamp_ring_thickness=2e-3, clamp_ring_width=3e-3,
+            body_diameter=32e-3, squeeze_model="2d")
+        deb0 = MicrophoneCapsule(**deb_kwargs)
+        deb0_ref = MicrophoneCapsule(clearance_ring_diameter=0.0,
+                                     clearance_ring_width=0.0,
+                                     clearance_ring_depth=0.0, **deb_kwargs)
+        f_chk = np.array([250.0, 1000.0, 5000.0])
+        assert np.allclose(deb0.transfer_function(f_chk),
+                           deb0_ref.transfer_function(f_chk),
+                           rtol=1e-12, atol=0.0), \
+            "Clearance-Ring = 0 muss exakt dem Bestand entsprechen"
+        deb1 = MicrophoneCapsule(clearance_ring_diameter=22.63e-3,
+                                 clearance_ring_width=1.27e-3,
+                                 clearance_ring_depth=38e-6, **deb_kwargs)
+        def _n180(c, f):
+            di = c.directivity(frequencies_hz=(f,))
+            pat = di["patterns"][f]
+            na = di["angles_deg"][:181][int(np.argmin(pat["linear"][:181]))]
+            return pat["db"][180], na
+        p0, _ = _n180(deb0, 500.0)
+        p1, na1 = _n180(deb1, 500.0)
+        assert p1 < p0 - 8.0, \
+            f"Freistich muss die 180°-Auslöschung vertiefen ({p0:.1f} -> {p1:.1f})"
+        assert na1 > 172.0, \
+            f"Null muss bei 180° bleiben ({na1:.0f}°)"
+        print(f"Clearance-Ring: 0 ≡ Bestand; Freistich am Elektrodenrand "
+              f"vertieft die Debenham-Null @500 Hz von {p0:.1f} auf "
+              f"{p1:.1f} dB (Null {na1:.0f}°)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

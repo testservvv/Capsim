@@ -135,6 +135,12 @@ DEFAULTS = {
     # Debenham: 2 mm dick, Aussen-Ø 32 mm -> 3 mm breit.
     "clamp_ring_mm": 2.0,
     "clamp_width_mm": 3.0,
+    # Clearance-Ring: Stirnflaechen-Freistich am Elektrodenrand der
+    # Debenham-Elektrode (aus der Konstruktionszeichnung: Abtrag 0.038 mm
+    # ueber die aeusseren 1.27 mm; mittlerer Ring-Oe 23.9 - 1.27 mm).
+    "clr_dia_mm": 22.63,
+    "clr_width_mm": 1.27,
+    "clr_depth_mm": 0.038,
     # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
     # Spacer + massive gelochte Rückplatte (K103-Bauform); 0 = nicht vorhanden
@@ -357,6 +363,9 @@ def build_capsule(p):
         through_holes_stepped=p["th_stepped"],
         clamp_ring_thickness=p["clamp_ring_mm"] * 1e-3,
         clamp_ring_width=p["clamp_width_mm"] * 1e-3,
+        clearance_ring_diameter=p["clr_dia_mm"] * 1e-3,
+        clearance_ring_width=p["clr_width_mm"] * 1e-3,
+        clearance_ring_depth=p["clr_depth_mm"] * 1e-3,
         # Rückseite deaktiviert -> keine rückwärtige Baugruppe: die
         # Durchgangslöcher der Backplate münden (durch das rückwärtige
         # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
@@ -602,6 +611,28 @@ with st.sidebar:
             st.session_state["p_blind_depth_mm"], _bd_max)
         st.number_input("Blindlöcher — Tiefe [mm]", 0.05, _bd_max, step=0.05,
                         key="p_blind_depth_mm")
+
+        st.markdown("**Clearance-Ring (Freistich der Stirnflächen)**",
+                    help="Ringförmiger Freistich in den Elektroden-Stirn"
+                         "flächen (je Seite): Position über den Ring-Ø, "
+                         "radiale Breite, axiale Tiefe. Breite Ringe "
+                         "(≥ 1 Gitterzelle) vertiefen den Spalt lokal und "
+                         "ENTLASTEN die Mündungs-Engstellen dort sitzender "
+                         "Bohrungen — entscheidend für die Nierentiefe bei "
+                         "wenigen engen Durchgangslöchern (z. B. Debenham). "
+                         "Sehr schmale Ringe wirken als Schlitz-Stub. Nur "
+                         "im 2D-Feldmodell wirksam. 0 = kein Ring.")
+        st.number_input("Clearance-Ring — Ø [mm]", 0.0, 60.0, step=0.5,
+                        key="p_clr_dia_mm",
+                        help="Mittlerer Durchmesser des Rings (z. B. der "
+                             "Lochkreis der Durchgangslöcher).")
+        st.number_input("Clearance-Ring — Breite [mm]", 0.0, 10.0, step=0.1,
+                        key="p_clr_width_mm",
+                        help="Radiale Breite des Freistichs.")
+        st.number_input("Clearance-Ring — Tiefe [mm]", 0.0, 5.0, step=0.01,
+                        format="%.3f", key="p_clr_depth_mm",
+                        help="Axialer Abtrag (zusätzliche Spalthöhe im "
+                             "Ringbereich).")
 
         # Klemmringe vor den Membranen — nur bei K67-Bauform relevant
         if st.session_state["p_architecture"] == K67_LABEL:

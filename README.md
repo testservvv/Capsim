@@ -164,15 +164,19 @@ Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi
 News): einteilige durchbohrte Mittelelektrode (`center_gap = 0`), 1"-
 Membranen, je Seite 12 Durchgangs- + 46 Dämpfungslöcher auf den echten
 Lochkreisen der Konstruktionszeichnung (0.860/0.688/0.516/0.344/0.172"),
-50 V. Nach der Port-Tausch-Korrektur liefert das Modell die Nierenform
-(Null bei 180°, flacher Frequenzgang, HF-Bündelung wie Fig. 9), aber
-unterhalb 2 kHz nur −2…−3 dB Tiefe statt der im Artikel gemessenen
-−23 dB: die interne Phasenschieber-Laufzeit dieser einteiligen
-Elektrode fällt im Modell zu lang aus (die 46 großvolumigen
-Dämpfungs-Sacklöcher belasten den Rückkopplungsweg zu den nur 12 engen
-Durchgangslöchern). Ein ehrlich offener Punkt — nicht mehr durch
-Fit-Parameter kaschiert. Dieser Parametersatz ist zugleich die
-Voreinstellung beim App-Start.
+50 V — und der **Clearance-Ring** der Zeichnung: ein
+Stirnflächen-Freistich am Elektrodenrand (0,038 mm Abtrag über die
+äußeren 1,27 mm, GUI-Felder „Clearance-Ring", Klasse
+`clearance_ring_*`). Dieser Freistich entlastet die
+Mündungs-Engstellen der wenigen engen Durchgangslöcher im 38-µm-Spalt —
+sie waren der begrenzende Widerstand des Nieren-Phasenschiebers. Damit
+trifft das Modell Fig. 9 bei 100 Hz fast exakt (−1,3/−5,4/−11,7/−13,6
+@ 45/90/135/180° vs. −1/−3/−10/−12), liefert −30 dB @ 250 Hz und die
+gemessene HF-Bündelung (10 kHz: Null 143° vs. 142°); bei 1–2 kHz bleibt
+es ~10 dB flacher als der Artikel (die axialsymmetrische
+Homogenisierung der 12 diskreten Löcher erfasst dort nur einen Teil der
+Mündungs-Entlastung — offener Rest, dokumentiert). Dieser Parametersatz
+ist zugleich die Voreinstellung beim App-Start.
 
 `examples/k103_bauform_demo.json` — Demonstration der **K103-Bauform**
 (Neumann TLM 103): Einzelmembran-Niere auf K87-Basis, deren Rückseite
