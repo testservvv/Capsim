@@ -2756,6 +2756,81 @@ class MicrophoneCapsule:
             "f_probe_hz": float(f_probe_hz),
         }
 
+    def angle_responses(self, frequencies_hz, angles_deg=(0.0, 90.0, 180.0)):
+        """Winkel-Frequenzgänge und Rück-Übertragung D_r in EINEM Durchlauf.
+
+        Der Membran-Volumenfluss ist linear in den beiden Quelldrücken
+        (Superposition):
+
+            q(θ, ω) = a(ω)·p_front(θ) + b(ω)·p_rück(θ),
+
+        mit winkelUNabhängigen Koeffizienten a, b. Ein einziger Netzwerk-
+        bzw. Feldaufbau je Frequenz liefert deshalb gleichzeitig die
+        Frequenzgänge ALLER gewünschten Winkel, die intern geforderte
+        Rück-Übertragung D_r = −a/b und die externe Front-Rück-
+        Übertragung G(180°) = p_rück/p_front — beim 3D-Modell spart das
+        die sonst je Winkel wiederholte LU-Faktorisierung.
+
+        Rückgabe: dict
+            'frequency_hz' — Frequenzachse
+            'H'            — {winkel_deg: komplexe Übertragung e/p0 [V/Pa]}
+            'D_r'          — Rück-Übertragung −a/b des internen
+                             Phasenschiebers (None bei geschlossener
+                             Rückseite: kein interner Pfad)
+            'G180'         — externe Front-Rück-Übertragung bei 180°
+        """
+        f = np.atleast_1d(np.asarray(frequencies_hz, dtype=float))
+        omega = 2.0 * np.pi * f
+        ang = [float(x) for x in angles_deg]
+        th_list = ang + ([] if 180.0 in ang else [180.0])
+        theta = np.deg2rad(np.asarray(th_list))
+        p_f, p_r = self._source_pressures(omega, theta)
+        if self.squeeze_model == "3d":
+            Xf, Xr = self._solve_3d(omega)
+            a = 1j * omega * Xf
+            b = 1j * omega * Xr
+        else:
+            T_tot, T_rear = self._assemble_network(omega)
+            one, zero = np.ones_like(omega), np.zeros_like(omega)
+            a = self._membrane_volume_velocity(omega, T_tot, T_rear,
+                                               one, zero)
+            b = self._membrane_volume_velocity(omega, T_tot, T_rear,
+                                               zero, one)
+        H = {angle: self._output_voltage(omega,
+                                         a * p_f[:, i] + b * p_r[:, i])
+             for i, angle in enumerate(ang)}
+        i180 = th_list.index(180.0)
+        G180 = p_r[:, i180] / p_f[:, i180]
+        D_r = (-a / b) if self.rear_open else None
+        return {"frequency_hz": f, "H": H, "D_r": D_r, "G180": G180}
+
+    @staticmethod
+    def helmholtz_resonance_hz(frequency_hz, D_r):
+        """Interne Helmholtz-Resonanz aus der D_r-Kurve.
+
+        Unterhalb der Resonanz hat die Rück-Übertragung die Form
+        D_r ≈ (1 − (ω/ω_H)²) + jω·RC (Durchgangsloch-Trägheit gegen die
+        innere Nachgiebigkeit aus Spalt + Blindlöchern): der REALTEIL
+        wechselt bei ω_H das Vorzeichen, die (entrollte) Phase kreuzt
+        90°. Diese Kreuzung wird log-frequenzlinear interpoliert.
+
+        Rückgabe: Frequenz [Hz] der ersten 90°-Kreuzung oder ``None``,
+        wenn keine im übergebenen Bereich liegt (Resonanz oberhalb des
+        Bandes — der gesunde Fall) oder ``D_r`` None ist.
+        """
+        if D_r is None:
+            return None
+        f = np.asarray(frequency_hz, dtype=float)
+        ph = np.degrees(np.unwrap(np.angle(np.asarray(D_r))))
+        below = ph < 90.0
+        idx = np.nonzero(below[:-1] & ~below[1:])[0]
+        if idx.size == 0:
+            return None
+        i = int(idx[0])
+        t = (90.0 - ph[i]) / (ph[i + 1] - ph[i])
+        lf = np.log10(f[i]) + t * (np.log10(f[i + 1]) - np.log10(f[i]))
+        return float(10.0 ** lf)
+
     # ======================================================================
     # Diagnose
     # ======================================================================
@@ -3618,5 +3693,54 @@ if __name__ == "__main__":
           f"{dd_k67['dist_ext_m']*1e3:.1f} mm, Minimum {na_k:.0f}°), "
           f"Spacer 45 µm -> {dd_45['ratio']:.2f} (Null gepinnt {na45:.0f}°); "
           f"geschlossene Rückseite -> None  OK")
+
+    # --------- Gegenprobe 18: angle_responses / Helmholtz-Frequenz ---------
+    # a) Superposition: H(θ) aus EINEM Durchlauf == transfer_function(θ)
+    #    für 0/90/180° (1D/2D-Netzwerk UND 3D-Feldlöser).
+    # b) f_H (90°-Kreuzung von arg D_r) liegt für die bekannten Kapseln im
+    #    erwarteten Bereich; eine dickere Platte (längere enge Bohrungen
+    #    -> mehr Trägheit) muss die Resonanz absenken.
+    # c) Geschlossene Rückseite: D_r und f_H -> None, H bleibt berechenbar.
+    f_grid = np.logspace(np.log10(50.0), np.log10(20000.0), 120)
+    ar_k = k67.angle_responses(f_grid)
+    for angd in (0.0, 90.0, 180.0):
+        ref = k67.transfer_function(f_grid[::20], angle_deg=angd)
+        assert np.allclose(ar_k["H"][angd][::20], ref, rtol=1e-9), \
+            f"angle_responses muss transfer_function reproduzieren ({angd}°)"
+    fH_k67 = MicrophoneCapsule.helmholtz_resonance_hz(f_grid, ar_k["D_r"])
+    assert fH_k67 is not None and 2800.0 < fH_k67 < 3800.0, \
+        f"K67: interne Resonanz ~3.3 kHz erwartet ({fH_k67})"
+    if _HAS_SCIPY:
+        ar_d1 = deb1.angle_responses(f_grid)
+        fH_deb = MicrophoneCapsule.helmholtz_resonance_hz(f_grid,
+                                                          ar_d1["D_r"])
+        assert fH_deb is not None and 2000.0 < fH_deb < 2800.0, \
+            f"Debenham: interne Resonanz ~2.4 kHz erwartet ({fH_deb})"
+        deb_dick = MicrophoneCapsule(clearance_ring_diameter=22.63e-3,
+                                     clearance_ring_width=1.27e-3,
+                                     clearance_ring_depth=38e-6,
+                                     **{**deb_kwargs,
+                                        "backplate_thickness": 6.0e-3})
+        fH_dick = MicrophoneCapsule.helmholtz_resonance_hz(
+            f_grid, deb_dick.angle_responses(f_grid)["D_r"])
+        assert fH_dick is not None and fH_dick < fH_deb - 300.0, \
+            (f"6-mm-Platte: längere Bohrungen müssen die Resonanz senken "
+             f"({fH_dick:.0f} vs. {fH_deb:.0f} Hz)")
+        f1 = np.array([1000.0])
+        ar3 = deb3.angle_responses(f1)
+        ref3 = deb3.transfer_function(f1, angle_deg=90.0)
+        assert np.allclose(ar3["H"][90.0], ref3, rtol=1e-9), \
+            "angle_responses (3D) muss transfer_function reproduzieren"
+        assert ar3["D_r"] is not None
+    ar_h = hermetic.angle_responses(np.array([100.0, 1000.0]))
+    assert ar_h["D_r"] is None
+    assert MicrophoneCapsule.helmholtz_resonance_hz(
+        np.array([100.0, 1000.0]), ar_h["D_r"]) is None
+    assert all(np.all(np.isfinite(np.abs(v))) for v in ar_h["H"].values())
+    print("angle_responses: Superposition == transfer_function (0/90/180°, "
+          f"auch 3D); f_H: K67 {fH_k67:.0f} Hz"
+          + (f", Debenham {fH_deb:.0f} Hz -> 6-mm-Platte {fH_dick:.0f} Hz"
+             if _HAS_SCIPY else "")
+          + "; geschlossene Rückseite -> None  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

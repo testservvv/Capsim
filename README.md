@@ -80,6 +80,25 @@ frequenzabhängig (RC-Phasenschieber mit Filmträgheit, kein reines
 Laufzeitglied) — der Klassen-Methode `delay_diagnostics(f_probe_hz=…)`
 kann eine andere Sondenfrequenz übergeben werden.
 
+Weil eine einzelne Zahl täuschen kann, wenn die **interne
+Helmholtz-Resonanz** (Durchgangsloch-Trägheit gegen Spalt- und
+Blindloch-Nachgiebigkeit) im Band liegt, zeigt die GUI zusätzlich:
+
+- **Richtwirkung über die Frequenz**: Pegel bei 90° und 180° relativ zu
+  0° als Bode-Kurven (mit −6-dB-Referenz der idealen Niere),
+- **Phasenschieber-Plot**: Betrag und Phase von D_r gegen das externe
+  Ziel G(180°) — die Kreuzung der Phasen und der Betragseinbruch an der
+  Resonanz sind direkt sichtbar,
+- **f_H als Kennwert** (90°-Phasendurchgang von D_r, Klassen-Methode
+  `helmholtz_resonance_hz`), mit Warnhinweis, wenn sie im
+  Übertragungsband liegt: dann morpht die Pattern-Form über die
+  Frequenz (Superniere → breite Niere → Kugel); Abhilfe sind
+  Stufenbohrungen, dünnere Platten oder größere/mehr Durchgangslöcher.
+
+Alle Kurven entstammen EINEM Durchlauf je Frequenz
+(`angle_responses`: Superposition q = a·p_front + b·p_rück mit
+winkelunabhängigen a, b — beim 3D-Modell keine Mehrkosten).
+
 ## Installation & Start
 
 ```bash

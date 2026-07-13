@@ -473,14 +473,30 @@ def compute_results(cache_key, capsule, progress=None):
             progress(min(done / n_work, 1.0), label)
 
     # Frequenzgang — Achse/Normierung identisch zu frequency_response();
-    # sofortiger 0%-Tick, damit der Balken ab der ersten Sekunde steht
+    # sofortiger 0%-Tick, damit der Balken ab der ersten Sekunde steht.
+    # angle_responses liefert je Frequenz in EINEM Netzwerk-/Feldaufbau
+    # die Übertragung bei 0/90/180° UND die Rück-Übertragung D_r des
+    # Phasenschiebers (Superposition q = a·p_front + b·p_rück).
     _tick(0, "Frequenzgang")
     f = np.logspace(np.log10(10.0), np.log10(25000.0), n_pts)
     H = np.empty(n_pts, dtype=complex)
+    H90 = np.empty(n_pts, dtype=complex)
+    H180 = np.empty(n_pts, dtype=complex)
+    G180 = np.empty(n_pts, dtype=complex)
+    D_r = np.empty(n_pts, dtype=complex)
+    has_dr = True
     chunk = 2 if capsule.squeeze_model == "3d" else 100
     for i in range(0, n_pts, chunk):
         j = min(i + chunk, n_pts)
-        H[i:j] = capsule.transfer_function(f[i:j])
+        r = capsule.angle_responses(f[i:j])
+        H[i:j] = r["H"][0.0]
+        H90[i:j] = r["H"][90.0]
+        H180[i:j] = r["H"][180.0]
+        G180[i:j] = r["G180"]
+        if r["D_r"] is None:
+            has_dr = False
+        else:
+            D_r[i:j] = r["D_r"]
         _tick(j - i, "Frequenzgang")
     amp_db = 20.0 * np.log10(np.maximum(np.abs(H), 1e-30))
     ref_db = np.interp(np.log10(1000.0), np.log10(f), amp_db)
@@ -490,6 +506,17 @@ def compute_results(cache_key, capsule, progress=None):
         "amplitude_db": amp_db,
         "amplitude_db_norm": amp_db - ref_db,
         "phase_deg": np.rad2deg(np.unwrap(np.angle(H))),
+    }
+    habs = np.maximum(np.abs(H), 1e-30)
+    aux = {
+        "level_90_db": 20.0 * np.log10(np.maximum(np.abs(H90), 1e-30)
+                                       / habs),
+        "level_180_db": 20.0 * np.log10(np.maximum(np.abs(H180), 1e-30)
+                                        / habs),
+        "D_r": D_r if has_dr else None,
+        "G180": G180,
+        "f_helmholtz_hz": (MicrophoneCapsule.helmholtz_resonance_hz(f, D_r)
+                           if has_dr else None),
     }
     # Richtdiagramme — je Frequenz ein Netzwerk-/Feldaufbau
     di = {"angles_deg": None, "patterns": {}}
@@ -501,7 +528,8 @@ def compute_results(cache_key, capsule, progress=None):
     sens_1k = float(abs(capsule.transfer_function(np.array([1000.0]))[0]))
     delay = capsule.delay_diagnostics()
     summary_text = capsule.summary()
-    result = (fr, di, sens_1k, delay, summary_text)
+    result = {"fr": fr, "di": di, "aux": aux, "sens_1k": sens_1k,
+              "delay": delay, "summary": summary_text}
     store[cache_key] = result
     while len(store) > _RESULTS_CACHE_MAX:
         store.pop(next(iter(store)))
@@ -563,6 +591,110 @@ def bode_figure(fr, normalized):
                       title=dict(text="Frequenzgang (0° Einfall)",
                                  font=dict(color=INK, size=16)))
     return _base_layout(fig, 560)
+
+
+def rear_bode_figure(fr, aux):
+    """Richtwirkung über die Frequenz: Pegel bei 90°/180° relativ zu 0°."""
+    f = fr["frequency_hz"]
+    fig = go.Figure()
+    fig.add_hline(y=-6.0, line=dict(color=MUTED, width=1, dash="dot"),
+                  annotation_text="−6 dB (ideale Niere @90°)",
+                  annotation_font=dict(color=MUTED, size=11))
+    fig.add_trace(go.Scatter(
+        x=f, y=aux["level_90_db"], mode="lines", name="90° rel. 0°",
+        line=dict(color=SERIES[1], width=2),
+        hovertemplate="%{x:.0f} Hz · %{y:.1f} dB<extra>90°</extra>"))
+    fig.add_trace(go.Scatter(
+        x=f, y=aux["level_180_db"], mode="lines", name="180° rel. 0°",
+        line=dict(color=SERIES[5], width=2),
+        hovertemplate="%{x:.0f} Hz · %{y:.1f} dB<extra>180°</extra>"))
+    fig.update_xaxes(type="log", gridcolor=GRID, griddash="dot",
+                     linecolor=AXIS, tickcolor=AXIS,
+                     tickfont=dict(color=MUTED), zeroline=False,
+                     tickvals=[10, 100, 1000, 10000],
+                     ticktext=["10", "100", "1k", "10k"],
+                     title_text="Frequenz [Hz]",
+                     title_font=dict(color=INK_2))
+    y_min = float(min(np.min(aux["level_180_db"]), -20.0))
+    fig.update_yaxes(title_text="Pegel rel. 0° [dB]",
+                     range=[max(y_min - 3.0, -45.0), 3.0],
+                     gridcolor=GRID, griddash="dot", linecolor=AXIS,
+                     tickfont=dict(color=MUTED),
+                     title_font=dict(color=INK_2), zeroline=False)
+    fig.update_layout(hovermode="x unified",
+                      legend=dict(orientation="h", yanchor="bottom",
+                                  y=1.0, xanchor="right", x=1.0,
+                                  font=dict(color=INK_2)),
+                      title=dict(text="Richtwirkung über die Frequenz "
+                                      "(seitlich/rückwärtig)",
+                                 font=dict(color=INK, size=16)))
+    return _base_layout(fig, 420)
+
+
+def dr_figure(fr, aux):
+    """Phasenschieber-Diagnose: |D_r| und Phase vs. externes Ziel G(180°)."""
+    f = fr["frequency_hz"]
+    D_r, G180 = aux["D_r"], aux["G180"]
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        vertical_spacing=0.10, row_heights=[0.5, 0.5])
+    fig.add_trace(go.Scatter(
+        x=f, y=np.abs(D_r), mode="lines", name="|D_r| intern",
+        line=dict(color=SERIES[0], width=2),
+        hovertemplate="%{x:.0f} Hz · %{y:.2f}<extra>|D_r|</extra>"),
+        row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=f, y=np.abs(G180), mode="lines", name="|G(180°)| extern (Ziel)",
+        line=dict(color=SERIES[2], width=2, dash="dash"),
+        hovertemplate="%{x:.0f} Hz · %{y:.2f}<extra>|G|</extra>"),
+        row=1, col=1)
+    ph_d = np.rad2deg(np.unwrap(np.angle(D_r)))
+    ph_g = np.rad2deg(np.unwrap(np.angle(G180)))
+    fig.add_trace(go.Scatter(
+        x=f, y=ph_d, mode="lines", name="arg D_r intern",
+        line=dict(color=SERIES[4], width=2),
+        hovertemplate="%{x:.0f} Hz · %{y:.1f}°<extra>arg D_r</extra>"),
+        row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=f, y=ph_g, mode="lines", name="arg G(180°) extern (Ziel)",
+        line=dict(color=SERIES[2], width=2, dash="dash"),
+        hovertemplate="%{x:.0f} Hz · %{y:.1f}°<extra>arg G</extra>"),
+        row=2, col=1)
+    f_h = aux["f_helmholtz_hz"]
+    if f_h is not None:
+        for row in (1, 2):
+            fig.add_vline(x=f_h, row=row, col=1,
+                          line=dict(color=SERIES[5], width=1, dash="dot"))
+        fig.add_annotation(x=np.log10(f_h), y=1, yref="y domain", row=1,
+                           col=1, text=f"f_H ≈ {f_h / 1000:.2f} kHz",
+                           showarrow=False, yanchor="bottom",
+                           font=dict(color=SERIES[5], size=11))
+    for row in (1, 2):
+        fig.update_xaxes(type="log", row=row, col=1, gridcolor=GRID,
+                         griddash="dot", linecolor=AXIS, tickcolor=AXIS,
+                         tickfont=dict(color=MUTED), zeroline=False,
+                         tickvals=[10, 100, 1000, 10000],
+                         ticktext=["10", "100", "1k", "10k"])
+    fig.update_xaxes(title_text="Frequenz [Hz]",
+                     title_font=dict(color=INK_2), row=2, col=1)
+    # Betragsachse deckeln: oberhalb der Resonanz explodiert |D_r|
+    dmax = float(np.max(np.abs(D_r)))
+    fig.update_yaxes(title_text="Betrag [–]", row=1, col=1,
+                     range=[0.0, min(max(1.6, 1.1 * dmax), 4.0)],
+                     gridcolor=GRID, griddash="dot", linecolor=AXIS,
+                     tickfont=dict(color=MUTED),
+                     title_font=dict(color=INK_2), zeroline=False)
+    fig.update_yaxes(title_text="Phase [°]", row=2, col=1,
+                     gridcolor=GRID, griddash="dot", linecolor=AXIS,
+                     tickfont=dict(color=MUTED),
+                     title_font=dict(color=INK_2), zeroline=False)
+    fig.update_layout(hovermode="x unified",
+                      legend=dict(orientation="h", yanchor="bottom",
+                                  y=1.02, xanchor="right", x=1.0,
+                                  font=dict(color=INK_2)),
+                      title=dict(text="Phasenschieber D_r — trifft er das "
+                                      "externe Ziel?",
+                                 font=dict(color=INK, size=16)))
+    return _base_layout(fig, 420)
 
 
 def _freq_label(f):
@@ -949,9 +1081,10 @@ _key_params = {**params, "dir_freqs": sorted(params["dir_freqs"])}
 _key_params.pop("normalize_1khz", None)
 _cache_key = json.dumps(_key_params, sort_keys=True)
 
-fr, di, sens_1k, delay, summary_text = compute_results(_cache_key, capsule,
-                                                       _show_progress)
+_res = compute_results(_cache_key, capsule, _show_progress)
 _prog_slot.empty()
+fr, di, aux = _res["fr"], _res["di"], _res["aux"]
+sens_1k, delay, summary_text = _res["sens_1k"], _res["delay"], _res["summary"]
 
 # ---------------------------------------------------------------------------
 # Hauptbereich
@@ -985,7 +1118,7 @@ m4.metric("Feder-Erweichung (Bias)",
 # Laufzeit bei 1 kHz ausgewertet (s. delay_diagnostics; die interne
 # Laufzeit ist frequenzabhängig — RC-Glied, kein reines Laufzeitglied).
 if delay is not None:
-    l1, l2, l3 = st.columns(3)
+    l1, l2, l3, l4 = st.columns(4)
     l1.metric("Externe Laufzeit τ_ext",
               f"{delay['tau_ext_s'] * 1e6:.1f} µs",
               help="Front-Rück-Übertragung G(180°) des Schallfelds um "
@@ -1009,7 +1142,23 @@ if delay is not None:
                    "180°. < 1: interne Laufzeit zu kurz — das Pattern-"
                    "Minimum wandert vor 180° (Richtung Hyperniere). "
                    "> 1: interne Laufzeit zu lang — das Minimum bleibt "
-                   "bei 180° gepinnt, die Auslöschung wird aber flacher.")
+                   "bei 180° gepinnt, die Auslöschung wird aber flacher. "
+                   "Nur nahe der Sondenfrequenz aussagekräftig, wenn die "
+                   "interne Helmholtz-Resonanz im Band liegt!")
+    _fh = aux["f_helmholtz_hz"]
+    l4.metric("Interne Helmholtz-Resonanz",
+              f"{_fh / 1000:.2f} kHz" if _fh is not None else "> 25 kHz",
+              delta=None if _fh is None or _fh > 8000.0
+              else "im Übertragungsband!",
+              delta_color="off",
+              help="Resonanz der Durchgangsloch-Trägheit gegen die innere "
+                   "Nachgiebigkeit (Spalt + Blindlöcher), bestimmt als "
+                   "90°-Phasendurchgang von D_r. Liegt sie IM Band, "
+                   "bricht |D_r| darunter ein und die Pattern-Form "
+                   "wandert über die Frequenz (Superniere → breite Niere "
+                   "→ Kugel) — Abhilfe: Stufenbohrung, dünnere Platte, "
+                   "größere/mehr Durchgangslöcher. Gesund: deutlich "
+                   "oberhalb des Übertragungsbands.")
 
 col_bode, col_polar = st.columns([11, 9], gap="medium")
 with col_bode:
@@ -1019,6 +1168,19 @@ with col_bode:
 with col_polar:
     st.plotly_chart(polar_figure(di), width="stretch",
                     config={"displayModeBar": False})
+
+# Auslegungs-Diagnose: Richtwirkung über die Frequenz + Phasenschieber D_r
+col_rear, col_dr = st.columns(2, gap="medium")
+with col_rear:
+    st.plotly_chart(rear_bode_figure(fr, aux), width="stretch",
+                    config={"displayModeBar": False})
+with col_dr:
+    if aux["D_r"] is not None:
+        st.plotly_chart(dr_figure(fr, aux), width="stretch",
+                        config={"displayModeBar": False})
+    else:
+        st.info("Rückseite geschlossen (Druckempfänger) — es gibt keinen "
+                "internen Phasenschieber-Pfad und damit kein D_r.")
 
 with st.expander("Abgeleitete Modellparameter (Diagnose)"):
     # gecachter Text: summary() enthält eine Netzwerkauswertung (bei 3D
@@ -1036,7 +1198,12 @@ df_fr = pd.DataFrame({
     "amplitude_db_re_1v_pa": fr["amplitude_db"],
     "amplitude_db_norm_1khz": fr["amplitude_db_norm"],
     "phase_deg": fr["phase_deg"],
+    "pegel_90_rel0_db": aux["level_90_db"],
+    "pegel_180_rel0_db": aux["level_180_db"],
 })
+if aux["D_r"] is not None:
+    df_fr["dr_betrag"] = np.abs(aux["D_r"])
+    df_fr["dr_phase_deg"] = np.rad2deg(np.unwrap(np.angle(aux["D_r"])))
 df_di = pd.DataFrame({"winkel_deg": di["angles_deg"]})
 for f, pat in sorted(di["patterns"].items()):
     tag = f"{f:.0f}hz"
