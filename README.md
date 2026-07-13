@@ -53,6 +53,28 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   weicht modellbedingt ≤ 2–3 dB von 1D/2D ab (Membran als Feld statt
   Grundmode).
 
+Die GUI rechnet mit **Fortschrittsbalken** und **Ergebnis-Cache**
+(Session-State, Schlüssel = Parametersatz): Reruns ohne Parameteränderung
+— Widget-Interaktionen, Umschalten der Normierung — laden aus dem Cache
+statt neu zu rechnen; gerade beim 3D-Modell macht erst das die Bedienung
+auf Streamlit Cloud praktikabel.
+
+### Laufzeit-Indikator (GUI) / `delay_diagnostics()`
+
+Unter den Kennwerten zeigt die GUI die beiden Laufzeiten des
+Nieren-Phasenschiebers: **extern** (Front→Rück um den Kapselkörper, aus
+der axialen Körperbeugung) und **intern** (Phasensteigung der
+Netzwerk-Rückübertragung D_r), beide als Phase bei 1 kHz ausgewertet,
+samt Verhältnis intern/extern. Deutung (Gegenprobe 17, numerisch
+verifiziert): **≈ 1** — angepasst, tiefste Auslöschung bei 180°
+(opti.json: 1,00); **< 1** — interne Laufzeit zu kurz, das
+Pattern-Minimum wandert vor 180° (K67 nominal: 0,96, Minimum ~165°);
+**> 1** — zu lang, das Minimum bleibt bei 180° gepinnt, wird aber
+flacher (cardiodtest 45-µm-Spacer: 1,24). Die interne Laufzeit ist
+frequenzabhängig (RC-Phasenschieber mit Filmträgheit, kein reines
+Laufzeitglied) — der Klassen-Methode `delay_diagnostics(f_probe_hz=…)`
+kann eine andere Sondenfrequenz übergeben werden.
+
 ## Installation & Start
 
 ```bash

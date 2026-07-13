@@ -2696,6 +2696,66 @@ class MicrophoneCapsule:
             patterns[float(f)] = {"linear": lin, "db": db}
         return {"angles_deg": angles, "patterns": patterns}
 
+    def delay_diagnostics(self, f_probe_hz=1000.0):
+        """Interne vs. externe Laufzeit des Nieren-Phasenschiebers.
+
+        Die 180°-Auslöschung entsteht, wenn die INTERNE Rück-Übertragung
+        des Netzwerks D_r = −a/b (mit q_mem = a·p_front + b·p_rück) die
+        EXTERNE Front-Rück-Übertragung G(180°) = p_rück/p_front trifft.
+        Beide werden als äquivalente Laufzeit aus der Phase bei der
+        Sondenfrequenz ``f_probe_hz`` ausgewertet:
+
+            tau = arg(·) / omega.
+
+        Die INTERNE Laufzeit ist frequenzabhängig (RC-Phasenschieber mit
+        Filmträgheit und interner Helmholtz-Resonanz — kein reines
+        Laufzeitglied); die Voreinstellung 1 kHz bewertet die Anpassung
+        dort, wo die Nierenwirkung im Mittenband zählt. Deutung des
+        Verhältnisses (numerisch verifiziert, Gegenprobe 17):
+          ~1   — Laufzeiten angepasst: tiefste Auslöschung bei 180°.
+          < 1  — interne Laufzeit zu kurz: das Pattern-Minimum wandert
+                 VOR 180° (Richtung Hyperniere), 180° bleibt flacher.
+          > 1  — interne Laufzeit zu lang: das Minimum bleibt bei 180°
+                 GEPINNT (kein Außenwinkel bietet mehr Phase), die
+                 Auslöschung wird aber flacher, je größer der Überschuss.
+
+        Rückgabe: dict mit
+            'tau_int_s' / 'tau_ext_s'   — Laufzeiten [s]
+            'dist_int_m' / 'dist_ext_m' — äquivalente Wegstrecken c·tau
+            'ratio'                     — tau_int / tau_ext
+            'f_probe_hz'                — Sondenfrequenz
+        oder ``None`` für reine Druckempfänger (Rückseite geschlossen —
+        es gibt keinen internen Pfad und keine Laufzeit-Anpassung).
+        """
+        if not self.rear_open:
+            return None
+        omega = np.array([2.0 * np.pi * float(f_probe_hz)])
+        p_f, p_r = self._source_pressures(omega, np.array([np.pi]))
+        G180 = (p_r[0, 0] / p_f[0, 0]) if p_f[0, 0] != 0 else np.nan
+        if self.squeeze_model == "3d":
+            # 3D-Sandwich: q = jω(X_f·p_f + X_r·p_r) -> D_r = −X_f/X_r
+            Xf, Xr = self._solve_3d(omega)
+            D_r = -Xf[0] / Xr[0]
+        else:
+            T_tot, T_rear = self._assemble_network(omega)
+            one, zero = np.ones(1), np.zeros(1)
+            a = self._membrane_volume_velocity(omega, T_tot, T_rear,
+                                               one, zero)
+            b = self._membrane_volume_velocity(omega, T_tot, T_rear,
+                                               zero, one)
+            D_r = (-a / b)[0]
+        w = omega[0]
+        tau_int = float(np.angle(D_r) / w)
+        tau_ext = float(np.angle(G180) / w)
+        return {
+            "tau_int_s": tau_int,
+            "tau_ext_s": tau_ext,
+            "dist_int_m": tau_int * C_AIR,
+            "dist_ext_m": tau_ext * C_AIR,
+            "ratio": tau_int / tau_ext if tau_ext != 0.0 else float("nan"),
+            "f_probe_hz": float(f_probe_hz),
+        }
+
     # ======================================================================
     # Diagnose
     # ======================================================================
@@ -3478,5 +3538,85 @@ if __name__ == "__main__":
               f"({abs(Xr3[0]) / abs(Bf3[0]):.3f}), Null @{na3:.0f}°; "
               f"Mündungs-Freistich vertieft 180°/1 kHz von "
               f"{p3['db'][180]:.1f} auf {p3b:.1f} dB  OK")
+
+    # --------- Gegenprobe 17: Laufzeit-Diagnose (delay_diagnostics) --------
+    # Deutung des Verhältnisses intern/extern (Sonde 1 kHz):
+    # a) K67 nominal (Spacer 50 µm): Verhältnis knapp UNTER 1 -> das
+    #    Pattern-Minimum liegt VOR 180° (na_k aus Gegenprobe 6: ~165°).
+    # b) Spacer 45 µm (cardiodtest): kleinerer Spalt -> größerer Film-R ->
+    #    LÄNGERE interne Laufzeit (Verhältnis > 1) -> Minimum bei 180°
+    #    gepinnt (kein Außenwinkel bietet mehr Phase), dafür flacher.
+    # c) Debenham (2D), Sonde 250 Hz (= Region der tiefsten Null ~290 Hz):
+    #    Verhältnis ~ 1; externe Laufzeit ~ Kugel-Grenzfall 1.5·d_ext/c.
+    # d) 3D: der Rand-Freistich allein lässt die Mündungen verengt ->
+    #    hochohmiges RC, stark ÜBER-verzögert (Null bei 180°, aber flach,
+    #    s. Gegenprobe 16); der breite Freistich senkt R -> Verhältnis
+    #    rückt Richtung 1 (und die Null wird tiefer).
+    # e) Geschlossene Rückseite (0 Durchgangslöcher) -> None.
+    dd_k67 = k67.delay_diagnostics()
+    assert dd_k67 is not None and 0.90 < dd_k67["ratio"] < 0.995, \
+        f"K67 nominal: Verhältnis knapp <1 erwartet ({dd_k67['ratio']:.3f})"
+    assert na_k < 179.0, \
+        "Konsistenz: Verhältnis <1 muss zum Minimum vor 180° gehören"
+    k67_45 = MicrophoneCapsule(
+        membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+        membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+        backplate_diameter=25e-3, backplate_thickness=4e-3,
+        bias_voltage=60.0, architecture="dual_diaphragm", center_gap=45e-6,
+        n_through_holes=60, through_hole_diameter=0.6e-3,
+        n_blind_holes=120, blind_hole_diameter=1.3e-3,
+        blind_hole_depth=3.7e-3, through_holes_stepped=True,
+        clamp_ring_thickness=2e-3, clamp_ring_width=4e-3,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=34e-3,
+        squeeze_model="2d")
+    dd_45 = k67_45.delay_diagnostics()
+    assert 1.05 < dd_45["ratio"] < 1.45, \
+        f"45-µm-Spacer: Über-Verzögerung erwartet ({dd_45['ratio']:.3f})"
+    di45 = k67_45.directivity(frequencies_hz=(1000.0,))
+    lin45 = di45["patterns"][1000.0]["linear"]
+    a45 = di45["angles_deg"]
+    na45 = a45[a45 <= 180][int(np.argmin(lin45[a45 <= 180]))]
+    assert na45 > 179.0, \
+        f"Über-Verzögerung muss das Minimum bei 180° pinnen ({na45:.0f}°)"
+    if _HAS_SCIPY:
+        # MIT Rand-Freistich (deb1, wie die Beispiel-JSON): angepasst in
+        # der Region der tiefsten Null (~290 Hz); OHNE Ring (deb0) sind
+        # die Mündungen verengt -> hochohmig -> stark über-verzögert
+        # (konsistent zu Gegenprobe 15: Null 180°, aber nur -3.8 dB).
+        dd_deb = deb1.delay_diagnostics(f_probe_hz=250.0)
+        tau_kugel = 1.5 * deb1.d_ext / C_AIR
+        assert 0.94 < dd_deb["ratio"] < 1.06, \
+            f"Debenham @250 Hz: Verhältnis ~1 erwartet ({dd_deb['ratio']:.3f})"
+        assert 0.85 < dd_deb["tau_ext_s"] / tau_kugel < 1.15, \
+            "externe Laufzeit muss dem Kugel-Grenzfall 1.5·d_ext/c folgen"
+        dd_deb0 = deb0.delay_diagnostics(f_probe_hz=250.0)
+        assert dd_deb0["ratio"] > 1.5, \
+            (f"ohne Freistich: verengte Mündungen -> Über-Verzögerung "
+             f"erwartet ({dd_deb0['ratio']:.3f})")
+        dd_3d = deb3.delay_diagnostics()
+        assert dd_3d is not None and np.isfinite(dd_3d["ratio"]) \
+            and dd_3d["ratio"] > 1.5, \
+            (f"3D/Rand-Freistich: verengte Mündungen -> starke Über-"
+             f"Verzögerung erwartet ({dd_3d['ratio']:.3f})")
+        dd_3db = deb3b.delay_diagnostics()
+        assert 1.0 < dd_3db["ratio"] < dd_3d["ratio"], \
+            (f"breiter Freistich muss die Über-Verzögerung abbauen "
+             f"({dd_3db['ratio']:.3f} vs. {dd_3d['ratio']:.3f})")
+    hermetic = MicrophoneCapsule(
+        membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+        membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+        backplate_diameter=25e-3, backplate_thickness=4e-3,
+        bias_voltage=60.0, architecture="dual_diaphragm", center_gap=50e-6,
+        n_through_holes=0, n_blind_holes=120,
+        blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+        clamp_ring_thickness=2e-3, clamp_ring_width=4e-3,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=34e-3)
+    assert hermetic.delay_diagnostics() is None, \
+        "Druckempfänger: keine Laufzeit-Anpassung -> None"
+    print(f"Laufzeit-Diagnose @1 kHz: K67 nominal intern/extern = "
+          f"{dd_k67['ratio']:.2f} ({dd_k67['dist_int_m']*1e3:.1f}/"
+          f"{dd_k67['dist_ext_m']*1e3:.1f} mm, Minimum {na_k:.0f}°), "
+          f"Spacer 45 µm -> {dd_45['ratio']:.2f} (Null gepinnt {na45:.0f}°); "
+          f"geschlossene Rückseite -> None  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

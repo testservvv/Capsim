@@ -394,6 +394,86 @@ def build_capsule(p):
 
 
 # ---------------------------------------------------------------------------
+# Berechnung (gecacht) mit Fortschrittsanzeige
+# ---------------------------------------------------------------------------
+# Eigener Cache in st.session_state statt st.cache_data: (a) der
+# Fortschritts-Callback zeichnet auf einen AUSSEN angelegten Platzhalter
+# (st.empty), was Streamlits Cache-Replay beim Hit nicht wiederherstellen
+# kann (CacheReplayClosureError); (b) Modul-Globals taugen nicht als
+# Ablage, weil jeder Rerun das Skript — samt Initialisierung — neu
+# ausführt. st.session_state überlebt Reruns genau zu diesem Zweck:
+# gleiche Parameter -> Ergebnis ohne Neuberechnung (wichtig vor allem
+# für das 3D-Modell mit einer LU-Faktorisierung je Frequenzpunkt).
+_RESULTS_CACHE_MAX = 24
+_RESULTS_CACHE_BARE = {}   # Fallback ohne Streamlit-Runtime (Tests)
+
+
+def _results_store():
+    try:
+        return st.session_state.setdefault("_results_cache", {})
+    except Exception:
+        return _RESULTS_CACHE_BARE
+
+
+def compute_results(cache_key, capsule, progress=None):
+    """Frequenzgang, Richtdiagramme und Laufzeit-Diagnose — gecacht.
+
+    ``cache_key`` ist das JSON der physikrelevanten Parameter. Der
+    Frequenzgang wird blockweise gerechnet, damit ``progress`` (Callback
+    frac, label) einen echten Fortschritt melden kann; die Blöcke sind
+    numerisch identisch zum Gesamtaufruf, weil alle Modelle je Frequenz
+    unabhängig rechnen (frequency_response-Logik gespiegelt).
+    """
+    store = _results_store()
+    hit = store.get(cache_key)
+    if hit is not None:
+        return hit
+    p = json.loads(cache_key)
+    n_pts = int(p["n_points"])
+    dir_freqs = sorted(p["dir_freqs"]) or [1000]
+    n_work = n_pts + len(dir_freqs)
+    done = 0
+
+    def _tick(k, label):
+        nonlocal done
+        done += k
+        if progress is not None:
+            progress(min(done / n_work, 1.0), label)
+
+    # Frequenzgang — Achse/Normierung identisch zu frequency_response()
+    f = np.logspace(np.log10(10.0), np.log10(25000.0), n_pts)
+    H = np.empty(n_pts, dtype=complex)
+    chunk = 4 if capsule.squeeze_model == "3d" else 100
+    for i in range(0, n_pts, chunk):
+        j = min(i + chunk, n_pts)
+        H[i:j] = capsule.transfer_function(f[i:j])
+        _tick(j - i, "Frequenzgang")
+    amp_db = 20.0 * np.log10(np.maximum(np.abs(H), 1e-30))
+    ref_db = np.interp(np.log10(1000.0), np.log10(f), amp_db)
+    fr = {
+        "frequency_hz": f,
+        "sensitivity_v_pa": H,
+        "amplitude_db": amp_db,
+        "amplitude_db_norm": amp_db - ref_db,
+        "phase_deg": np.rad2deg(np.unwrap(np.angle(H))),
+    }
+    # Richtdiagramme — je Frequenz ein Netzwerk-/Feldaufbau
+    di = {"angles_deg": None, "patterns": {}}
+    for fd in dir_freqs:
+        d1 = capsule.directivity(frequencies_hz=(float(fd),))
+        di["angles_deg"] = d1["angles_deg"]
+        di["patterns"].update(d1["patterns"])
+        _tick(1, f"Richtdiagramm {fd:.0f} Hz")
+    sens_1k = float(abs(capsule.transfer_function(np.array([1000.0]))[0]))
+    delay = capsule.delay_diagnostics()
+    result = (fr, di, sens_1k, delay)
+    store[cache_key] = result
+    while len(store) > _RESULTS_CACHE_MAX:
+        store.pop(next(iter(store)))
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Diagramme
 # ---------------------------------------------------------------------------
 def _base_layout(fig, height):
@@ -794,7 +874,9 @@ with st.sidebar:
         if st.session_state["p_squeeze_3d"]:
             st.caption("⏳ 3D rechnet je Frequenzpunkt eine LU-Faktori"
                        "sierung (~24 000 Unbekannte). Empfehlung: "
-                       "Frequenzpunkte ≤ 150.")
+                       "Frequenzpunkte ≤ 150. Ergebnisse werden je "
+                       "Parametersatz gecacht — Reruns ohne Änderung "
+                       "sind sofort da.")
 
     # ---------------- Simulation ---------------------------------------
     with st.expander("Simulation", expanded=False):
@@ -813,9 +895,24 @@ except ValueError as exc:
     st.error(f"⚠️ Ungültige Parameterkombination: {exc}")
     st.stop()
 
-fr = capsule.frequency_response(10.0, 25000.0, n_points=params["n_points"])
-dir_freqs = sorted(params["dir_freqs"]) or [1000]
-di = capsule.directivity(frequencies_hz=[float(f) for f in dir_freqs])
+# Cache-Schlüssel: alle Parameter, die Physik oder berechnete Daten ändern.
+# Reine Darstellungsoptionen (Normierungs-Toggle) bleiben draußen, damit
+# ihr Umschalten keine Neuberechnung auslöst.
+_key_params = {**params, "dir_freqs": sorted(params["dir_freqs"])}
+_key_params.pop("normalize_1khz", None)
+_cache_key = json.dumps(_key_params, sort_keys=True)
+
+_prog_slot = st.empty()
+
+
+def _show_progress(frac, label):
+    _prog_slot.progress(frac, text=f"⚙️ Berechnung — {label} … "
+                                   f"{100 * frac:.0f} %")
+
+
+fr, di, sens_1k, delay = compute_results(_cache_key, capsule,
+                                         _show_progress)
+_prog_slot.empty()
 
 # ---------------------------------------------------------------------------
 # Hauptbereich
@@ -824,7 +921,6 @@ st.title("Kondensatormikrofonkapsel — Simulation")
 st.caption("Elektroakustisches Ersatzschaltbild (Lumped-Element-Modell) · "
            "10 Hz – 25 kHz")
 
-sens_1k = abs(capsule.transfer_function(1000.0)[0])
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Empfindlichkeit @ 1 kHz", f"{sens_1k * 1e3:.1f} mV/Pa",
           help=f"{20 * np.log10(max(sens_1k, 1e-12)):.1f} dB re 1 V/Pa "
@@ -843,6 +939,38 @@ m4.metric("Feder-Erweichung (Bias)",
                f"dieser Konfiguration: ≈ {_upi}; statische Durchbiegung "
                f"{capsule.w0_static * 1e6:.1f} µm (Restspalt Mitte "
                f"{capsule.h_min_static * 1e6:.1f} µm).")
+
+# Laufzeit-Anpassung des Nieren-Phasenschiebers: die 180°-Null entsteht,
+# wenn die interne Rück-Übertragung D_r des Netzwerks die externe
+# Front-Rück-Übertragung (Körperbeugung) trifft. Beide als äquivalente
+# Laufzeit bei 1 kHz ausgewertet (s. delay_diagnostics; die interne
+# Laufzeit ist frequenzabhängig — RC-Glied, kein reines Laufzeitglied).
+if delay is not None:
+    l1, l2, l3 = st.columns(3)
+    l1.metric("Externe Laufzeit τ_ext",
+              f"{delay['tau_ext_s'] * 1e6:.1f} µs",
+              help="Front-Rück-Übertragung G(180°) des Schallfelds um "
+                   "den Kapselkörper (axiale Körperbeugung), als Phase "
+                   f"bei {delay['f_probe_hz']:.0f} Hz ausgewertet. "
+                   "Äquivalente Wegstrecke: "
+                   f"{delay['dist_ext_m'] * 1e3:.1f} mm.")
+    l2.metric("Interne Laufzeit τ_int",
+              f"{delay['tau_int_s'] * 1e6:.1f} µs",
+              help="Rück-Übertragung D_r des internen Phasenschieber-"
+                   "Netzwerks (Bohrungen, Spaltfilme, Spacer, Rückseite), "
+                   f"als Phase bei {delay['f_probe_hz']:.0f} Hz "
+                   "ausgewertet — frequenzabhängig, da RC-Phasenschieber "
+                   "mit Filmträgheit. Äquivalente Wegstrecke: "
+                   f"{delay['dist_int_m'] * 1e3:.1f} mm.")
+    _ratio = delay["ratio"]
+    l3.metric("Verhältnis intern / extern", f"{_ratio:.2f}",
+              delta=f"{(_ratio - 1.0) * 100:+.0f} % vs. Anpassung",
+              delta_color="off",
+              help="≈ 1: Laufzeiten angepasst → tiefste Auslöschung bei "
+                   "180°. < 1: interne Laufzeit zu kurz — das Pattern-"
+                   "Minimum wandert vor 180° (Richtung Hyperniere). "
+                   "> 1: interne Laufzeit zu lang — das Minimum bleibt "
+                   "bei 180° gepinnt, die Auslöschung wird aber flacher.")
 
 col_bode, col_polar = st.columns([11, 9], gap="medium")
 with col_bode:
