@@ -53,11 +53,16 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   weicht modellbedingt ≤ 2–3 dB von 1D/2D ab (Membran als Feld statt
   Grundmode).
 
-Die GUI rechnet mit **Fortschrittsbalken** und **Ergebnis-Cache**
-(Session-State, Schlüssel = Parametersatz): Reruns ohne Parameteränderung
-— Widget-Interaktionen, Umschalten der Normierung — laden aus dem Cache
-statt neu zu rechnen; gerade beim 3D-Modell macht erst das die Bedienung
-auf Streamlit Cloud praktikabel.
+Die GUI rechnet mit **Fortschrittsbalken** (steht ab Sekunde null, auch
+während des Modellaufbaus) und **zweistufigem Cache** im Session-State:
+das Kapsel-Objekt je Bau-Parametersatz (Konstruktor mit Elektrostatik,
+Pull-in und 3D-Gitteraufbau) und die Ergebnisse (Frequenzgang,
+Richtdiagramme, Diagnose, Summary) je vollem Parametersatz. Reruns ohne
+Parameteränderung — Widget-Interaktionen, Umschalten der Normierung —
+rechnen gar nichts mehr; auch der Diagnose-Summary-Text kommt aus dem
+Cache (Streamlit führt eingeklappte Expander-Inhalte bei jedem Rerun
+aus, und summary() enthält bei 3D eine volle LU-Lösung). Gerade beim
+3D-Modell macht erst das die Bedienung auf Streamlit Cloud praktikabel.
 
 ### Laufzeit-Indikator (GUI) / `delay_diagnostics()`
 

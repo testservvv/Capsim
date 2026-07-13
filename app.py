@@ -396,35 +396,67 @@ def build_capsule(p):
 # ---------------------------------------------------------------------------
 # Berechnung (gecacht) mit Fortschrittsanzeige
 # ---------------------------------------------------------------------------
-# Eigener Cache in st.session_state statt st.cache_data: (a) der
+# Eigene Caches in st.session_state statt st.cache_data: (a) der
 # Fortschritts-Callback zeichnet auf einen AUSSEN angelegten Platzhalter
 # (st.empty), was Streamlits Cache-Replay beim Hit nicht wiederherstellen
 # kann (CacheReplayClosureError); (b) Modul-Globals taugen nicht als
 # Ablage, weil jeder Rerun das Skript — samt Initialisierung — neu
-# ausführt. st.session_state überlebt Reruns genau zu diesem Zweck:
-# gleiche Parameter -> Ergebnis ohne Neuberechnung (wichtig vor allem
-# für das 3D-Modell mit einer LU-Faktorisierung je Frequenzpunkt).
+# ausführt. st.session_state überlebt Reruns genau zu diesem Zweck.
+# Zwei Ebenen:
+#   _capsule_cache — das MicrophoneCapsule-Objekt je Bau-Parametersatz.
+#     Der Konstruktor rechnet Elektrostatik, Pull-in und (bei 3D) den
+#     Gitter-/Geometrieaufbau — das darf nicht bei jeder Widget-
+#     Interaktion erneut anfallen.
+#   _results_cache — Frequenzgang/Richtdiagramme/Diagnose je vollem
+#     Parametersatz (wichtig vor allem für das 3D-Modell mit einer
+#     LU-Faktorisierung je Frequenzpunkt).
 _RESULTS_CACHE_MAX = 24
-_RESULTS_CACHE_BARE = {}   # Fallback ohne Streamlit-Runtime (Tests)
+_CAPSULE_CACHE_MAX = 6
+_BARE_STORES = {}          # Fallback ohne Streamlit-Runtime (Tests)
 
 
-def _results_store():
+def _session_store(name):
     try:
-        return st.session_state.setdefault("_results_cache", {})
+        return st.session_state.setdefault(name, {})
     except Exception:
-        return _RESULTS_CACHE_BARE
+        return _BARE_STORES.setdefault(name, {})
+
+
+def get_capsule(params, progress=None):
+    """Kapsel aus dem Session-Cache oder neu bauen (ValueError reicht durch).
+
+    Schlüssel sind nur die BAU-Parameter (ohne n_points/dir_freqs/
+    Normierung) — Simulationseinstellungen erzwingen keinen Neubau.
+    """
+    build_params = {k: v for k, v in params.items()
+                    if k not in ("n_points", "dir_freqs", "normalize_1khz")}
+    key = json.dumps(build_params, sort_keys=True)
+    store = _session_store("_capsule_cache")
+    capsule = store.get(key)
+    if capsule is None:
+        if progress is not None:
+            progress(0.0, "Modell aufbauen")
+        capsule = build_capsule(params)
+        store[key] = capsule
+        while len(store) > _CAPSULE_CACHE_MAX:
+            store.pop(next(iter(store)))
+    return capsule
 
 
 def compute_results(cache_key, capsule, progress=None):
-    """Frequenzgang, Richtdiagramme und Laufzeit-Diagnose — gecacht.
+    """Frequenzgang, Richtdiagramme, Diagnose und Summary — gecacht.
 
     ``cache_key`` ist das JSON der physikrelevanten Parameter. Der
     Frequenzgang wird blockweise gerechnet, damit ``progress`` (Callback
     frac, label) einen echten Fortschritt melden kann; die Blöcke sind
     numerisch identisch zum Gesamtaufruf, weil alle Modelle je Frequenz
-    unabhängig rechnen (frequency_response-Logik gespiegelt).
+    unabhängig rechnen (frequency_response-Logik gespiegelt). Auch der
+    summary()-Text gehört hierher: er enthält eine Netzwerkauswertung
+    (bei 3D eine volle LU-Lösung) und würde sonst bei JEDEM Rerun im
+    Diagnose-Expander mitgerechnet — Streamlit führt auch eingeklappte
+    Expander-Inhalte aus.
     """
-    store = _results_store()
+    store = _session_store("_results_cache")
     hit = store.get(cache_key)
     if hit is not None:
         return hit
@@ -440,10 +472,12 @@ def compute_results(cache_key, capsule, progress=None):
         if progress is not None:
             progress(min(done / n_work, 1.0), label)
 
-    # Frequenzgang — Achse/Normierung identisch zu frequency_response()
+    # Frequenzgang — Achse/Normierung identisch zu frequency_response();
+    # sofortiger 0%-Tick, damit der Balken ab der ersten Sekunde steht
+    _tick(0, "Frequenzgang")
     f = np.logspace(np.log10(10.0), np.log10(25000.0), n_pts)
     H = np.empty(n_pts, dtype=complex)
-    chunk = 4 if capsule.squeeze_model == "3d" else 100
+    chunk = 2 if capsule.squeeze_model == "3d" else 100
     for i in range(0, n_pts, chunk):
         j = min(i + chunk, n_pts)
         H[i:j] = capsule.transfer_function(f[i:j])
@@ -466,7 +500,8 @@ def compute_results(cache_key, capsule, progress=None):
         _tick(1, f"Richtdiagramm {fd:.0f} Hz")
     sens_1k = float(abs(capsule.transfer_function(np.array([1000.0]))[0]))
     delay = capsule.delay_diagnostics()
-    result = (fr, di, sens_1k, delay)
+    summary_text = capsule.summary()
+    result = (fr, di, sens_1k, delay, summary_text)
     store[cache_key] = result
     while len(store) > _RESULTS_CACHE_MAX:
         store.pop(next(iter(store)))
@@ -889,9 +924,21 @@ with st.sidebar:
 # Berechnung
 # ---------------------------------------------------------------------------
 params = _current_params()
+
+# Platzhalter VOR dem Modellaufbau: schon der Konstruktor (Elektrostatik,
+# bei 3D der Gitteraufbau) soll als Fortschritt sichtbar sein.
+_prog_slot = st.empty()
+
+
+def _show_progress(frac, label):
+    _prog_slot.progress(frac, text=f"⚙️ Berechnung — {label} … "
+                                   f"{100 * frac:.0f} %")
+
+
 try:
-    capsule = build_capsule(params)
+    capsule = get_capsule(params, _show_progress)
 except ValueError as exc:
+    _prog_slot.empty()
     st.error(f"⚠️ Ungültige Parameterkombination: {exc}")
     st.stop()
 
@@ -902,16 +949,8 @@ _key_params = {**params, "dir_freqs": sorted(params["dir_freqs"])}
 _key_params.pop("normalize_1khz", None)
 _cache_key = json.dumps(_key_params, sort_keys=True)
 
-_prog_slot = st.empty()
-
-
-def _show_progress(frac, label):
-    _prog_slot.progress(frac, text=f"⚙️ Berechnung — {label} … "
-                                   f"{100 * frac:.0f} %")
-
-
-fr, di, sens_1k, delay = compute_results(_cache_key, capsule,
-                                         _show_progress)
+fr, di, sens_1k, delay, summary_text = compute_results(_cache_key, capsule,
+                                                       _show_progress)
 _prog_slot.empty()
 
 # ---------------------------------------------------------------------------
@@ -982,7 +1021,9 @@ with col_polar:
                     config={"displayModeBar": False})
 
 with st.expander("Abgeleitete Modellparameter (Diagnose)"):
-    st.code(capsule.summary(), language=None)
+    # gecachter Text: summary() enthält eine Netzwerkauswertung (bei 3D
+    # eine volle LU-Lösung) und liefe sonst bei jedem Rerun mit
+    st.code(summary_text, language=None)
 
 # ---------------------------------------------------------------------------
 # Datenansicht & CSV-Export
