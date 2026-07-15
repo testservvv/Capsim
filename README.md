@@ -188,6 +188,24 @@ Außendurchmesser inklusive Klemmring (34 mm K67 / 32 mm Debenham)
 bleiben getrennte Größen: `membrane_diameter` bzw.
 `body_diameter` + `clamp_ring_width`.
 
+**Sphäroid als Referenzkörper (`axial_body_model="spheroid"`):** Für die
+frei stehende Scheibe ist die Streuung am **starren oblaten Sphäroid**
+(radiale Halbachse R_body, axiale d_ext/2) exakt implementiert — mit
+eigenen Spezialfunktionen, weil scipys `obl_rad2` für ξ₀ < 1 versagt:
+Flammer-Rekursion als Tridiagonal-Eigenproblem (Querprobe `obl_cv`,
+1e-14), R³ per Hankel-Reihen-Start und Einwärts-Integration der
+Radial-ODE, Wronski-Selbstprüfung je Mode (< 1e-5 übers Band). An den
+Polen verschwinden alle azimutalen Ordnungen m > 0 — es bleibt eine
+m=0-Reihe analog zur Morse-Kugel. Verifiziert am Kugel-Grenzfall
+(b → a: Morse-Reihe auf 2e-3) und am Dünne-Scheiben-Grenzwert (LF-Distanz
+am Pol → 4a/π, klassisches Resultat). **Befund (Gegenprobe 20):** die
+freie K67-Scheibe hätte d_eff ≈ 32 mm — gegen die interne Laufzeit
+(~17 mm) ergäbe das eine Superniere mit Minimum bei ~123°, im
+Widerspruch zur realen U87. Der dahinterliegende **Mikrofonkörper
+unterbindet den Scheibenrand-Umweg** — deshalb bleibt die d_ext-Kugel
+(montierte Kapsel) Standard; das Sphäroid ist der dokumentierte
+Referenzfall der freien Scheibe (GUI: „Axialer Körper").
+
 ### Nierenform der dünnen Doppelmembran-Scheibe
 
 Front- und Rückmembran der K67 sitzen auf den zwei Flächen einer nur

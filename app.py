@@ -97,6 +97,8 @@ ARCH_LABELS = {
 }
 K67_LABEL = "Doppelmembran (K67-Bauform)"
 POS_LABELS = {"Umfang": "circumference", "Ende (Stirnfläche)": "end"}
+AX_LABELS = {"Kugel (d_ext, montiert)": "sphere",
+             "Sphäroid (freie Scheibe)": "spheroid"}
 
 DIRECTIVITY_OPTIONS = [50, 100, 125, 250, 500, 1000, 2000, 4000,
                        5000, 8000, 10000, 12500, 16000, 20000]
@@ -160,6 +162,10 @@ DEFAULTS = {
     # Gehäuse & Beugung
     "diffraction_on": True,
     "body_diameter_mm": 32.0,
+    # Axialer Körper für den Front-Rück-Transfer der Doppelmembran:
+    # Kugel (d_ext) = montierte Kapsel (Standard); Sphäroid = frei
+    # stehende Scheibe (dokumentierter Referenzfall, Gegenprobe 20).
+    "axial_body": "Kugel (d_ext, montiert)",
     # Spaltfilm-Modell (Debenham braucht 2D für die tiefe Niere;
     # 3D = diskrete Löcher, nur einteilige Doppelmembran-Elektrode)
     "squeeze_2d": True,
@@ -233,6 +239,8 @@ def _coerce(key, val):
     if key == "dir_freqs":
         return [f for f in DIRECTIVITY_OPTIONS if f in set(int(x) for x in val)]
     if key == "material" and val in MATERIAL_LABELS:
+        return val
+    if key == "axial_body" and val in AX_LABELS:
         return val
     if key == "architecture" and val in ARCH_LABELS:
         return val
@@ -388,6 +396,9 @@ def build_capsule(p):
         fabric_rear_rayl=p["fabric_rear_rayl"],
         body_diameter=p["body_diameter_mm"] * 1e-3,
         include_diffraction=p["diffraction_on"],
+        axial_body_model=AX_LABELS.get(p.get("axial_body",
+                                             "Kugel (d_ext, montiert)"),
+                                       "sphere"),
         squeeze_model=("3d" if p.get("squeeze_3d") else
                        ("2d" if p["squeeze_2d"] else "1d")),
     )
@@ -1006,6 +1017,23 @@ with st.sidebar:
                              "Druckstau und Abschattung einsetzen: "
                              "ka = 1 bei f ≈ 109/d Hz (d in m) — für "
                              "Ø 26 mm also ab ≈ 4 kHz.")
+        if st.session_state["p_architecture"] == K67_LABEL:
+            st.selectbox("Axialer Körper (Front-Rück-Transfer)",
+                         list(AX_LABELS), key="p_axial_body",
+                         disabled=not st.session_state["p_diffraction_on"],
+                         help="Referenzkörper für den axialen Front-Rück-"
+                              "Transfer G(180°) der Doppelmembran-Bauform. "
+                              "Kugel (d_ext): Standard — beschreibt die am "
+                              "Mikrofonkörper MONTIERTE Kapsel (der Körper "
+                              "unterbindet den Scheibenrand-Umweg). "
+                              "Sphäroid: exakte Streuung an der FREI "
+                              "stehenden Scheibe (radial R_body, axial "
+                              "d_ext/2, eigene Spezialfunktionen mit "
+                              "Wronski-Selbstprüfung) — deutlich längere "
+                              "effektive Distanz (K67: ~32 statt 18 mm, "
+                              "dünne Scheibe: 4R/π am Pol), Minimum "
+                              "wandert weit vor 180°. Dokumentierter "
+                              "Referenzfall, s. Gegenprobe 20.")
 
     # ---------------- Spaltfilm-Modell -----------------------------------
     with st.expander("Spaltfilm-Modell", expanded=False):

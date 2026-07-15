@@ -318,6 +318,7 @@ class MicrophoneCapsule:
         # --- Gehäuse & Beugung ----------------------------------------------
         body_diameter=None,
         include_diffraction=True,
+        axial_body_model="sphere",
         # --- Spaltfilm-Modell -----------------------------------------------
         squeeze_model="1d",
     ):
@@ -567,6 +568,24 @@ class MicrophoneCapsule:
                                  "Durchgangslöcher.")
         # Die Feldmodelle (2D/3D) brauchen SciPy.
         self.squeeze_model = sm if (sm == "1d" or _HAS_SCIPY) else "1d"
+
+        # Axiales Körpermodell für den Front-Rück-Transfer der
+        # Doppelmembran-Bauform: "sphere" (Kugel mit Durchmesser d_ext,
+        # Standard — beschreibt die am Mikrofonkörper MONTIERTE Kapsel)
+        # oder "spheroid" (frei stehende Scheibe: oblates Sphäroid mit
+        # radialer Halbachse R_body und axialer d_ext/2 — dokumentierter
+        # Befund: die freie Scheibe hat eine DEUTLICH längere effektive
+        # Distanz, am Pol bis 4R/π; ein dahinterliegender Mikrofonkörper
+        # unterbindet den Scheibenrand-Umweg, weshalb die Kugel der
+        # montierten Realität entspricht, s. Gegenprobe 20).
+        ab = str(axial_body_model).strip().lower()
+        if ab not in ("sphere", "spheroid"):
+            raise ValueError(
+                "axial_body_model muss 'sphere' oder 'spheroid' sein."
+            )
+        if ab == "spheroid" and not _HAS_SCIPY:
+            raise ValueError("axial_body_model='spheroid' erfordert SciPy.")
+        self.axial_body_model = ab
 
         # ------------------------ abgeleitete Größen ------------------------
         self._derive_parameters()
@@ -1124,6 +1143,22 @@ class MicrophoneCapsule:
         self._ring_cos = float(np.clip(
             (self.R_body - self.d_rear_ax) / self.R_body, -1.0, 1.0))
 
+        # Sphäroid-Körpermodell: nur für die Doppelmembran-Bauform und
+        # nur wenn die Scheibe wirklich oblat ist (b = d_ext/2 < R_body).
+        if self.axial_body_model == "spheroid":
+            if self.architecture != "dual_diaphragm":
+                raise ValueError(
+                    "axial_body_model='spheroid' gilt nur für die "
+                    "Doppelmembran-Bauform (axialer Pol-zu-Pol-Transfer)."
+                )
+            if 0.5 * self.d_ext >= 0.98 * self.R_body:
+                raise ValueError(
+                    "axial_body_model='spheroid': die axiale Halbachse "
+                    f"d_ext/2 = {0.5 * self.d_ext * 1e3:.1f} mm muss "
+                    f"kleiner als der Körperradius {self.R_body * 1e3:.1f}"
+                    " mm sein (oblate Scheibe)."
+                )
+
         # 3D-Löser: Gitter-/Lochgeometrie einmalig aufbauen
         if self.squeeze_model == "3d":
             self._build_3d_geometry()
@@ -1662,6 +1697,194 @@ class MicrophoneCapsule:
         # Konvention e^{-i omega t} -> e^{+j omega t}: konjugieren
         return np.conj(F_f), np.conj(F_r)
 
+    # ------------------------------------------------------------------
+    # Oblates Sphäroid (m = 0): eigene Spezialfunktionen.
+    # scipy.special.obl_rad2 ist für ξ0 < 1 unbrauchbar (die Neumann-
+    # Reihe der Radialfunktion 2. Art konvergiert nur für ξ > 1) —
+    # deshalb: Eigenwerte/Koeffizienten aus der Flammer-Rekursion
+    # (Tridiagonal-Eigenproblem, Querprobe scipy obl_cv auf 1e-14),
+    # R^(3) per Hankel-Reihen-Start bei ξ_far = max(2, 40/c) (dort
+    # konvergent) und Einwärts-RK4 der Radial-ODE auf log-Gitter
+    # (einwärts stabil: die reguläre Beimischung fällt ab). Selbst-
+    # verifikation je Mode über die Wronski-Identität
+    # W{R1, R3} = i/(c(ξ²+1)) mit R1 aus der überall konvergenten
+    # Besselreihe (Gegenprobe 20).
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _oblate_modes(c, n_max, K=60):
+        """d_r-Vektoren (Meixner-Schäfke-Norm) + Eigenwerte, m = 0."""
+        c2 = -c * c                    # oblate: c² -> -c²
+        pars = []
+        for par in (0, 1):
+            r = par + 2 * np.arange(K)
+            B = r * (r + 1) + c2 * (2 * r * (r + 1) - 1) / (
+                (2 * r - 1) * (2 * r + 3))
+            A = (r + 1) * (r + 2) / ((2 * r + 3) * (2 * r + 5)) * c2
+            Cc = r * (r - 1) / ((2 * r - 3) * (2 * r - 1)) * c2
+            M = np.diag(B) + np.diag(A[:-1], 1) + np.diag(Cc[1:], -1)
+            ev, V = np.linalg.eig(M)
+            idx = np.argsort(ev.real)
+            pars.append((r, ev[idx].real, V[:, idx].real))
+        modes = []
+        for n in range(n_max + 1):
+            r, ev, V = pars[n % 2]
+            j = (n - n % 2) // 2
+            d = V[:, j].copy()
+            if d[j] < 0:
+                d = -d
+            modes.append({"n": n, "r": r, "d": d, "lam": float(ev[j]),
+                          "N": float(np.sum(d**2 * 2.0 / (2 * r + 1)))})
+        return modes
+
+    @staticmethod
+    def _oblate_S(mode, x):
+        """S_0n(c, x) = Σ d_r P_r(x) (Legendre-Aufwärtsrekurrenz)."""
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        r_arr, d_arr = mode["r"], mode["d"]
+        r_max = int(r_arr[-1])
+        dmap = np.zeros(r_max + 1)
+        dmap[r_arr] = d_arr
+        P0, P1 = np.ones_like(x), x.copy()
+        S = dmap[0] * P0 + (dmap[1] * P1 if r_max >= 1 else 0.0)
+        for rr in range(1, r_max):
+            P2 = ((2 * rr + 1) * x * P1 - rr * P0) / (rr + 1)
+            S = S + dmap[rr + 1] * P2
+            P0, P1 = P1, P2
+        return S
+
+    @staticmethod
+    def _oblate_R1(mode, c, xi):
+        """R1, dR1/dξ aus der Besselreihe (konvergiert für alle ξ)."""
+        r, d, n = mode["r"], mode["d"], mode["n"]
+        x = c * xi
+        pref = 1.0 / np.sum(d)
+        ph = 1j ** (r - n)
+        R1 = pref * np.sum(ph * d * _sph_jn(r, x))
+        dR1 = pref * np.sum(ph * d * _sph_jn(r, x, derivative=True)) * c
+        return R1, dR1
+
+    @staticmethod
+    def _oblate_R3(mode, c, xi0, n_steps=1500):
+        """R3, dR3/dξ: Hankel-Reihe (konvergiert für ξ > 1) — direkt,
+        wenn ξ0 ≥ 1.5; sonst Reihen-Start bei ξ = 2 und Einwärts-RK4
+        der Radial-ODE auf log-Gitter (kurze Spanne ln(2/ξ0), einwärts
+        stabil: die reguläre Beimischung fällt ab)."""
+        lam = mode["lam"]
+        r, d, n = mode["r"], mode["d"], mode["n"]
+
+        def _series(xi):
+            # Der Startpunkt hält x = c·ξ >= 40 (bzw. ξ0-Kurzschluss):
+            # dort bleiben die y_r gutartig und die Reihe konvergiert in
+            # wenigen Termen — kleiner wählbare Startpunkte scheitern,
+            # weil die Reihe dann Koeffizienten UNTER dem Eigenvektor-
+            # Rauschboden bräuchte (Termabfall nur ~ ξ^{-r}, y_r-Wachstum
+            # verstärkt das Rauschen katastrophal). Überlaufende Terme
+            # mit vernachlässigbarem Gewicht werden genullt.
+            x = c * xi
+            pref = 1.0 / np.sum(d)
+            ph = 1j ** (r - n)
+            with np.errstate(over="ignore", invalid="ignore"):
+                hr = _sph_jn(r, x) + 1j * _sph_yn(r, x)
+                dhr = (_sph_jn(r, x, derivative=True)
+                       + 1j * _sph_yn(r, x, derivative=True))
+                t_R = ph * d * hr
+                t_dR = ph * d * dhr
+            bad = ~np.isfinite(t_R) | ~np.isfinite(t_dR)
+            if np.any(bad & (np.abs(d) > 1e-120)):
+                raise RuntimeError(
+                    "Sphäroid-R3: Hankel-Reihe numerisch instabil."
+                )
+            t_R[bad] = 0.0
+            t_dR[bad] = 0.0
+            return pref * np.sum(t_R), pref * np.sum(t_dR)
+
+        if xi0 >= 1.5 and c * xi0 >= 1e-2:
+            R, dR_dx = _series(xi0)
+            return R, dR_dx * c
+        # Einwärts-RK4 auf log-Gitter in x = c·ξ (außen Oszillation,
+        # innen Potenzverhalten — beides aufgelöst); Schrittzahl wächst
+        # mit der Spanne. Einwärts stabil: die reguläre Beimischung
+        # fällt einwärts ab.
+        xi_far = max(2.0, 40.0 / c, 1.5 * xi0)
+        x_far, x0 = c * xi_far, c * xi0
+        R, dR_dx = _series(xi_far)
+        span = np.log(x_far / x0)
+        n_int = max(int(n_steps), int(400.0 * span))
+        t, h = np.log(x_far), -span / n_int
+
+        def deriv(t_c, y):
+            x = np.exp(t_c)
+            return np.array([x * y[1] / (x**2 + c**2),
+                             x * (lam - x**2) * y[0]])
+
+        y = np.array([R, (x_far**2 + c**2) * dR_dx], dtype=complex)
+        for _ in range(n_int):
+            k1 = deriv(t, y)
+            k2 = deriv(t + h / 2, y + h / 2 * k1)
+            k3 = deriv(t + h / 2, y + h / 2 * k2)
+            k4 = deriv(t + h, y + h * k3)
+            y = y + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+            t += h
+        return y[0], y[1] / (x0**2 + c**2) * c
+
+    def _spheroid_pole_transfer(self, omega, theta, a_maj, b_min):
+        """G(θ) = p(Rückpol)/p(Frontpol) am starren oblaten Sphäroid.
+
+        Halbachsen: a_maj radial, b_min axial (b < a). Ebene Welle unter
+        θ zur Symmetrieachse; an den Polen (η = ±1) verschwinden alle
+        azimutalen Ordnungen m > 0 — es bleibt die m=0-Reihe
+
+            G(θ) = Σ b_n (−1)^n S_0n(c, cos θ) / Σ b_n S_0n(c, cos θ),
+            b_n  = (−i)^n S_0n(c, 1) / (N_0n · R'^(3)_0n(c, ξ0)),
+
+        c = k·f, f = sqrt(a² − b²), ξ0 = b/f (Konvention validiert am
+        Kugel-Grenzfall gegen die Morse-Reihe). Grenzfälle (Gegen-
+        probe 20): b→a reproduziert die Kugel; die dünne Scheibe liefert
+        am Pol die exakte LF-Distanz 4a/π (klassisches Scheiben-
+        resultat). Selbstprüfung: Wronski-Fehler je Mode
+        (self._spheroid_wronski_max), Gate bei 1e-3.
+        """
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        theta = np.atleast_1d(np.asarray(theta, dtype=float))
+        focal = np.sqrt(a_maj**2 - b_min**2)
+        xi0 = b_min / focal
+        ct = np.cos(theta)
+        G = np.empty((omega.size, theta.size), dtype=complex)
+        w_max = 0.0
+        for i, om in enumerate(omega):
+            c = om / C_AIR * focal
+            n_max = int(np.ceil(c)) + 10
+            modes = self._oblate_modes(c, n_max)
+            num = np.zeros(theta.size, dtype=complex)
+            den = np.zeros(theta.size, dtype=complex)
+            for m in modes:
+                n = m["n"]
+                R3, dR3 = self._oblate_R3(m, c, xi0)
+                R1, dR1 = self._oblate_R1(m, c, xi0)
+                W = R1 * dR3 - dR1 * R3
+                w_err = abs(W / (1j / (c * (xi0**2 + 1.0))) - 1.0)
+                w_max = max(w_max, w_err)
+                S1 = self._oblate_S(m, 1.0)[0]
+                St = self._oblate_S(m, ct)
+                b_n = (-1j)**n * S1 / (m["N"] * dR3)
+                den = den + b_n * St
+                num = num + b_n * (-1.0)**n * St
+            G[i] = np.conj(num / den)
+        self._spheroid_wronski_max = w_max
+        if w_max > 1e-3:
+            raise RuntimeError(
+                "Sphäroid-Transfer: Wronski-Selbstprüfung fehlgeschlagen "
+                f"(max. Fehler {w_max:.2e})."
+            )
+        return G
+
+    def _axial_spheroid_transfer(self, omega, theta):
+        """Axialer Front-Rück-Transfer am Sphäroid mit der Kapselgeometrie:
+        radiale Halbachse R_body, axiale d_ext/2 (frei stehende Scheibe).
+        """
+        return self._spheroid_pole_transfer(omega, theta, self.R_body,
+                                            0.5 * self.d_ext)
+
     def _axial_body_transfer(self, omega, theta):
         """Front-Rück-Transfer G(θ) = p_rück/p_front der Doppelmembran-Scheibe.
 
@@ -2050,7 +2273,10 @@ class MicrophoneCapsule:
                 # Ausdehnung d_ext (s. _axial_body_transfer): geometrische
                 # Laufzeit + Beugungsumweg + Amplituden-Asymmetrie, alles
                 # aus der exakten Streureihe, ohne Fit-Koeffizient.
-                return F_f, F_f * self._axial_body_transfer(omega, theta)
+                G_ax = (self._axial_spheroid_transfer(omega, theta)
+                        if self.axial_body_model == "spheroid"
+                        else self._axial_body_transfer(omega, theta))
+                return F_f, F_f * G_ax
             return F_f, F_r
         p_front = np.ones((omega.size, theta.size), dtype=complex)
         p_rear = np.exp(-1j * np.outer(k * self.d_ext, np.cos(theta)))
@@ -3931,5 +4157,79 @@ if __name__ == "__main__":
           f"Korrektur zur Mittel-Näherung "
           + (f"{100 * rel_mean:.1f} %" if _HAS_SCIPY else "—")
           + f"; Leitung exakt == Kirchhoff (weit); Modal {r_modal:.3f}  OK")
+
+    # --------- Gegenprobe 20: Sphäroid-Körpermodell (axialer Transfer) -----
+    # Eigene oblate Spezialfunktionen (scipy obl_rad2 ist für ξ0 < 1
+    # unbrauchbar). Verifikation:
+    # a) Kugel-Grenzfall b -> a reproduziert die Morse-Reihe (der Fehler
+    #    skaliert linear mit 1 - b/a: reine Geometrie).
+    # b) Dünne-Scheiben-Grenzfall: effektive LF-Distanz am Pol -> 4a/π
+    #    (klassisches Scheibenresultat).
+    # c) Wronski-Selbstprüfung W{R1,R3} = i/(c(ξ²+1)) über das Band.
+    # d) BEFUND als Anker: die FREI STEHENDE K67-Scheibe hätte
+    #    d_eff ~ 0.94·2·R_body >> intern (~17 mm) -> Superniere weit vor
+    #    180°. Die reale (montierte) Kapsel folgt der d_ext-Kugel —
+    #    deshalb bleibt 'sphere' Standard; 'spheroid' ist die
+    #    dokumentierte Referenz der freien Scheibe.
+    if _HAS_SCIPY:
+        th20 = np.deg2rad(np.array([0.0, 60.0, 120.0, 180.0]))
+        R20 = 9e-3
+        worst = 0.0
+        for f20 in (100.0, 1000.0, 5000.0, 15000.0):
+            om20 = np.array([2.0 * np.pi * f20])
+            d_save = k67.d_ext
+            k67.d_ext = 2.0 * R20
+            G_ref = k67._axial_body_transfer(om20, th20)[0]
+            k67.d_ext = d_save
+            G_sph = k67._spheroid_pole_transfer(om20, th20, R20,
+                                                0.9995 * R20)[0]
+            worst = max(worst, float(np.max(np.abs(G_sph - G_ref)
+                                            / np.abs(G_ref))))
+        assert worst < 3e-3, \
+            f"Sphäroid muss im Kugel-Grenzfall die Morse-Reihe treffen " \
+            f"({worst:.2e})"
+        om50 = np.array([2.0 * np.pi * 50.0])
+        G_disc = k67._spheroid_pole_transfer(om50, np.array([np.pi]),
+                                             17e-3, 0.02 * 17e-3)[0, 0]
+        d_eff_disc = float(np.angle(G_disc)) / (om50[0] / C_AIR)
+        assert abs(d_eff_disc / 17e-3 - 4.0 / np.pi) < 0.04, \
+            f"Scheiben-Grenzfall 4a/π verfehlt ({d_eff_disc/17e-3:.3f})"
+        assert k67._spheroid_wronski_max < 1e-4, \
+            "Wronski-Selbstprüfung des Sphäroids"
+        G_k67 = k67._axial_spheroid_transfer(om50, np.array([np.pi]))[0, 0]
+        d_eff_k67 = float(np.angle(G_k67)) / (om50[0] / C_AIR)
+        assert 0.85 < d_eff_k67 / (2.0 * k67.R_body) < 1.0, \
+            f"freie K67-Scheibe: d_eff ~ 0.94·2R erwartet ({d_eff_k67})"
+        k67_sph = MicrophoneCapsule(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=34e-3,
+            squeeze_model="2d", axial_body_model="spheroid")
+        di_sph = k67_sph.directivity(frequencies_hz=(1000.0,))
+        lin_s = di_sph["patterns"][1000.0]["linear"]
+        a_s = di_sph["angles_deg"]
+        na_s = a_s[a_s <= 180][int(np.argmin(lin_s[a_s <= 180]))]
+        assert na_s < 150.0, \
+            (f"freie Scheibe: Minimum deutlich vor 180° erwartet "
+             f"({na_s:.0f}°) — Beleg, warum 'sphere' Standard bleibt")
+        try:
+            MicrophoneCapsule(architecture="single",
+                              axial_body_model="spheroid",
+                              membrane_resonance_hz=8000.0)
+            raise AssertionError("spheroid ohne dual_diaphragm muss scheitern")
+        except ValueError:
+            pass
+        print(f"Sphäroid: Kugel-Grenzfall {worst:.1e}; Scheibe "
+              f"d_eff/a = {d_eff_disc/17e-3:.3f} (4/π = {4/np.pi:.3f}); "
+              f"Wronski {k67._spheroid_wronski_max:.1e}; freie K67-Scheibe "
+              f"d_eff = {d_eff_k67*1e3:.1f} mm -> Minimum {na_s:.0f}° "
+              "(montiert: Kugel bleibt Standard)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
