@@ -219,6 +219,27 @@ Spaltluft** im 1D-Modell (Schlitz-Zwikker–Kosten-Korrektur Φ(ω),
 identisch zum Filmleitwert des 2D-Feldmodells). Alle Grenzfälle sind
 im Testlauf verifiziert (Gegenprobe 12).
 
+Drei Verfeinerungen (Gegenprobe 19, jeweils fit-frei):
+
+- **Fok/Melling-Mündungswechselwirkung:** die Flanschkorrektur 0,85·r
+  gilt für die einsame Mündung; im Locharray überlappen die Nahfelder
+  und die mitschwingende Masse sinkt um den Fok-Faktor F(ξ),
+  ξ = r/r_Zelle aus der Fläche je Loch. Angewandt auf die array-
+  seitigen Mündungen der Durchgangs- und Rückplattenlöcher (K67:
+  F ≈ 0,74) — die filmseitigen Mündungen behalten ihre Konvention.
+- **Lokales Spaltprofil h(r) im 2D-Film:** die polarisierte Membran ist
+  statisch durchgebogen; das Feldmodell rechnet die Zell-Leitwerte mit
+  dem örtlichen h(r) = h − w₀·φ(r) (h³-Wirkung!) statt des
+  Flächenmittels — die Bias-Kopplung an die Richtcharakteristik ist
+  damit quantitativ.
+- **Exakte Leitungen für alle Radien:** Laufzeitglied, Hohlraum und
+  Reststücke rechnen mit der vollen Zwikker–Kosten-Form statt der
+  Kirchhoff-Asymptotik (numerisch robust über eine
+  Grenzschicht-Asymptotik oberhalb der Schubzahl 600); summary() nennt
+  zusätzlich die erste azimutale Quermode des Hohlraums als ehrliche
+  1D-Gültigkeitsgrenze und die exakte J₀-Modalfrequenz der Membran
+  (der Lumped-Kolbenfaktor 4/3 liegt ~1,9 % darüber).
+
 `examples/debenham_stereo_condenser.json` — Braunmühl-Weber-Kapsel aus
 Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi
 News): einteilige durchbohrte Mittelelektrode (`center_gap = 0`), 1"-

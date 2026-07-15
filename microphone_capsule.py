@@ -612,6 +612,22 @@ class MicrophoneCapsule:
         self.f_res_from_tension = 1.0 / (
             2.0 * np.pi * np.sqrt(self.M_A_mem * self.C_A_phys)
         )
+        # EXAKTE Modalfrequenz der Grundmode (Diagnose): die Lumped-Werte
+        # (Kolbenfaktor 4/3 aus der STATISCHEN Parabelform) ergeben für
+        # reine Vorspannung f = sqrt(6)/(2·pi·a)·sqrt(T/rho_s) und liegen
+        # damit 1.9 % ÜBER dem exakten Membran-Eigenwert j01 = 2.40483
+        # (Grundmode J0; Massenfaktor j01²/4 = 1.446 statt 4/3). Für die
+        # Biegesteifigkeit gilt der eingespannte Platten-Eigenwert
+        # lambda² = 10.2158; beide Anteile addieren sich in guter Näherung
+        # quadratisch. Die NETZWERK-Dynamik behält bewusst die konsistenten
+        # Lumped-Werte (LF-exakt, f_res-Kalibrierung absorbiert den
+        # Unterschied; die vollen Modenformen rechnet der 3D-Löser) —
+        # diese Größe dient dem ehrlichen Vergleich in summary().
+        _j01 = 2.404825557695773
+        f_T_ex = _j01 / (2.0 * np.pi * a) * np.sqrt(self.tension / rho_s)
+        f_B_ex = (10.2158 / (2.0 * np.pi * a**2)
+                  * np.sqrt(D_plate / rho_s))
+        self.f_res_modal_exact = float(np.hypot(f_T_ex, f_B_ex))
 
         # Ist eine Soll-Resonanzfrequenz vorgegeben, wird die Nachgiebigkeit
         # so skaliert, dass f_res exakt getroffen wird (die Vorspannung
@@ -886,6 +902,37 @@ class MicrophoneCapsule:
             # Nachgiebigkeit direkt an der Membran.
             self.R_A_gap = None
             self.R_A_gap_front = None
+
+        # ------------------------------------------------------------------
+        # MÜNDUNGS-WECHSELWIRKUNG IM LOCHARRAY (Fok/Melling)
+        # Die Flansch-Mündungskorrektur 0.85·r gilt für die EINSAME
+        # Mündung. Sitzen viele Mündungen dicht beieinander (Locharray auf
+        # der Backplate/Rückplatte), überlappen ihre Nahfelder und die
+        # mitschwingende Masse sinkt. Klassische Korrektur (Fok 1941;
+        # Polynomform nach Melling 1973, gültig für quadratische/hexagonale
+        # Gitter bis xi ~ 0.5):
+        #     delta_L = 0.85·r · F(xi),   xi = r / r_Zelle,
+        #     r_Zelle = sqrt(S_Platte / (n·pi))   (Fläche je Loch)
+        #     F(xi) = 1 − 1.4092·xi + 0.33818·xi³ + 0.06793·xi⁵
+        #             − 0.02287·xi⁶ + 0.03015·xi⁷ − 0.01641·xi⁸
+        # Angewandt NUR auf die array-seitigen Mündungen der Durchgangs-
+        # löcher (Portseite) und der Rückplattenlöcher — die filmseitigen
+        # Mündungen behalten ihre Konvention (die Zell-/Škvor-Ausbreitung
+        # deckt die laterale Zuströmung dort ab). Die Einlassringe der
+        # Hohlraumwand bleiben unkorrigiert: für eine einzelne Lochreihe
+        # auf einem Zylindermantel ist die Gitterprämisse des Fok-Polynoms
+        # nicht erfüllt (dokumentierte Näherung).
+        # ------------------------------------------------------------------
+        def _fok_factor(r_hole, n, S_plate):
+            if n < 1 or r_hole <= 0.0 or S_plate <= 0.0:
+                return 1.0
+            xi = min(r_hole * np.sqrt(n * np.pi / S_plate), 0.9)
+            F = (1.0 - 1.4092 * xi + 0.33818 * xi**3 + 0.06793 * xi**5
+                 - 0.02287 * xi**6 + 0.03015 * xi**7 - 0.01641 * xi**8)
+            return float(np.clip(F, 0.3, 1.0))
+
+        self._fok_th = _fok_factor(self.r_th, self.n_th, self.S_bp)
+        self._fok_rp = _fok_factor(self.r_rp, self.n_rp, self.S_bp)
 
         # ------------------------------------------------------------------
         # NACHGIEBIGKEIT DES SPALTVOLUMENS
@@ -1287,9 +1334,7 @@ class MicrophoneCapsule:
         omega = np.asarray(omega, dtype=float)
 
         if _HAS_SCIPY:
-            k_v = np.sqrt(-1j * omega * RHO0 / MU_AIR)
-            arg = k_v * radius
-            F_v = 1.0 - 2.0 * _besselj(1, arg) / (arg * _besselj(0, arg))
+            F_v, _ = MicrophoneCapsule._fv_ft(omega, radius)
             Z = 1j * omega * RHO0 * length / (S * F_v)
         else:
             # Fallback: Überblendung der beiden Grenzfälle über die
@@ -1323,31 +1368,58 @@ class MicrophoneCapsule:
         return Z / count  # parallele Löcher
 
     @staticmethod
-    def _narrow_duct_propagation(omega, radius):
-        """Ausbreitungskonstante/Wellenwiderstand eines ENGEN Rohres.
+    def _fv_ft(omega, radius):
+        """Zwikker–Kosten-Rohrfunktionen F_v und F_t, numerisch robust.
 
-        Pendant zu :meth:`_duct_propagation` (weite Leitung, Kirchhoff-
-        Grenzschichtnäherung), aber mit den vollen Zwikker–Kosten-
-        Besselfunktionen — gültig auch, wenn viskose und thermische
-        Grenzschicht den Querschnitt ganz ausfüllen (Sacklöcher,
-        Senkungen im mm-Maßstab):
+            F_v = 1 − 2·J1(z)/(z·J0(z)),   z = sqrt(−jωρ0/μ)·r
+            F_t = 2·J1(z_t)/(z_t·J0(z_t)), z_t = z·sqrt(Pr)
+
+        Die Besselform ist EXAKT für alle Radien, überläuft aber numerisch
+        für große Schubzahlen ζ = r·sqrt(ωρ0/μ) (J wächst wie e^|Im z|;
+        ab ζ ~ 1000 wird e^|Im z| > 1e308). Oberhalb ζ = 600 wird deshalb
+        die Grenzschicht-Asymptotik verwendet (Fehler < 0.2 % dort,
+        identisch mit der Kirchhoff-Näherung weiter Rohre):
+
+            F_v → 1 − (1−j)·δ_v/r,   δ_v = sqrt(2μ/(ρ0·ω)),
+            F_t → (1−j)·δ_t/r,       δ_t = δ_v/sqrt(Pr).
+        """
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        zeta = radius * np.sqrt(RHO0 * omega / MU_AIR)
+        F_v = np.empty(omega.shape, dtype=complex)
+        F_t = np.empty(omega.shape, dtype=complex)
+        small = zeta <= 600.0
+        if np.any(small):
+            z = np.sqrt(-1j * omega[small] * RHO0 / MU_AIR) * radius
+            F_v[small] = 1.0 - 2.0 * _besselj(1, z) / (z * _besselj(0, z))
+            z_t = z * np.sqrt(PRANDTL)
+            F_t[small] = (2.0 * _besselj(1, z_t)
+                          / (z_t * _besselj(0, z_t)))
+        big = ~small
+        if np.any(big):
+            d_v = np.sqrt(2.0 * MU_AIR / (RHO0 * omega[big]))
+            F_v[big] = 1.0 - (1.0 - 1j) * d_v / radius
+            F_t[big] = (1.0 - 1j) * d_v / (np.sqrt(PRANDTL) * radius)
+        return F_v, F_t
+
+    @staticmethod
+    def _narrow_duct_propagation(omega, radius):
+        """Ausbreitungskonstante/Wellenwiderstand einer Leitung (exakt).
+
+        Volle Zwikker–Kosten-Form — gültig für ALLE Radien: vom engen
+        Rohr (Grenzschichten füllen den Querschnitt: Sacklöcher,
+        Senkungen) bis zur weiten Leitung (asymptotisch Kirchhoff, s.
+        :meth:`_fv_ft`):
 
             Z' = jω·rho0 / (S·F_v)           (Impedanzbelag)
             Y' = jω·S / (n_p(ω)·P_atm)       (Admittanzbelag)
             n_p = gamma / [1 + (gamma−1)·F_t]
 
-        F_v: viskose Rohrfunktion (wie _hole_impedance), F_t: thermisches
-        Pendant mit sqrt(Pr)-skaliertem Argument. n_p läuft von 1
-        (isotherm) nach gamma (adiabatisch) inkl. Relaxationsverlusten.
-        Rückgabe: (gamma_prop, Zc). Erfordert SciPy (Besselfunktionen).
+        n_p läuft von 1 (isotherm) nach gamma (adiabatisch) inkl.
+        Relaxationsverlusten. Rückgabe: (gamma_prop, Zc). Erfordert SciPy.
         """
         omega = np.asarray(omega, dtype=float)
         S = np.pi * radius**2
-        k_v = np.sqrt(-1j * omega * RHO0 / MU_AIR)
-        arg = k_v * radius
-        F_v = 1.0 - 2.0 * _besselj(1, arg) / (arg * _besselj(0, arg))
-        arg_t = arg * np.sqrt(PRANDTL)
-        F_t = 2.0 * _besselj(1, arg_t) / (arg_t * _besselj(0, arg_t))
+        F_v, F_t = MicrophoneCapsule._fv_ft(omega, radius)
         n_p = GAMMA / (1.0 + (GAMMA - 1.0) * F_t)
         Zp = 1j * omega * RHO0 / (S * F_v)
         Yp = 1j * omega * S / (n_p * P_ATM)
@@ -1417,16 +1489,22 @@ class MicrophoneCapsule:
         Serienpfad (s. _backplate_gap_abcd).
         """
         omega = np.asarray(omega, dtype=float)
+        S = np.pi * self.r_th**2
         if not self.stepped:
-            return self._hole_impedance(omega, self.r_th, self.t_bp, count,
-                                        end_correction=True,
-                                        radiates=radiates, visc_ends=1)
+            # Mündungsmassen explizit: filmseitig die einsame Flansch-
+            # Korrektur 0.85·r (Konvention wie bisher), portseitig mit
+            # Fok-Faktor der Array-Wechselwirkung (s. _derive_parameters).
+            Z = self._hole_impedance(omega, self.r_th, self.t_bp, count,
+                                     end_correction=False,
+                                     radiates=radiates, visc_ends=1)
+            delta = 0.85 * self.r_th * (1.0 + self._fok_th)
+            return Z + 1j * omega * RHO0 * delta / (S * count)
         Z = self._hole_impedance(omega, self.r_th, self.t_th_eff, count,
                                  end_correction=False, radiates=radiates,
                                  visc_ends=1)
-        S = np.pi * self.r_th**2
         karal = 1.0 - self.r_th / self.r_bh
-        delta = 0.85 * self.r_th * (1.0 + karal)
+        # portseitige Mündung mit Fok-Faktor, Stufenmündung mit Karal
+        delta = 0.85 * self.r_th * (self._fok_th + karal)
         # viskose Mündung an der Stufe (Karal-gewichtete Sampson-Länge)
         Z_step = self._hole_impedance(
             omega, self.r_th, (3.0 * np.pi / 16.0) * self.r_th, 1,
@@ -2002,9 +2080,17 @@ class MicrophoneCapsule:
         ])
 
     def _duct_propagation(self, omega, radius_duct):
-        """Ausbreitungskonstante und Wellenwiderstand einer weiten Leitung.
+        """Ausbreitungskonstante und Wellenwiderstand einer Leitung.
 
-        AKUSTISCHE LEITUNG MIT WANDVERLUSTEN (Kirchhoff, weites Rohr):
+        Mit SciPy: EXAKTE Zwikker–Kosten-Form (s.
+        :meth:`_narrow_duct_propagation`) — sie gilt für ALLE Radien und
+        geht für weite Rohre asymptotisch in die Kirchhoff-Grenzschicht-
+        näherung über. Damit rechnen alle Leitungselemente (Laufzeitglied,
+        Hohlraum, Reststücke, Senkungssegmente, Stubs) mit derselben
+        Theorie; gerade bei Zwischenradien (r von der Größenordnung
+        weniger Grenzschichtdicken) ist die Asymptotik sonst grob.
+
+        Ohne SciPy der bisherige Kirchhoff-Fallback (weites Rohr):
             gamma = alpha + j*k,   k = omega/c,   Zc = rho0*c/S
             alpha = sqrt(mu*omega/(2*rho0)) * (1 + (gamma_ad - 1)/sqrt(Pr))
                     / (r * c)
@@ -2013,6 +2099,8 @@ class MicrophoneCapsule:
         lisch scharfe Stehwellenresonanzen des Hohlraums im Modell.
         """
         omega = np.asarray(omega, dtype=float)
+        if _HAS_SCIPY:
+            return self._narrow_duct_propagation(omega, radius_duct)
         k = omega / C_AIR
         alpha = (
             np.sqrt(MU_AIR * omega / (2.0 * RHO0))
@@ -2066,12 +2154,17 @@ class MicrophoneCapsule:
         beide Pfade sind damit konsistent."""
         return np.array([[T[1, 1], T[0, 1]], [T[1, 0], T[0, 0]]])
 
-    def _gap_field_2port(self, omega, h_film=None):
+    def _gap_field_2port(self, omega, h_film=None, sag_w0=0.0):
         """Zweitor des Luftspalts aus der modifizierten Reynolds-Gleichung.
 
-        ``h_film``: wirksame Spalthöhe (Standard: nomineller Luftspalt);
-        die polarisierte Seite übergibt hier ihren statisch verkleinerten
-        Spalt h_gap_front.
+        ``h_film``: nominelle Spalthöhe (Standard: Luftspalt h_gap).
+        ``sag_w0``: statische Mittendurchbiegung der polarisierten
+        Membran. Der Film sieht dann das ÖRTLICHE Spaltprofil
+        h(r) = h_film − sag_w0·φ(r) statt des Flächenmittels — wegen der
+        h³-Abhängigkeit wirkt die zentrale Verengung überproportional,
+        die Bias-Kopplung an die Richtcharakteristik wird damit
+        quantitativ statt gemittelt. sag_w0 = 0 reproduziert exakt den
+        Bestand (unpolarisierte Seite / Dual-Architektur mit w0 = 0).
 
         MODIFIZIERTE REYNOLDS-GLEICHUNG (2D-Feldmodell)
         -----------------------------------------------
@@ -2156,23 +2249,37 @@ class MicrophoneCapsule:
             return K, h_loc / (n_poly * P_ATM)
 
         K_f, c_gap = _film_props(h)                      # (Nf,) nominal
-        h_cell = h + self._clr_relief
-        if np.any(self._clr_relief > 0.0):
-            K_cell = np.empty((Nf, N), dtype=complex)
-            c_cell = np.empty((Nf, N), dtype=complex)
-            for hh in np.unique(h_cell):
-                mloc = h_cell == hh
-                Kh, ch = _film_props(hh)
-                K_cell[:, mloc] = Kh[:, None]
-                c_cell[:, mloc] = ch[:, None]
+        # Örtliches Spaltprofil: statische Durchbiegung (h³-Wirkung!)
+        # plus Clearance-Ring-Relief; sag_w0 = 0 und Relief 0 -> Bestand.
+        h_cell = np.maximum(h - sag_w0 * phi + self._clr_relief, 0.05 * h)
+        if sag_w0 > 0.0 or np.any(self._clr_relief > 0.0):
+            sq = np.sqrt(1j * omega * RHO0 / MU_AIR)
+            a_v2 = 0.5 * h_cell[None, :] * sq[:, None]          # (Nf, N)
+            K_cell = (h_cell[None, :] / (1j * omega[:, None] * RHO0)
+                      * (1.0 - np.tanh(a_v2) / a_v2))
+            a_t2 = a_v2 * np.sqrt(PRANDTL)
+            n_p2 = GAMMA / (1.0 + (GAMMA - 1.0) * np.tanh(a_t2) / a_t2)
+            c_cell = h_cell[None, :] / (n_p2 * P_ATM)
             K_face = np.empty((Nf, N + 1), dtype=complex)
             K_face[:, 0] = K_cell[:, 0]
             K_face[:, N] = K_cell[:, -1]
             K_face[:, 1:N] = 0.5 * (K_cell[:, :-1] + K_cell[:, 1:])
-            K_entry_th = (_film_props(h + self.clearance_ring_depth)[0]
-                          if self._clr_th_relieved else K_f)
-            K_entry_bh = (_film_props(h + self.clearance_ring_depth)[0]
-                          if self._clr_bh_relieved else K_f)
+            # Loch-Eintritts-Engstellen am ÖRTLICHEN Spalt der Mündungen:
+            # Relief-Flag wie bisher (voller Freistich-Spalt), zusätzlich
+            # die statische Durchbiegung am dichte-gewichteten Lochort.
+            def _mean_phi(dens):
+                w = dens * A
+                s = float(np.sum(w))
+                return float(np.sum(phi * w)) / s if s > 0.0 else 0.0
+
+            h_e_th = ((h + self.clearance_ring_depth
+                       if self._clr_th_relieved else h)
+                      - sag_w0 * _mean_phi(dens_th))
+            h_e_bh = ((h + self.clearance_ring_depth
+                       if self._clr_bh_relieved else h)
+                      - sag_w0 * _mean_phi(dens_bh))
+            K_entry_th = _film_props(max(h_e_th, 0.05 * h))[0]
+            K_entry_bh = _film_props(max(h_e_bh, 0.05 * h))[0]
         else:
             K_cell = np.broadcast_to(K_f[:, None], (Nf, N))
             c_cell = np.broadcast_to(c_gap[:, None], (Nf, N))
@@ -2213,10 +2320,12 @@ class MicrophoneCapsule:
         # dichte) wie ein Blindloch shuntet.
         S_th = np.pi * self.r_th**2
         r_well_th = self.r_bh if self.stepped else self.r_th
-        # Portseite: Mündungsmasse + viskoser Mündungswiderstand (Sampson)
+        # Portseite: Mündungsmasse (mit Fok-Array-Wechselwirkung) +
+        # viskoser Mündungswiderstand (Sampson)
         Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
                                       end_correction=False, visc_ends=1)
-                 + 1j * omega * RHO0 * (0.85 * self.r_th) / S_th
+                 + 1j * omega * RHO0 * (0.85 * self.r_th * self._fok_th)
+                 / S_th
                  + _cell_B(r_well_th) / (np.pi * K_entry_th))
         if self.stepped:
             # weites Senkungssegment in Serie + Karal-Stufenmündung
@@ -2300,9 +2409,14 @@ class MicrophoneCapsule:
         h_eff = self.h_gap_front if polarized else self.h_gap
 
         # 2D-Feldmodell: das komplette Spalt-/Lochnetzwerk kommt aus der
-        # Reynolds-Feldlösung (nur sinnvoll, wenn Durchgangslöcher da sind).
+        # Reynolds-Feldlösung (nur sinnvoll, wenn Durchgangslöcher da
+        # sind). Die polarisierte Seite übergibt Basis-Spalt + statische
+        # Mittendurchbiegung — das Feld sieht das ÖRTLICHE Profil
+        # h(r) = h − w0·φ(r) statt des Flächenmittels h_gap_front.
         if self.squeeze_model == "2d" and self.n_th > 0:
-            T = self._gap_field_2port(omega, h_film=h_eff)
+            T = self._gap_field_2port(
+                omega, h_film=self.h_gap,
+                sag_w0=(self.w0_static if polarized else 0.0))
             if holes_radiate:
                 k = np.asarray(omega, float) / C_AIR
                 S_holes = self.n_th * np.pi * self.r_th**2
@@ -2512,11 +2626,15 @@ class MicrophoneCapsule:
             # die Plattendicke; münden sie direkt ins Schallfeld
             # (K103-Fall), kommt die Strahlungsimpedanz hinzu. Die äußere
             # Mündung öffnet in Freifeld/Baugruppe -> viskoser Mündungs-
-            # widerstand; die innere liegt im Spacer-Film (Škvor deckt ab).
+            # widerstand und Fok-Array-Wechselwirkung; die innere liegt
+            # im Spacer-Film (Škvor deckt ab, Flanschmasse wie bisher).
             Z_rp = self._hole_impedance(omega, self.r_rp, self.t_rp,
-                                        self.n_rp, end_correction=True,
+                                        self.n_rp, end_correction=False,
                                         radiates=self._plate_vents,
                                         visc_ends=1)
+            S_rp = np.pi * self.r_rp**2
+            Z_rp = Z_rp + (1j * omega * RHO0 * 0.85 * self.r_rp
+                           * (1.0 + self._fok_rp) / (S_rp * self.n_rp))
             rear.append(self._abcd_series(Z_rp, omega))
 
         # Gewebe hinter der Backplate/Rückplatte (überspannt die Fläche,
@@ -2883,6 +3001,8 @@ class MicrophoneCapsule:
                f"{self.n_bh + self.n_th} gesamt]" if self.stepped else ""),
             f"Resonanz (Modell):            {self.f_res:9.1f} Hz",
             f"Resonanz aus Vorspannung/E:   {self.f_res_from_tension:9.1f} Hz",
+            f"  (exakte J0-Modalfrequenz:   {self.f_res_modal_exact:9.1f} Hz"
+            " — Lumped-Kolbenfaktor 4/3 liegt ~1.9 % darüber)",
             f"Ruhekapazität C0 (je BP):     {self.C_elec_0 * 1e12:9.2f} pF",
             ("Squeeze-Film-Widerst. R_gap:  "
              + (f"{self.R_A_gap:9.3e} Pa·s/m³" if self.R_A_gap is not None
@@ -2909,6 +3029,17 @@ class MicrophoneCapsule:
             else:
                 rp = "keine Rückplatte"
             lines.append(f"Spacer/Rückplatte (K103):     {sp}; {rp}")
+        if (self.architecture != "dual_diaphragm"
+                and self.rear_network_enabled
+                and (self.l_delay > 0.0 or self.l_cav > 0.0)):
+            # GÜLTIGKEITS-GATTER: Laufzeitglied/Hohlraum werden als
+            # 1D-Leitungen gerechnet. Die erste azimutale Quermode eines
+            # Zylinderrohres liegt bei k·R = 1.8412 — darüber können
+            # (v. a. seitlich angeregte) Quermoden das 1D-Bild verfälschen.
+            f_quer = 1.8412 * C_AIR / (2.0 * np.pi * self.a_bp)
+            lines.append(
+                f"1D-Leitungsgrenze (Quermode): {f_quer:9.1f} Hz "
+                "(erste azimutale Hohlraum-Mode)")
         if self.architecture == "dual_diaphragm":
             # Druckleck der Doppelmembran-Bauform: die Rückmembran liegt
             # als Nachgiebigkeit in SERIE im rückwärtigen Pfad; das innere
@@ -3742,5 +3873,63 @@ if __name__ == "__main__":
           + (f", Debenham {fH_deb:.0f} Hz -> 6-mm-Platte {fH_dick:.0f} Hz"
              if _HAS_SCIPY else "")
           + "; geschlossene Rückseite -> None  OK")
+
+    # --------- Gegenprobe 19: Fok-Mündungen, lokales h(r), exakte Leitung --
+    # a) Fok/Melling-Faktor: F(xi->0) -> 1 (einsame Mündung == Bestand),
+    #    monoton fallend mit der Lochdichte; K67-Wert im erwarteten Bereich.
+    # b) Lokales Spaltprofil im 2D-Film: sag_w0 = 0 reproduziert den
+    #    Bestand EXAKT; mit statischer Durchbiegung liegt das Zweitor nahe
+    #    an der bisherigen Flächenmittel-Näherung (kleine Korrektur), aber
+    #    klar verschieden vom nominalen Spalt (h³-Wirkung vorhanden).
+    # c) Exakte Zwikker-Kosten-Leitung: geht für weite Rohre in die
+    #    Kirchhoff-Asymptotik über (Dämpfungsbelag/Zc innerhalb weniger %).
+    # d) Exakte J0-Modalfrequenz: ~1.8 % unter dem Lumped-Wert (4/3-Faktor).
+    assert k67._fok_th is not None and 0.70 < k67._fok_th < 0.80, \
+        f"K67-Fok-Faktor ~0.74 erwartet ({k67._fok_th:.3f})"
+    sparse = MicrophoneCapsule(
+        membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+        membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+        backplate_diameter=25e-3, backplate_thickness=4e-3,
+        bias_voltage=60.0, architecture="dual_diaphragm", center_gap=50e-6,
+        n_through_holes=2, through_hole_diameter=0.3e-3,
+        n_blind_holes=0, blind_hole_depth=1e-3,
+        clamp_ring_thickness=2e-3, clamp_ring_width=4e-3,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=34e-3)
+    assert sparse._fok_th > 0.97, \
+        f"einsame Mündungen: Fok -> 1 erwartet ({sparse._fok_th:.3f})"
+    assert sparse._fok_th > k67._fok_th, "Fok muss mit Lochdichte fallen"
+    if _HAS_SCIPY:
+        om19 = np.array([2.0 * np.pi * 1000.0])
+        T_loc = k67._gap_field_2port(om19, h_film=k67.h_gap,
+                                     sag_w0=k67.w0_static)
+        T_sag0 = k67._gap_field_2port(om19, h_film=k67.h_gap, sag_w0=0.0)
+        T_nom = k67._gap_field_2port(om19, h_film=k67.h_gap)
+        assert np.allclose(T_sag0, T_nom, rtol=1e-12), \
+            "sag_w0 = 0 muss den Bestand exakt reproduzieren"
+        T_mean = k67._gap_field_2port(om19, h_film=k67.h_gap_front)
+        rel_mean = abs(T_loc[0, 1][0] / T_mean[0, 1][0] - 1.0)
+        rel_nom = abs(abs(T_loc[0, 1][0]) / abs(T_nom[0, 1][0]) - 1.0)
+        assert rel_mean < 0.05, \
+            f"lokales Profil nahe der Flächenmittel-Näherung ({rel_mean:.3f})"
+        assert 0.01 < rel_nom < 0.30, \
+            f"h³-Wirkung der Durchbiegung muss sichtbar sein ({rel_nom:.3f})"
+        g_ex, Zc_ex = k67._narrow_duct_propagation(om19, 10e-3)
+        al_kirch = (np.sqrt(MU_AIR * om19[0] / (2.0 * RHO0))
+                    * (1.0 + (GAMMA - 1.0) / np.sqrt(PRANDTL))
+                    / (10e-3 * C_AIR))
+        Zc0 = RHO0 * C_AIR / (np.pi * 10e-3**2)
+        assert 0.9 < g_ex[0].real / al_kirch < 1.1, \
+            "exakte Leitung muss für weite Rohre Kirchhoff treffen (alpha)"
+        assert 0.98 < abs(Zc_ex[0]) / Zc0 < 1.02, \
+            "exakte Leitung muss für weite Rohre Kirchhoff treffen (Zc)"
+    r_modal = sparse.f_res_modal_exact / sparse.f_res_from_tension
+    assert 0.975 < r_modal < 0.99, \
+        f"exakte J0-Modalfrequenz ~1.8 % unter Lumped erwartet ({r_modal:.4f})"
+    assert "J0-Modalfrequenz" in sparse.summary()
+    print(f"Fok/Melling: K67 {k67._fok_th:.2f}, einsame Mündung "
+          f"{sparse._fok_th:.3f} -> 1; lokales h(r): sag=0 == Bestand, "
+          f"Korrektur zur Mittel-Näherung "
+          + (f"{100 * rel_mean:.1f} %" if _HAS_SCIPY else "—")
+          + f"; Leitung exakt == Kirchhoff (weit); Modal {r_modal:.3f}  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
