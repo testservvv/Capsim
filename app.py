@@ -172,9 +172,15 @@ DEFAULTS = {
     "bem_body_gap_mm": 15.0,
     "bem_body_len_mm": 80.0,
     # Spaltfilm-Modell (Debenham braucht 2D für die tiefe Niere;
-    # 3D = diskrete Löcher, nur einteilige Doppelmembran-Elektrode)
+    # 3D = diskrete Löcher; center_gap > 0 -> K67-Modus: Zwischenspalt
+    # als dritter Film, Stufenbohrungen als Zweitor-Kette, Elektroden-
+    # hälften gegeneinander verdreht — Gegenprobe 22)
     "squeeze_2d": True,
     "squeeze_3d": False,
+    # Verdrehung der Elektrodenhälften (nur 3D-K67-Modus): automatisch =
+    # halbe Teilung des Durchgangs-Lochbilds (180°/n_th, reale K67)
+    "half_rot_auto": True,
+    "half_rot_deg": 3.0,
     # Simulation
     "n_points": 400,
     "normalize_1khz": True,
@@ -409,6 +415,9 @@ def build_capsule(p):
         bem_body_length=p.get("bem_body_len_mm", 80.0) * 1e-3,
         squeeze_model=("3d" if p.get("squeeze_3d") else
                        ("2d" if p["squeeze_2d"] else "1d")),
+        # None = automatisch eine halbe Teilung (180°/n_th)
+        half_rotation_deg=(None if p.get("half_rot_auto", True)
+                           else p.get("half_rot_deg", 3.0)),
     )
 
 
@@ -1086,21 +1095,47 @@ with st.sidebar:
                        "jetzt die radiale Lochverteilung im Spaltfeld.")
         st.toggle("3D-Feldmodell (diskrete Löcher, r-φ-Sandwich)",
                   key="p_squeeze_3d",
-                  help="Volles (r, φ)-Feldmodell: beide Spaltfilme UND "
+                  help="Volles (r, φ)-Feldmodell: alle Spaltfilme UND "
                        "beide Membranen als Felder, Durchgangs- und "
                        "Sacklöcher sitzen DISKRET an ihren Positionen "
                        "(azimutale Zuströmung und teilentkoppelte Sack-"
                        "löcher werden aufgelöst; bedämpft die interne "
                        "Helmholtz-Resonanz realistisch). Nur für die "
-                       "Doppelmembran-Bauform mit einteiliger Elektrode "
-                       "(center_gap = 0, keine Stufenbohrung). Hat "
-                       "Vorrang vor dem 2D-Schalter. DEUTLICH langsamer "
-                       "(~1–2 s je Frequenzpunkt) — Frequenzpunkte "
-                       "reduzieren!")
+                       "Doppelmembran-Bauform mit Durchgangslöchern. "
+                       "Bei Mittelabstand > 0 rechnet der Löser die "
+                       "ZWEITEILIGE Elektrode (K67-Typ): Zwischenspalt "
+                       "als dritter Film, Stufenbohrungen als Zweitor-"
+                       "Kette je Loch, Elektrodenhälften gegeneinander "
+                       "verdreht. Hat Vorrang vor dem 2D-Schalter. "
+                       "DEUTLICH langsamer (einteilig ~1–2 s, K67-Typ "
+                       "je nach Lochzahl bis ~10 s je Frequenzpunkt) — "
+                       "Frequenzpunkte reduzieren!")
         if st.session_state["p_squeeze_3d"]:
+            st.toggle("Verdrehung der Hälften automatisch "
+                      "(halbe Lochteilung)",
+                      key="p_half_rot_auto",
+                      help="Nur K67-Typ (Mittelabstand > 0): die realen "
+                           "Elektrodenhälften sind so verdreht, dass die "
+                           "Durchgangslöcher nicht zueinander zeigen — "
+                           "automatisch 180°/n_Durchgangslöcher (bei 60 "
+                           "Löchern also 3°). Ausgerichtete Löcher (0°) "
+                           "kurzschließen den Nieren-Phasenschieber "
+                           "durch den Zwischenspalt: flachere 180°-Aus"
+                           "löschung, höhere Empfindlichkeit.")
+            if not st.session_state["p_half_rot_auto"]:
+                st.number_input("Verdrehung der Elektrodenhälften [°]",
+                                0.0, 180.0, step=0.5,
+                                key="p_half_rot_deg",
+                                help="0° = Durchgangslöcher beider Hälften "
+                                     "zeigen aufeinander (Kurzschluss des "
+                                     "Phasenschiebers); halbe Teilung = "
+                                     "maximaler Versatz wie an der realen "
+                                     "K67.")
             st.caption("⏳ 3D rechnet je Frequenzpunkt eine LU-Faktori"
-                       "sierung (~24 000 Unbekannte). Empfehlung: "
-                       "Frequenzpunkte ≤ 150. Ergebnisse werden je "
+                       "sierung (einteilig ~24 000 Unbekannte; K67-Typ "
+                       "mit drittem Film und feinerer Azimut-Auflösung "
+                       "entsprechend mehr). Empfehlung: Frequenzpunkte "
+                       "≤ 150 (K67-Typ ≤ 100). Ergebnisse werden je "
                        "Parametersatz gecacht — Reruns ohne Änderung "
                        "sind sofort da.")
 

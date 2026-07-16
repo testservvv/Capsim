@@ -38,18 +38,36 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   liefert den glatten Präsenzpeak der echten Kapsel — bei gleicher
   Niere (Null bei 180°). Reziprok und passiv (im Test geprüft).
   Braucht SciPy.
-- **3D:** volles (r, φ)-Sandwich der **einteiligen** Doppelmembran-
-  Elektrode (Debenham-Typ, `center_gap = 0`): beide Spaltfilme UND beide
-  Membranen als Felder, Durchgangs- und Sacklöcher **diskret** an ihren
-  Positionen (Azimutwinkel als dokumentierte Konvention, da nicht
-  gezeichnet). Löst die azimutale Zuströmung zu den einzelnen Bohrungen
-  und die dadurch teilentkoppelten Sacklöcher auf — bedämpft die interne
+- **3D:** volles (r, φ)-Sandwich der durchbohrten Doppelmembran-
+  Elektrode: alle Spaltfilme UND beide Membranen als Felder, Durchgangs-
+  und Sacklöcher **diskret** an ihren Positionen (Azimutwinkel als
+  dokumentierte Konvention, da nicht gezeichnet). Zwei Bauformen:
+  die **einteilige** Elektrode (Debenham-Typ, `center_gap = 0`, zwei
+  Filme) und seit Gegenprobe 22 die **zweiteilige** Elektrode (K67-Typ,
+  `center_gap > 0`): der Zwischenspalt wird als dritter Reynolds-Film
+  gerechnet, Stufenbohrungen als Zweitor-Kette je Loch (Senkung als
+  Leitungsstück + Karal-Stufe + enger Kern), und die Elektrodenhälften
+  sind gegeneinander **verdreht** (`half_rotation_deg`, Standard eine
+  halbe Lochteilung 180°/n wie an der realen K67). Der Löser löst die
+  azimutale Zuströmung zu den einzelnen Bohrungen und die dadurch
+  teilentkoppelten Sacklöcher auf — bedämpft die interne
   Helmholtz-Resonanz realistisch und macht die Mündungs-Engstellen der
   Löcher (und ihre Entlastung durch Freistiche) explizit sichtbar.
-  Verifiziert über Reziprozität (±1 %), Gitterkonvergenz (±0,15 dB bei
-  N_φ 72→128) und die Gültigkeits-Gatter im Testlauf. DEUTLICH langsamer
-  (LU-Faktorisierung mit ~24 000 Unbekannten je Frequenzpunkt, ~1–2 s) —
-  in der GUI die Frequenzpunkte reduzieren. Absolute Empfindlichkeit
+  **Befund zur Verdrehung** (beantwortet die alte Frage, was der
+  Versatz der Bohrbilder bewirkt): zeigen die Durchgangslöcher beider
+  Hälften aufeinander (0°), kurzschließen sie den Nieren-Phasenschieber
+  durch den Zwischenspalt — flache 180°-Auslöschung (−7 dB) bei hoher
+  Empfindlichkeit (34 mV/Pa); schon die halbe Teilung (3° bei 60
+  Löchern) zwingt den Pfad durch den Zwischenspalt-Film und liefert
+  −20 dB bei 22 mV/Pa, nahe am homogenisierten 2D-Modell (−26 dB,
+  21 mV/Pa), das versetzte Arrays stillschweigend annimmt.
+  Verifiziert über Reziprozität (±1 %), Gitterkonvergenz, die
+  Grenzfälle einteilig ≡ zweiteilig-ausgerichtet (5-µm-Spalt, 2 %) und
+  Stufenbohrung → glatte Bohrung (winzige Senkung, 0,8 %) sowie die
+  Gültigkeits-Gatter im Testlauf. DEUTLICH langsamer (LU-Faktorisierung
+  je Frequenzpunkt: einteilig ~24 000 Unbekannte, ~1–2 s; K67-Typ mit
+  drittem Film und feinerer Azimut-Auflösung bis ~10 s bei 60 Löchern)
+  — in der GUI die Frequenzpunkte reduzieren. Absolute Empfindlichkeit
   weicht modellbedingt ≤ 2–3 dB von 1D/2D ab (Membran als Feld statt
   Grundmode).
 

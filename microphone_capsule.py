@@ -324,6 +324,7 @@ class MicrophoneCapsule:
         bem_body_length=80e-3,
         # --- Spaltfilm-Modell -----------------------------------------------
         squeeze_model="1d",
+        half_rotation_deg=None,
     ):
         # ------------------------- Membran ---------------------------------
         if isinstance(membrane_material, dict):
@@ -553,22 +554,34 @@ class MicrophoneCapsule:
         if sm not in ("1d", "2d", "3d"):
             raise ValueError("squeeze_model muss '1d', '2d' oder '3d' sein.")
         if sm == "3d":
-            # Der 3D-(r,phi)-Löser rechnet das komplette Sandwich einer
-            # EINTEILIGEN durchbohrten Elektrode mit DISKRETEN Löchern —
-            # nur für die Doppelmembran-Bauform ohne Zwischenspalt und
-            # ohne Stufenbohrung definiert (Debenham-Typ).
+            # Der 3D-(r,phi)-Löser rechnet das komplette Sandwich der
+            # Doppelmembran-Bauform mit DISKRETEN Löchern. Zwei Moden:
+            #   * center_gap = 0: einteilige durchbohrte Elektrode
+            #     (Debenham-Typ, 2 Filme) — der ursprüngliche Löser;
+            #   * center_gap > 0: ZWEI Elektrodenhälften mit Zwischen-
+            #     spalt als drittem Reynolds-Film (K67-Typ), eigene,
+            #     gegeneinander um half_rotation_deg VERDREHTE Loch-
+            #     bilder je Hälfte, Stufenbohrungen als Zweitor-Kette
+            #     je Loch (Gegenprobe 22).
             if self.architecture != "dual_diaphragm":
                 raise ValueError("squeeze_model='3d' erfordert die "
                                  "Doppelmembran-Bauform (dual_diaphragm).")
-            if self.h_center > 0.0:
-                raise ValueError("squeeze_model='3d' erfordert center_gap"
-                                 " = 0 (einteilige Elektrode).")
-            if self.stepped:
-                raise ValueError("squeeze_model='3d' unterstützt keine "
-                                 "Stufenbohrung.")
+            if self.stepped and self.h_center <= 0.0:
+                raise ValueError("squeeze_model='3d' mit Stufenbohrung "
+                                 "erfordert center_gap > 0 (zwei "
+                                 "Elektrodenhälften, K67-Typ).")
             if self.n_th <= 0:
                 raise ValueError("squeeze_model='3d' erfordert "
                                  "Durchgangslöcher.")
+        # Verdrehung der Elektrodenhälften gegeneinander (nur 3D-K67-
+        # Modus): die realen Hälften sind so verdreht, dass die
+        # Durchgangslöcher nicht zueinander zeigen. None = automatisch
+        # eine halbe Teilung des Durchgangs-Lochbilds (180°/n_th).
+        if half_rotation_deg is None:
+            self.half_rotation_deg = 180.0 / max(self.n_th, 1)
+        else:
+            self.half_rotation_deg = float(half_rotation_deg)
+
         # Die Feldmodelle (2D/3D) brauchen SciPy.
         self.squeeze_model = sm if (sm == "1d" or _HAS_SCIPY) else "1d"
 
@@ -2154,15 +2167,32 @@ class MicrophoneCapsule:
     def _build_3d_geometry(self):
         """Einmalige Gitter-/Lochgeometrie für ``squeeze_model='3d'``.
 
-        Das 3D-Modell löst das komplette Sandwich der einteiligen
-        durchbohrten Elektrode (Debenham-Typ) als EIN gekoppeltes
-        Feldproblem auf einem (r, phi)-Gitter:
+        Das 3D-Modell löst das komplette Sandwich der durchbohrten
+        Elektrode als EIN gekoppeltes Feldproblem auf einem
+        (r, phi)-Gitter. Zwei Bauformen:
 
-            p_front(r,phi), p_rear(r,phi)   — Reynolds-Filme beider Spalte
-            w_front(r,phi), w_rear(r,phi)   — Membranen als FD-FELDER
-                                              (Spannungsoperator, am Rand
-                                              eingespannt; KEINE Moden-
-                                              abschneidung)
+        * ``center_gap = 0`` (einteilig, Debenham-Typ, 2 Filme):
+
+              p_front(r,phi), p_rear(r,phi)  — Reynolds-Filme beider Spalte
+              w_front(r,phi), w_rear(r,phi)  — Membranen als FD-FELDER
+                                               (Spannungsoperator, am Rand
+                                               eingespannt; KEINE Moden-
+                                               abschneidung)
+
+          Jedes Durchgangsloch verbindet die beiden Filme direkt
+          (Lochpaar-Leitwert über die volle Elektrodendicke).
+
+        * ``center_gap > 0`` (zweiteilig, K67-Typ, 3 Filme): zusätzlich
+          p_center(r,phi) als dritter Reynolds-Film im Zwischenspalt.
+          Jede Elektrodenhälfte trägt ihr EIGENES Lochbild; die
+          Durchgangslöcher verbinden Membranfilm <-> Zwischenspalt als
+          Zweitor-Kette (bei Stufenbohrung: weite Senkung als
+          Leitungsstück + Karal-Stufe + enger Kern). Die Hälften sind
+          um ``half_rotation_deg`` gegeneinander VERDREHT (Standard:
+          eine halbe Teilung 180°/n_th, wie an der realen K67, deren
+          Bohrungen nicht zueinander zeigen) — ausgerichtete Löcher
+          (0°) kurzschließen den Phasenschieber durch den Spalt,
+          s. Gegenprobe 22.
 
         Gegenüber dem axialsymmetrischen 2D-Modell fällt damit die
         Homogenisierung der Löcher weg: Durchgangs- und Sacklöcher sitzen
@@ -2174,14 +2204,26 @@ class MicrophoneCapsule:
         sind, gilt eine feste KONVENTION: gleichverteilte Löcher je
         Lochkreis, Ring m der Durchgangslöcher um 20°·m verdreht, Sack-
         löcher um weitere 15° (Rückseite zusätzlich um eine halbe
-        Teilung) — die Ergebnisse hängen nur schwach davon ab.
+        Teilung bzw. im K67-Modus um half_rotation_deg) — die Ergebnisse
+        hängen nur schwach davon ab.
         Membran-Elektrostatik: Feder-Erweichung als verteilte negative
         Steifigkeit, an der Grundmode kalibriert (C_A_eff). Gewebe- und
         Strahlungsimpedanz der Membranaußenseiten werden im 3D-Modell
         vernachlässigt (klein; Gewebe in den validierten Beispielen 0).
         """
         from scipy.special import j1 as _j1, jn_zeros as _jn_zeros
-        Np_ = int(getattr(self, "_n_phi_3d", 96))   # azimutale Auflösung
+        # Azimutale Auflösung: einteilig genügen 96 Zellen (Debenham,
+        # 12 Löcher). Im K67-Modus müssen der Lochabstand UND der
+        # Verdrehungs-Versatz der Hälften im Zwischenspalt aufgelöst
+        # werden — mindestens ~4 Zellen je Lochteilung (Konvergenz:
+        # 180°-Wert wandert von Np=96 nach 192/288 um ~4 dB und
+        # stabilisiert sich dann auf ±1.5 dB).
+        Np_ = int(getattr(self, "_n_phi_3d", 0))
+        if Np_ <= 0:
+            if self.h_center > 0.0:
+                Np_ = int(max(96, min(4 * max(self.n_th, 1), 320)))
+            else:
+                Np_ = 96
         Nr = self._fld_N
         dr = self.a_bp / Nr
         Nr_m = max(Nr + 1, int(round(self.a_mem / dr)))
@@ -2252,15 +2294,38 @@ class MicrophoneCapsule:
                         out.append((int(c_k), float(r_k)))
             return out
 
-        th_cells = []
-        for m, (cnt, rr) in enumerate(_ring_list(self._th_rings, self.n_th)):
-            th_cells += _foot(rr, cnt, 20.0 * m, self.r_th)
+        # Filmzahl: 2 (einteilige Elektrode) oder 3 (K67: Zwischenspalt
+        # als eigener Reynolds-Film zwischen den Hälften)
+        n_films = 3 if self.h_center > 0.0 else 2
+        rot = self.half_rotation_deg
+        th_rings_l = _ring_list(self._th_rings, self.n_th)
+        if n_films == 2:
+            # Einteilige Platte: Durchgangsloch verbindet beide Filme an
+            # DENSELBEN Zellen; Rück-Sacklöcher nach alter Konvention.
+            th_cells = []
+            for m, (cnt, rr) in enumerate(th_rings_l):
+                th_cells += _foot(rr, cnt, 20.0 * m, self.r_th)
+            th_f = th_r = th_cf = th_cr = None
+        else:
+            # K67: je Hälfte ein eigenes Lochbild; die Rückhälfte ist
+            # GLOBAL um rot verdreht. Membranseitig mündet (bei Stufen-
+            # bohrung) die WEITE Senkung, zwischenspaltseitig der enge
+            # Kern.
+            r_mouth = self.r_bh if self.stepped else self.r_th
+            th_f, th_cf, th_r, th_cr = [], [], [], []
+            for m, (cnt, rr) in enumerate(th_rings_l):
+                th_f += _foot(rr, cnt, 20.0 * m, r_mouth)
+                th_cf += _foot(rr, cnt, 20.0 * m, self.r_th)
+                th_r += _foot(rr, cnt, 20.0 * m + rot, r_mouth)
+                th_cr += _foot(rr, cnt, 20.0 * m + rot, self.r_th)
+            th_cells = None
         bhf_cells = []
         bhr_cells = []
         for m, (cnt, rr) in enumerate(_ring_list(self._bh_rings, self.n_bh)):
             bhf_cells += _foot(rr, cnt, 15.0 + 20.0 * m, self.r_bh)
-            bhr_cells += _foot(rr, cnt, 15.0 + 20.0 * m
-                               + 180.0 / max(cnt, 1), self.r_bh)
+            bh_rot = (rot if n_films == 3 else 180.0 / max(cnt, 1))
+            bhr_cells += _foot(rr, cnt, 15.0 + 20.0 * m + bh_rot,
+                               self.r_bh)
 
         # Statische COO-Anteile: Membran-Spannungsoperator (beidseitig,
         # eingespannter Rand) + Feder-Erweichung (nur Front, Elektroden-
@@ -2294,8 +2359,8 @@ class MicrophoneCapsule:
                     cols.extend((k2_, k1_, k1_, k2_))
                     vals.extend((-Gp, -Gp, Gp, Gp))
 
-        off_wf = 2 * NF
-        off_wr = 2 * NF + NM
+        off_wf = n_films * NF
+        off_wr = n_films * NF + NM
         _lap(off_wf, T_mem)
         _lap(off_wr, T_mem)
         for i in range(Nr):                          # Erweichung nur vorn
@@ -2317,8 +2382,9 @@ class MicrophoneCapsule:
         self._g3d = dict(
             Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, dphi=dphi,
             r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM,
-            sigma=sigma, T_mem=T_mem, kappa=kappa,
+            n_films=n_films, sigma=sigma, T_mem=T_mem, kappa=kappa,
             th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
+            th_f=th_f, th_cf=th_cf, th_r=th_r, th_cr=th_cr,
             static=(np.array(rows), np.array(cols),
                     np.array(vals, dtype=complex)),
         )
@@ -2330,7 +2396,8 @@ class MicrophoneCapsule:
         Rückgabe: (X_f, X_r) je Frequenz [m³/Pa]; mit ``want_rear``
         zusätzlich die Rückmembran-Antworten (B_f, B_r) für
         Reziprozitätsprüfungen. Je Frequenz wird das dünn besetzte
-        Gesamtsystem (2 Filme + 2 Membranfelder, ~24k Unbekannte)
+        Gesamtsystem (einteilig: 2 Filme + 2 Membranfelder, ~24k
+        Unbekannte; K67-Modus mit Zwischenspalt: 3 Filme, ~30k)
         einmal LU-faktorisiert — das 3D-Modell ist damit DEUTLICH
         langsamer als 1D/2D (Sekundenbereich pro Frequenzpunkt);
         für Frequenzgänge empfiehlt sich n_points <= 150.
@@ -2358,18 +2425,47 @@ class MicrophoneCapsule:
         idx_all = np.arange(NF)
         i_of = idx_all // Np_
         srows, scols, svals = g["static"]
+        n_films = g["n_films"]
+        off_w = n_films * NF
+        N_tot = n_films * NF + 2 * NM
         # Ausgangs- (Elektrodenbereich) und Anregungs-Gewichte (Vollfläche)
         w_out = np.repeat(A_f, Np_)
         rhs_w = np.repeat(A_m, Np_)
+
+        def _two_port_stamp(rows, cols, vals, ca, offa, cb, offb,
+                            Y11, Y12, Y22):
+            """Reziprokes Zweitor zwischen zwei Zellgruppen (Port-Druck =
+            Gruppenmittel, Fluss gleichverteilt): äußere Produkte der
+            Fußabdrücke."""
+            na, nb = ca.size, cb.size
+            aa = offa + ca
+            bb = offb + cb
+            rows.append(np.repeat(aa, na))
+            cols.append(np.tile(aa, na))
+            vals.append(np.full(na * na, Y11 / (na * na), dtype=complex))
+            rows.append(np.repeat(bb, nb))
+            cols.append(np.tile(bb, nb))
+            vals.append(np.full(nb * nb, Y22 / (nb * nb), dtype=complex))
+            rows.append(np.repeat(aa, nb))
+            cols.append(np.tile(bb, na))
+            vals.append(np.full(na * nb, Y12 / (na * nb), dtype=complex))
+            rows.append(np.repeat(bb, na))
+            cols.append(np.tile(aa, nb))
+            vals.append(np.full(na * nb, Y12 / (na * nb), dtype=complex))
+
+        sides = [(0, self.h_gap_front, True), (1, self.h_gap, True)]
+        if n_films == 3:
+            sides.append((2, self.h_center, False))
 
         for fidx, om in enumerate(omega):
             rows = [srows]
             cols = [scols]
             vals = [svals]
-            # Filmringe beider Seiten (h ggf. mit Clearance-Relief)
-            for side, h0 in ((0, self.h_gap_front), (1, self.h_gap)):
+            # Filmringe (Membranseiten ggf. mit Clearance-Relief; der
+            # Zwischenspalt ist eben und hat weder Relief noch Membran)
+            for side, h0, mem_side in sides:
                 off = side * NF
-                h_ring = h0 + self._clr_relief
+                h_ring = h0 + (self._clr_relief if mem_side else 0.0)
                 K = np.empty(Nr, dtype=complex)
                 cg = np.empty(Nr, dtype=complex)
                 for hh in np.unique(h_ring):
@@ -2397,9 +2493,11 @@ class MicrophoneCapsule:
                 rows += [off + idx_all]
                 cols += [off + idx_all]
                 vals += [1j * om * np.repeat(cg * A_f, Np_)]
+                if not mem_side:
+                    continue
                 # Membranquelle (+jw vorn, -jw hinten)
                 sgn = 1.0 if side == 0 else -1.0
-                woff = 2 * NF + side * NM
+                woff = off_w + side * NM
                 rows += [off + idx_all]
                 cols += [woff + idx_all]
                 vals += [sgn * 1j * om * np.repeat(A_f, Np_)]
@@ -2416,20 +2514,62 @@ class MicrophoneCapsule:
                     rows += [off + cells]
                     cols += [off + cells]
                     vals += [np.full(Np_, y_st, dtype=complex)]
-            # Durchgangslöcher: Rohr durch die volle Platte, Fußabdruck
             om_a = np.array([om])
-            Zth = self._hole_impedance(om_a, self.r_th,
-                                       2.0 * self.t_bp + self.h_center, 1,
-                                       end_correction=False)[0]
-            gth = 1.0 / Zth
-            for cells in g["th_cells"]:
-                gv = gth / cells.size
-                kf = cells
-                kr = NF + cells
-                gvv = np.full(cells.size, gv, dtype=complex)
-                rows += [kf, kr, kf, kr]
-                cols += [kf, kr, kr, kf]
-                vals += [gvv, gvv, -gvv, -gvv]
+            if n_films == 2:
+                # Einteilige Platte: Rohr durch die volle Dicke verbindet
+                # beide Filme an denselben Fußabdruck-Zellen.
+                Zth = self._hole_impedance(om_a, self.r_th,
+                                           2.0 * self.t_bp, 1,
+                                           end_correction=False)[0]
+                gth = 1.0 / Zth
+                for cells in g["th_cells"]:
+                    gv = gth / cells.size
+                    kf = cells
+                    kr = NF + cells
+                    gvv = np.full(cells.size, gv, dtype=complex)
+                    rows += [kf, kr, kf, kr]
+                    cols += [kf, kr, kr, kf]
+                    vals += [gvv, gvv, -gvv, -gvv]
+            else:
+                # K67: je Loch die Zweitor-Kette seiner Halbplatte
+                # (membranseitiger Film -> Zwischenspalt). Stufenbohrung:
+                # weites Senkungssegment als thermoviskose Leitung +
+                # Karal-Stufe + enger Kern; sonst das schlichte Rohr.
+                if self.stepped:
+                    gcb, Zccb = self._narrow_duct_propagation(om_a,
+                                                              self.r_bh)
+                    gl = gcb[0] * self.d_bh
+                    ch, sh = np.cosh(gl), np.sinh(gl)
+                    A2, B2 = ch, Zccb[0] * sh
+                    C2, D2 = sh / Zccb[0], ch
+                    S_th = np.pi * self.r_th**2
+                    karal = 1.0 - self.r_th / self.r_bh
+                    Z_step = (1j * om * RHO0 * 0.85 * self.r_th * karal
+                              / S_th
+                              + self._hole_impedance(
+                                  om_a, self.r_th,
+                                  (3.0 * np.pi / 16.0) * self.r_th, 1,
+                                  end_correction=False)[0].real * karal)
+                    Z_core = self._hole_impedance(om_a, self.r_th,
+                                                  self.t_th_eff, 1,
+                                                  end_correction=False)[0]
+                    # Kette: Senkungsleitung · Serie(Z_step + Z_core)
+                    Zs = Z_step + Z_core
+                    A1, B1 = A2, A2 * Zs + B2
+                    C1, D1 = C2, C2 * Zs + D2
+                else:
+                    Zs = self._hole_impedance(om_a, self.r_th, self.t_bp,
+                                              1, end_correction=False)[0]
+                    A1, B1, C1, D1 = 1.0, Zs, 0.0, 1.0
+                Y11 = D1 / B1
+                Y22 = A1 / B1
+                Y12 = -1.0 / B1
+                for cf, cc in zip(g["th_f"], g["th_cf"]):
+                    _two_port_stamp(rows, cols, vals, cf, 0, cc, 2 * NF,
+                                    Y11, Y12, Y22)
+                for cr_, cc in zip(g["th_r"], g["th_cr"]):
+                    _two_port_stamp(rows, cols, vals, cr_, NF, cc, 2 * NF,
+                                    Y11, Y12, Y22)
             # Sacklöcher: geschlossene Stubs an ihren Zellen
             if self.n_bh > 0:
                 ybh = 1.0 / self._closed_hole_stub(om_a, self.r_bh,
@@ -2446,21 +2586,21 @@ class MicrophoneCapsule:
             mterm = (-om ** 2 * g["sigma"]
                      * (1.0 - 1j / self._Q_MEMBRANE_INTERNAL))
             midx = np.arange(NM)
-            for woff in (2 * NF, 2 * NF + NM):
+            for woff in (off_w, off_w + NM):
                 rows += [woff + midx]
                 cols += [woff + midx]
                 vals += [mterm * rhs_w]
             S = coo_matrix(
                 (np.concatenate(vals),
                  (np.concatenate(rows), np.concatenate(cols))),
-                shape=(2 * NF + 2 * NM, 2 * NF + 2 * NM)).tocsc()
+                shape=(N_tot, N_tot)).tocsc()
             lu = splu(S)
-            rhs = np.zeros((2 * NF + 2 * NM, 2), dtype=complex)
-            rhs[2 * NF:2 * NF + NM, 0] = -rhs_w      # p_front = 1
-            rhs[2 * NF + NM:, 1] = +rhs_w            # p_rear  = 1
+            rhs = np.zeros((N_tot, 2), dtype=complex)
+            rhs[off_w:off_w + NM, 0] = -rhs_w        # p_front = 1
+            rhs[off_w + NM:, 1] = +rhs_w             # p_rear  = 1
             x = lu.solve(rhs)
-            wf = x[2 * NF:2 * NF + NF, :]            # Elektrodenbereich
-            wr = x[2 * NF + NM:2 * NF + NM + NF, :]
+            wf = x[off_w:off_w + NF, :]              # Elektrodenbereich
+            wr = x[off_w + NM:off_w + NM + NF, :]
             Xf[fidx] = np.sum(w_out[:, None] * wf, axis=0)[0]
             Xr[fidx] = np.sum(w_out[:, None] * wf, axis=0)[1]
             Bf[fidx] = np.sum(w_out[:, None] * wr, axis=0)[0]
@@ -4140,8 +4280,9 @@ if __name__ == "__main__":
               f"{p1:.1f} dB (Null {na1:.0f}°)  OK")
 
     # --------- Gegenprobe 16: 3D-(r,phi)-Löser (diskrete Löcher) -----------
-    # a) Gültigkeits-Gatter: '3d' nur für die einteilige Doppelmembran-
-    #    Elektrode (dual_diaphragm, center_gap = 0, keine Stufenbohrung).
+    # a) Gültigkeits-Gatter: '3d' erfordert die Doppelmembran-Bauform mit
+    #    Durchgangslöchern; Stufenbohrungen erfordern center_gap > 0
+    #    (zwei Elektrodenhälften, K67-Typ, s. Gegenprobe 22).
     # b) Reziprozität des Feldsystems: Frontantwort auf Rückdruck ==
     #    Rückantwort auf Frontdruck (±3 %).
     # c) Physik: Null bei 180°; ein Freistich, der ALLE Loch-Mündungen
@@ -4155,9 +4296,21 @@ if __name__ == "__main__":
             pass
         try:
             MicrophoneCapsule(architecture="dual_diaphragm",
-                              center_gap=50e-6, squeeze_model="3d",
+                              center_gap=0.0, through_holes_stepped=True,
+                              n_blind_holes=120, blind_hole_depth=2.0e-3,
+                              squeeze_model="3d",
                               membrane_resonance_hz=2100.0)
-            raise AssertionError("'3d' mit center_gap > 0 müsste scheitern")
+            raise AssertionError("'3d' gestuft ohne center_gap müsste "
+                                 "scheitern")
+        except ValueError:
+            pass
+        try:
+            MicrophoneCapsule(architecture="dual_diaphragm",
+                              center_gap=50e-6, n_through_holes=0,
+                              squeeze_model="3d",
+                              membrane_resonance_hz=2100.0)
+            raise AssertionError("'3d' ohne Durchgangslöcher müsste "
+                                 "scheitern")
         except ValueError:
             pass
         deb3 = MicrophoneCapsule(**{**deb_kwargs,
@@ -4556,5 +4709,118 @@ if __name__ == "__main__":
               f"{worst_o:.1e}; d_eff Kugel {d_kugel*1e3:.1f} < montiert "
               f"{d_mnt*1e3:.1f} < freie Scheibe {d_frei*1e3:.1f} mm "
               "(Körper unterbindet Teil des Rand-Umwegs)  OK")
+
+    # --------- Gegenprobe 22: 3D-K67-Modus (Zwischenspalt, Stufen, Drehung)
+    # Der 3D-Löser rechnet jetzt auch die ZWEITEILIGE Elektrode: Zwischen-
+    # spalt als dritter Reynolds-Film, Stufenbohrungen als Zweitor-Kette
+    # je Loch, Elektrodenhälften gegeneinander verdreht. Grenzfälle und
+    # Physik ohne Fit-Koeffizient:
+    # a) EINTEILIG-GRENZFALL: zweiteilig ausgerichtet (rot = 0) mit
+    #    winzigem Zwischenspalt (5 µm) muss den einteiligen Löser
+    #    reproduzieren (zwei völlig verschiedene Codepfade: Lochpaar-
+    #    Leitwert vs. Kette Loch–Film–Loch; Restabweichung = Impedanz
+    #    des 5-µm-Films selbst, gemessen 1.5–2.2 %).
+    # b) STUFEN-GRENZFALL: Stufenbohrung mit winziger Senkung
+    #    (⌀0.75 x 0.15 mm um den ⌀0.71-mm-Kern) muss die ungestufte
+    #    Bohrung reproduzieren (gemessen 0.3–0.8 %).
+    # c) K67 komplett (gestuft, verdreht): Feldsystem reziprok.
+    # d) VERDREHUNG (die reale K67 verdreht die Hälften so, dass die
+    #    Durchgangslöcher nicht zueinander zeigen): ausgerichtete Löcher
+    #    (rot = 0) kurzschließen den Phasenschieber -> flache Auslöschung;
+    #    schon eine halbe Teilung (3° bei 60 Löchern) zwingt den Pfad
+    #    durch den Zwischenspalt-Film -> tiefe 180°-Null, Minimum wandert
+    #    Richtung 180°, Empfindlichkeit sinkt (steiferes Luftpolster).
+    #    Das 3D-Ergebnis der verdrehten Bauform liegt nahe am
+    #    homogenisierten 2D-Modell (das versetzte Arrays annimmt).
+    if _HAS_SCIPY:
+        deb22 = dict(deb_kwargs)
+        deb22.update(squeeze_model="3d",
+                     blind_hole_rings=[(0, None)],
+                     blind_hole_diameter=1.2e-3, blind_hole_depth=1e-3)
+        om22 = np.array([2.0 * np.pi * 500.0, 2.0 * np.pi * 2000.0])
+        # a) einteilig vs. zweiteilig ausgerichtet mit 5-µm-Spalt
+        ein = MicrophoneCapsule(**{**deb22, "center_gap": 0.0})
+        zwei = MicrophoneCapsule(**{**deb22, "center_gap": 5e-6,
+                                    "half_rotation_deg": 0.0})
+        Xf_e, Xr_e = ein._solve_3d(om22)
+        Xf_z, Xr_z = zwei._solve_3d(om22)
+        dev_a = max(float(np.max(np.abs(Xf_z / Xf_e - 1.0))),
+                    float(np.max(np.abs(Xr_z / Xr_e - 1.0))))
+        assert dev_a < 0.04, \
+            (f"3D-K67-Modus muss im 5-µm-Grenzfall den einteiligen Löser "
+             f"reproduzieren (Abweichung {dev_a:.3f})")
+        # b) Stufenbohrung mit winziger Senkung vs. ungestuft
+        plain = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
+                                     "half_rotation_deg": 0.0})
+        step = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
+                                    "half_rotation_deg": 0.0,
+                                    "through_holes_stepped": True,
+                                    "blind_hole_rings": [(12, None)],
+                                    "blind_hole_diameter": 0.75e-3,
+                                    "blind_hole_depth": 0.15e-3})
+        Xf_p, Xr_p = plain._solve_3d(om22)
+        Xf_s, Xr_s = step._solve_3d(om22)
+        dev_b = max(float(np.max(np.abs(Xf_s / Xf_p - 1.0))),
+                    float(np.max(np.abs(Xr_s / Xr_p - 1.0))))
+        assert dev_b < 0.03, \
+            (f"Stufenbohrung mit winziger Senkung muss die ungestufte "
+             f"Bohrung reproduzieren (Abweichung {dev_b:.3f})")
+        # c)+d) komplette K67, ausgerichtet vs. verdreht (halbe Teilung)
+        k67_3d = dict(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=34e-3,
+            squeeze_model="3d")
+        res22 = {}
+        for rot in (0.0, 3.0):
+            cap = MicrophoneCapsule(**k67_3d, half_rotation_deg=rot)
+            di = cap.directivity(frequencies_hz=(1000.0,))
+            db = di["patterns"][1000.0]["db"]
+            na = di["angles_deg"][:181][
+                int(np.argmin(di["patterns"][1000.0]["linear"][:181]))]
+            e1k = abs(cap.transfer_function(np.array([1000.0]))[0]) * 1e3
+            res22[rot] = (db[180], na, e1k, cap)
+        Xf_r, Xr_r, Bf_r, Br_r = res22[3.0][3]._solve_3d(
+            np.array([2.0 * np.pi * 1000.0]), want_rear=True)
+        rez22 = abs(Xr_r[0]) / abs(Bf_r[0])
+        assert 0.97 < rez22 < 1.03, \
+            f"3D-K67-Feldsystem muss reziprok sein ({rez22:.3f})"
+        assert res22[0.0][0] > -12.0, \
+            (f"ausgerichtete Löcher müssen den Phasenschieber kurz-"
+             f"schließen (180° = {res22[0.0][0]:.1f} dB)")
+        assert res22[3.0][0] < -15.0, \
+            (f"verdrehte Hälften müssen tief auslöschen "
+             f"(180° = {res22[3.0][0]:.1f} dB)")
+        assert res22[3.0][1] > res22[0.0][1] + 15.0, \
+            (f"Verdrehung muss das Minimum Richtung 180° schieben "
+             f"({res22[0.0][1]:.0f}° -> {res22[3.0][1]:.0f}°)")
+        assert res22[0.0][2] - res22[3.0][2] > 5.0, \
+            (f"Verdrehung muss die Empfindlichkeit senken (steiferes "
+             f"Polster; {res22[0.0][2]:.1f} -> {res22[3.0][2]:.1f} mV/Pa)")
+        # d) verdrehte 3D-Bauform nahe am homogenisierten 2D-Modell
+        k2d = MicrophoneCapsule(**{**k67_3d, "squeeze_model": "2d"})
+        e2d = abs(k2d.transfer_function(np.array([1000.0]))[0]) * 1e3
+        p2d = k2d.directivity(
+            frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
+        assert abs(res22[3.0][2] - e2d) < 3.0, \
+            (f"3D verdreht muss nahe der 2D-Empfindlichkeit liegen "
+             f"({res22[3.0][2]:.1f} vs. {e2d:.1f} mV/Pa)")
+        assert abs(res22[3.0][0] - p2d) < 9.0, \
+            (f"3D verdreht muss nahe der 2D-Auslöschung liegen "
+             f"({res22[3.0][0]:.1f} vs. {p2d:.1f} dB)")
+        print(f"3D-K67-Modus: einteiliger Grenzfall {dev_a * 100:.1f} %, "
+              f"Stufen-Grenzfall {dev_b * 100:.1f} %, reziprok "
+              f"({rez22:.4f}); Verdrehung 0°->3°: 180° "
+              f"{res22[0.0][0]:.1f} -> {res22[3.0][0]:.1f} dB, Minimum "
+              f"{res22[0.0][1]:.0f}° -> {res22[3.0][1]:.0f}°, Empf. "
+              f"{res22[0.0][2]:.1f} -> {res22[3.0][2]:.1f} mV/Pa "
+              f"(2D: {p2d:.1f} dB, {e2d:.1f} mV/Pa)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
