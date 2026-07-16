@@ -48,8 +48,21 @@ def tr(key, **kw):
 
 
 def tr_label(canonical):
-    """Anzeige eines kanonischen Auswahl-Werts (format_func der Widgets)."""
+    """Anzeige eines kanonischen Auswahl-Werts in der aktuellen Sprache."""
     return LABEL_TR.get(canonical, {}).get(_lang(), canonical)
+
+
+def _label_formatter():
+    """format_func für Auswahl-Widgets mit EINGEFRORENER Sprache.
+
+    Streamlit ruft format_func auch außerhalb des Skriptlaufs auf (Serde,
+    AppTest-Serialisierung); dort ist die Sprachwahl nicht zugreifbar und
+    ein dynamisches tr_label() fiele auf die falsche Sprache zurück. Die
+    zur Renderzeit gültige Sprache gehört fest zu den in diesem Lauf
+    erzeugten Optionen.
+    """
+    lang = _lang()
+    return lambda c: LABEL_TR.get(c, {}).get(lang, c)
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +254,40 @@ def _rings_from_state(prefix):
     return [[int(st.session_state[f"p_{prefix}_ring_n_{i}"]),
              float(st.session_state[f"p_{prefix}_ring_pcd_{i}"])]
             for i in range(n)]
+
+
+# Rückübersetzung Anzeigetext -> kanonischer Wert (alle Sprachen). Nötig
+# zur Selbstheilung nach einem Sprachwechsel: Radio/Selectbox senden vom
+# Browser den ANZEIGETEXT der zuletzt gerenderten Sprache zurück; findet
+# Streamlits Serde ihn in den aktuellen Optionen nicht, schreibt er ihn
+# WÖRTLICH in den Session-State (accept_new_options-Verhalten) — dann
+# stünde z. B. "Dual diaphragm (K67 design)" statt des kanonischen Werts
+# in p_architecture.
+_DISPLAY_TO_CANON = {disp: canon for canon, langs in LABEL_TR.items()
+                     for disp in langs.values()}
+_CSV_TO_CANON = {TR["csv_intl"][lg]: "intl" for lg in ("en", "de")}
+_CSV_TO_CANON.update({TR["csv_excel_de"][lg]: "excel_de"
+                      for lg in ("en", "de")})
+
+
+def _heal_canonical_state():
+    """Fremdsprachige Anzeigetexte im Session-State auf kanonische Werte
+    zurückübersetzen — VOR dem Widget-Aufbau aufrufen (Sprachwechsel)."""
+    for key, valid, dflt in (
+            ("p_material", MATERIAL_LABELS, DEFAULTS["material"]),
+            ("p_architecture", ARCH_LABELS, DEFAULTS["architecture"]),
+            ("p_hole_position", POS_LABELS, DEFAULTS["hole_position"]),
+            ("p_axial_body", AX_LABELS, DEFAULTS["axial_body"])):
+        v = st.session_state.get(key)
+        if v is not None and v not in valid:
+            st.session_state[key] = _DISPLAY_TO_CANON.get(v, dflt)
+    v = st.session_state.get("csv_format")
+    if v is not None and v not in ("intl", "excel_de"):
+        st.session_state["csv_format"] = _CSV_TO_CANON.get(v, "intl")
+    v = st.session_state.get("ui_lang")
+    if v is not None and v not in ("en", "de"):
+        st.session_state["ui_lang"] = {"English": "en",
+                                       "Deutsch": "de"}.get(v, "en")
 
 
 def _init_state():
@@ -805,6 +852,7 @@ def polar_figure(di):
 # Sidebar: Projekt + Parameter
 # ---------------------------------------------------------------------------
 _init_state()
+_heal_canonical_state()   # Selbstheilung nach Sprachwechsel (s. oben)
 
 with st.sidebar:
     st.title("🎙️ Capsim")
@@ -814,7 +862,8 @@ with st.sidebar:
     # GUI-Einstellung, kein Kapselparameter: die Sprachwahl wandert NICHT
     # in Projektdateien. Umschalten löst nur einen Rerun aus.
     st.radio(tr("lang_label"), options=["en", "de"],
-             format_func=lambda c: {"en": "English", "de": "Deutsch"}[c],
+             format_func=lambda c: {"en": "English",
+                                    "de": "Deutsch"}.get(c, c),
              key="ui_lang", horizontal=True)
 
     # ---------------- Projekt speichern / laden ------------------------
@@ -847,7 +896,7 @@ with st.sidebar:
     # ---------------- Membran ------------------------------------------
     with st.expander(tr("exp_membrane"), expanded=True):
         st.selectbox(tr("lbl_material"), list(MATERIAL_LABELS),
-                     format_func=tr_label, key="p_material")
+                     format_func=_label_formatter(), key="p_material")
         st.checkbox(tr("lbl_use_fres"), key="p_use_f_res",
                     help=tr("help_use_fres"))
         st.number_input(tr("lbl_fres"), 100.0, 50000.0, step=100.0,
@@ -871,7 +920,7 @@ with st.sidebar:
         st.number_input(tr("lbl_bias"), 0.5, 400.0, step=1.0,
                         key="p_bias_v")
         st.radio(tr("lbl_arch"), list(ARCH_LABELS),
-                 format_func=tr_label, key="p_architecture",
+                 format_func=_label_formatter(), key="p_architecture",
                  help=tr("help_arch"))
         st.number_input(tr("lbl_center_gap"), 0.0, 500.0, step=5.0,
                         key="p_center_gap_um",
@@ -950,7 +999,7 @@ with st.sidebar:
         st.number_input(tr("lbl_cav_wall"), 0.0, 10.0, step=0.1,
                         key="p_cavity_wall_mm", disabled=not _rear_on)
         st.radio(tr("lbl_hole_pos"), list(POS_LABELS),
-                 format_func=tr_label,
+                 format_func=_label_formatter(),
                  key="p_hole_position", disabled=not _rear_on)
         st.number_input(tr("lbl_cav_n"), 0, 5000, step=1,
                         key="p_n_cavity", disabled=not _rear_on,
@@ -989,7 +1038,7 @@ with st.sidebar:
                         help=tr("help_body_dia"))
         if st.session_state["p_architecture"] == K67_LABEL:
             st.selectbox(tr("lbl_ax_body"),
-                         list(AX_LABELS), format_func=tr_label,
+                         list(AX_LABELS), format_func=_label_formatter(),
                          key="p_axial_body",
                          disabled=not st.session_state["p_diffraction_on"],
                          help=tr("help_ax_body"))
@@ -1168,11 +1217,11 @@ with tab_di:
 exp1, exp2, exp3 = st.columns([2, 2, 3])
 # Kanonische Werte ("intl"/"excel_de") im Session-State, damit ein
 # Sprachwechsel die Auswahl nicht ungültig macht (die Anzeige übersetzt
-# format_func).
+# format_func — Sprache zur Renderzeit eingefroren, s. _label_formatter).
+_csv_disp = {"intl": tr("csv_intl"), "excel_de": tr("csv_excel_de")}
 sep_choice = exp3.selectbox(
     tr("lbl_csv"), ["intl", "excel_de"],
-    format_func=lambda c: tr("csv_intl") if c == "intl"
-    else tr("csv_excel_de"),
+    format_func=lambda c: _csv_disp.get(c, c),
     key="csv_format",
 )
 _sep, _dec = (";", ",") if sep_choice == "excel_de" else (",", ".")

@@ -35,9 +35,12 @@ TR = {
         "en": "Lumped-element simulation of a condenser microphone capsule",
         "de": "Lumped-Element-Simulation einer Kondensatormikrofonkapsel",
     },
+    # In beiden Sprachen IDENTISCH: das Label geht in die Widget-Identität
+    # ein; ein sprachabhängiges Label würde den Umschalter bei jedem
+    # Wechsel als neues Widget erscheinen lassen.
     "lang_label": {
         "en": "🌐 Language / Sprache",
-        "de": "🌐 Sprache / Language",
+        "de": "🌐 Language / Sprache",
     },
 
     # ------------------------- Projekt ----------------------------------
