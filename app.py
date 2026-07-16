@@ -28,12 +28,35 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from microphone_capsule import MicrophoneCapsule
+from translations import TR, LABEL_TR
+
+# ---------------------------------------------------------------------------
+# Sprache (GUI-Einstellung, KEIN Kapselparameter — bleibt außerhalb der
+# Projektdateien). Standard: Englisch; umschaltbar in der Seitenleiste.
+# ---------------------------------------------------------------------------
+def _lang():
+    try:
+        return st.session_state.get("ui_lang", "en")
+    except Exception:      # ohne Streamlit-Runtime (bare Tests)
+        return "en"
+
+
+def tr(key, **kw):
+    """Übersetzten GUI-Text holen; Platzhalter per str.format füllen."""
+    txt = TR[key][_lang()]
+    return txt.format(**kw) if kw else txt
+
+
+def tr_label(canonical):
+    """Anzeige eines kanonischen Auswahl-Werts (format_func der Widgets)."""
+    return LABEL_TR.get(canonical, {}).get(_lang(), canonical)
+
 
 # ---------------------------------------------------------------------------
 # Seiten-Setup & Designsprache
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Capsim — Kapselsimulation",
+    page_title=tr("page_title"),
     page_icon="🎙️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -221,6 +244,7 @@ def _rings_from_state(prefix):
 
 
 def _init_state():
+    st.session_state.setdefault("ui_lang", "en")   # Standard: Englisch
     for key, val in DEFAULTS.items():
         if key in _RING_PREFIX:
             if f"{_RING_PREFIX[key]}_ring_count" not in st.session_state:
@@ -293,11 +317,10 @@ def _load_project():
             else:
                 st.session_state["p_" + key] = val
         st.session_state["_load_msg"] = (
-            "success",
-            f"Projekt geladen — {len(staged)} Parameter übernommen.")
+            "success", tr("load_ok", n=len(staged)))
     except Exception as exc:  # defekte Datei darf die App nicht stoppen
         st.session_state["_load_msg"] = (
-            "error", f"Projekt konnte nicht geladen werden: {exc}")
+            "error", tr("load_fail", exc=exc))
 
 
 def _add_ring(prefix):
@@ -325,8 +348,8 @@ def _ring_rows(prefix, bp_diameter_mm):
     mit ➕/➖-Buttons; gibt die Gesamt-Lochzahl zurück."""
     n_rings = st.session_state[f"{prefix}_ring_count"]
     h1, h2 = st.columns(2)
-    h1.caption("Anzahl")
-    h2.caption("Lochkreis Ø [mm]")
+    h1.caption(tr("cap_ring_n"))
+    h2.caption(tr("cap_ring_pcd"))
     total = 0
     for i in range(n_rings):
         pcd_key = f"p_{prefix}_ring_pcd_{i}"
@@ -337,25 +360,24 @@ def _ring_rows(prefix, bp_diameter_mm):
         c1, c2 = st.columns(2)
         # Beschriftung nur für Screenreader (kompakte Tabellenoptik;
         # die sichtbare Kopfzeile liefern die Captions darüber).
-        c1.number_input(f"Anzahl · Kreis {i + 1}", 0, 2000, step=1,
+        c1.number_input(tr("lbl_ring_n", i=i + 1), 0, 2000, step=1,
                         key=f"p_{prefix}_ring_n_{i}",
                         label_visibility="collapsed")
-        c2.number_input(f"Lochkreis Ø [mm] · Kreis {i + 1}", 0.0,
+        c2.number_input(tr("lbl_ring_pcd", i=i + 1), 0.0,
                         bp_diameter_mm, step=0.5, key=pcd_key,
                         label_visibility="collapsed")
         total += st.session_state[f"p_{prefix}_ring_n_{i}"]
     b1, b2 = st.columns(2)
-    b1.button("➕ Lochkreis", key=f"btn_add_{prefix}",
+    b1.button(tr("btn_ring_add"), key=f"btn_add_{prefix}",
               on_click=_add_ring, args=(prefix,),
               disabled=n_rings >= MAX_RINGS, width="stretch",
-              help="Fügt einen weiteren Lochkreis hinzu (je Druck ein "
-                   "Kreis), um reale Lochmuster nachzubilden.")
-    b2.button("➖ letzter Kreis", key=f"btn_del_{prefix}",
+              help=tr("help_ring_add"))
+    b2.button(tr("btn_ring_del"), key=f"btn_del_{prefix}",
               on_click=_remove_ring, args=(prefix,),
               disabled=n_rings <= 1, width="stretch",
-              help="Entfernt den letzten Lochkreis.")
+              help=tr("help_ring_del"))
     if n_rings > 1:
-        st.caption(f"gesamt: {total} Löcher auf {n_rings} Lochkreisen")
+        st.caption(tr("cap_ring_total", total=total, n=n_rings))
     return total
 
 
@@ -463,7 +485,7 @@ def get_capsule(params, progress=None):
     capsule = store.get(key)
     if capsule is None:
         if progress is not None:
-            progress(0.0, "Modell aufbauen")
+            progress(0.0, tr("prog_build"))
         capsule = build_capsule(params)
         store[key] = capsule
         while len(store) > _CAPSULE_CACHE_MAX:
@@ -505,7 +527,7 @@ def compute_results(cache_key, capsule, progress=None):
     # angle_responses liefert je Frequenz in EINEM Netzwerk-/Feldaufbau
     # die Übertragung bei 0/90/180° UND die Rück-Übertragung D_r des
     # Phasenschiebers (Superposition q = a·p_front + b·p_rück).
-    _tick(0, "Frequenzgang")
+    _tick(0, tr("prog_fr"))
     f = np.logspace(np.log10(10.0), np.log10(25000.0), n_pts)
     H = np.empty(n_pts, dtype=complex)
     H90 = np.empty(n_pts, dtype=complex)
@@ -525,7 +547,7 @@ def compute_results(cache_key, capsule, progress=None):
             has_dr = False
         else:
             D_r[i:j] = r["D_r"]
-        _tick(j - i, "Frequenzgang")
+        _tick(j - i, tr("prog_fr"))
     amp_db = 20.0 * np.log10(np.maximum(np.abs(H), 1e-30))
     ref_db = np.interp(np.log10(1000.0), np.log10(f), amp_db)
     fr = {
@@ -555,13 +577,30 @@ def compute_results(cache_key, capsule, progress=None):
         _tick(1, f"Richtdiagramm {fd:.0f} Hz")
     sens_1k = float(abs(capsule.transfer_function(np.array([1000.0]))[0]))
     delay = capsule.delay_diagnostics()
-    summary_text = capsule.summary()
     result = {"fr": fr, "di": di, "aux": aux, "sens_1k": sens_1k,
-              "delay": delay, "summary": summary_text}
+              "delay": delay}
     store[cache_key] = result
     while len(store) > _RESULTS_CACHE_MAX:
         store.pop(next(iter(store)))
     return result
+
+
+def get_summary(cache_key, capsule, lang):
+    """Diagnose-Summary getrennt gecacht (Schlüssel inkl. Sprache).
+
+    So bleibt der teure Ergebnis-Cache sprachunabhängig gültig, und ein
+    Sprachwechsel formatiert nur den Text neu (bei 3D eine 1-kHz-Lösung
+    je Sprache/Parametersatz — danach sofort aus dem Cache).
+    """
+    store = _session_store("_summary_cache")
+    key = f"{lang}|{cache_key}"
+    hit = store.get(key)
+    if hit is None:
+        hit = capsule.summary(lang=lang)
+        store[key] = hit
+        while len(store) > _RESULTS_CACHE_MAX:
+            store.pop(next(iter(store)))
+    return hit
 
 
 # ---------------------------------------------------------------------------
@@ -582,18 +621,17 @@ def _base_layout(fig, height):
 
 def bode_figure(fr, normalized):
     amp = fr["amplitude_db_norm"] if normalized else fr["amplitude_db"]
-    amp_title = "Amplitude [dB rel. 1 kHz]" if normalized \
-        else "Amplitude [dB re 1 V/Pa]"
+    amp_title = tr("fig_amp_norm") if normalized else tr("fig_amp_abs")
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         vertical_spacing=0.10, row_heights=[0.58, 0.42])
     fig.add_trace(go.Scatter(
         x=fr["frequency_hz"], y=amp, mode="lines",
-        line=dict(color=SERIES[0], width=2), name="Amplitude",
+        line=dict(color=SERIES[0], width=2), name=tr("fig_amp_abs"),
         hovertemplate="%{x:.0f} Hz · %{y:.1f} dB<extra></extra>",
     ), row=1, col=1)
     fig.add_trace(go.Scatter(
         x=fr["frequency_hz"], y=fr["phase_deg"], mode="lines",
-        line=dict(color=SERIES[4], width=2), name="Phase",
+        line=dict(color=SERIES[4], width=2), name=tr("fig_phase"),
         hovertemplate="%{x:.0f} Hz · %{y:.0f}°<extra></extra>",
     ), row=2, col=1)
 
@@ -605,18 +643,18 @@ def bode_figure(fr, normalized):
             tickvals=[10, 100, 1000, 10000],
             ticktext=["10", "100", "1k", "10k"],
         )
-    fig.update_xaxes(title_text="Frequenz [Hz]", title_font=dict(color=INK_2),
+    fig.update_xaxes(title_text=tr("fig_freq"), title_font=dict(color=INK_2),
                      row=2, col=1)
     fig.update_yaxes(title_text=amp_title, row=1, col=1,
                      gridcolor=GRID, griddash="dot", linecolor=AXIS,
                      tickfont=dict(color=MUTED), title_font=dict(color=INK_2),
                      zeroline=False)
-    fig.update_yaxes(title_text="Phase [°]", row=2, col=1,
+    fig.update_yaxes(title_text=tr("fig_phase"), row=2, col=1,
                      gridcolor=GRID, griddash="dot", linecolor=AXIS,
                      tickfont=dict(color=MUTED), title_font=dict(color=INK_2),
                      zeroline=False)
     fig.update_layout(showlegend=False, hovermode="x unified",
-                      title=dict(text="Frequenzgang (0° Einfall)",
+                      title=dict(text=tr("fig_bode_title"),
                                  font=dict(color=INK, size=16)))
     return _base_layout(fig, 560)
 
@@ -626,14 +664,14 @@ def rear_bode_figure(fr, aux):
     f = fr["frequency_hz"]
     fig = go.Figure()
     fig.add_hline(y=-6.0, line=dict(color=MUTED, width=1, dash="dot"),
-                  annotation_text="−6 dB (ideale Niere @90°)",
+                  annotation_text=tr("fig_rear_ann"),
                   annotation_font=dict(color=MUTED, size=11))
     fig.add_trace(go.Scatter(
-        x=f, y=aux["level_90_db"], mode="lines", name="90° rel. 0°",
+        x=f, y=aux["level_90_db"], mode="lines", name=tr("name_90"),
         line=dict(color=SERIES[1], width=2),
         hovertemplate="%{x:.0f} Hz · %{y:.1f} dB<extra>90°</extra>"))
     fig.add_trace(go.Scatter(
-        x=f, y=aux["level_180_db"], mode="lines", name="180° rel. 0°",
+        x=f, y=aux["level_180_db"], mode="lines", name=tr("name_180"),
         line=dict(color=SERIES[5], width=2),
         hovertemplate="%{x:.0f} Hz · %{y:.1f} dB<extra>180°</extra>"))
     fig.update_xaxes(type="log", gridcolor=GRID, griddash="dot",
@@ -641,10 +679,10 @@ def rear_bode_figure(fr, aux):
                      tickfont=dict(color=MUTED), zeroline=False,
                      tickvals=[10, 100, 1000, 10000],
                      ticktext=["10", "100", "1k", "10k"],
-                     title_text="Frequenz [Hz]",
+                     title_text=tr("fig_freq"),
                      title_font=dict(color=INK_2))
     y_min = float(min(np.min(aux["level_180_db"]), -20.0))
-    fig.update_yaxes(title_text="Pegel rel. 0° [dB]",
+    fig.update_yaxes(title_text=tr("fig_lvl"),
                      range=[max(y_min - 3.0, -45.0), 3.0],
                      gridcolor=GRID, griddash="dot", linecolor=AXIS,
                      tickfont=dict(color=MUTED),
@@ -653,8 +691,7 @@ def rear_bode_figure(fr, aux):
                       legend=dict(orientation="h", yanchor="bottom",
                                   y=1.0, xanchor="right", x=1.0,
                                   font=dict(color=INK_2)),
-                      title=dict(text="Richtwirkung über die Frequenz "
-                                      "(seitlich/rückwärtig)",
+                      title=dict(text=tr("fig_rear_title"),
                                  font=dict(color=INK, size=16)))
     return _base_layout(fig, 420)
 
@@ -666,24 +703,24 @@ def dr_figure(fr, aux):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         vertical_spacing=0.10, row_heights=[0.5, 0.5])
     fig.add_trace(go.Scatter(
-        x=f, y=np.abs(D_r), mode="lines", name="|D_r| intern",
+        x=f, y=np.abs(D_r), mode="lines", name=tr("name_dr"),
         line=dict(color=SERIES[0], width=2),
         hovertemplate="%{x:.0f} Hz · %{y:.2f}<extra>|D_r|</extra>"),
         row=1, col=1)
     fig.add_trace(go.Scatter(
-        x=f, y=np.abs(G180), mode="lines", name="|G(180°)| extern (Ziel)",
+        x=f, y=np.abs(G180), mode="lines", name=tr("name_g"),
         line=dict(color=SERIES[2], width=2, dash="dash"),
         hovertemplate="%{x:.0f} Hz · %{y:.2f}<extra>|G|</extra>"),
         row=1, col=1)
     ph_d = np.rad2deg(np.unwrap(np.angle(D_r)))
     ph_g = np.rad2deg(np.unwrap(np.angle(G180)))
     fig.add_trace(go.Scatter(
-        x=f, y=ph_d, mode="lines", name="arg D_r intern",
+        x=f, y=ph_d, mode="lines", name=tr("name_arg_dr"),
         line=dict(color=SERIES[4], width=2),
         hovertemplate="%{x:.0f} Hz · %{y:.1f}°<extra>arg D_r</extra>"),
         row=2, col=1)
     fig.add_trace(go.Scatter(
-        x=f, y=ph_g, mode="lines", name="arg G(180°) extern (Ziel)",
+        x=f, y=ph_g, mode="lines", name=tr("name_arg_g"),
         line=dict(color=SERIES[2], width=2, dash="dash"),
         hovertemplate="%{x:.0f} Hz · %{y:.1f}°<extra>arg G</extra>"),
         row=2, col=1)
@@ -702,16 +739,16 @@ def dr_figure(fr, aux):
                          tickfont=dict(color=MUTED), zeroline=False,
                          tickvals=[10, 100, 1000, 10000],
                          ticktext=["10", "100", "1k", "10k"])
-    fig.update_xaxes(title_text="Frequenz [Hz]",
+    fig.update_xaxes(title_text=tr("fig_freq"),
                      title_font=dict(color=INK_2), row=2, col=1)
     # Betragsachse deckeln: oberhalb der Resonanz explodiert |D_r|
     dmax = float(np.max(np.abs(D_r)))
-    fig.update_yaxes(title_text="Betrag [–]", row=1, col=1,
+    fig.update_yaxes(title_text=tr("fig_mag"), row=1, col=1,
                      range=[0.0, min(max(1.6, 1.1 * dmax), 4.0)],
                      gridcolor=GRID, griddash="dot", linecolor=AXIS,
                      tickfont=dict(color=MUTED),
                      title_font=dict(color=INK_2), zeroline=False)
-    fig.update_yaxes(title_text="Phase [°]", row=2, col=1,
+    fig.update_yaxes(title_text=tr("fig_phase"), row=2, col=1,
                      gridcolor=GRID, griddash="dot", linecolor=AXIS,
                      tickfont=dict(color=MUTED),
                      title_font=dict(color=INK_2), zeroline=False)
@@ -719,8 +756,7 @@ def dr_figure(fr, aux):
                       legend=dict(orientation="h", yanchor="bottom",
                                   y=1.02, xanchor="right", x=1.0,
                                   font=dict(color=INK_2)),
-                      title=dict(text="Phasenschieber D_r — trifft er das "
-                                      "externe Ziel?",
+                      title=dict(text=tr("fig_dr_title"),
                                  font=dict(color=INK, size=16)))
     return _base_layout(fig, 420)
 
@@ -746,7 +782,7 @@ def polar_figure(di):
                           + _freq_label(f) + "</extra>",
         ))
     fig.update_layout(
-        title=dict(text="Richtdiagramm (normiert auf 0°)",
+        title=dict(text=tr("fig_polar_title"),
                    font=dict(color=INK, size=16)),
         polar=dict(
             bgcolor=SURFACE,
@@ -772,12 +808,19 @@ _init_state()
 
 with st.sidebar:
     st.title("🎙️ Capsim")
-    st.caption("Lumped-Element-Simulation einer Kondensatormikrofonkapsel")
+    st.caption(tr("sidebar_caption"))
+
+    # ---------------- Sprache / Language -------------------------------
+    # GUI-Einstellung, kein Kapselparameter: die Sprachwahl wandert NICHT
+    # in Projektdateien. Umschalten löst nur einen Rerun aus.
+    st.radio(tr("lang_label"), options=["en", "de"],
+             format_func=lambda c: {"en": "English", "de": "Deutsch"}[c],
+             key="ui_lang", horizontal=True)
 
     # ---------------- Projekt speichern / laden ------------------------
-    with st.expander("📁 Projekt", expanded=False):
+    with st.expander(tr("exp_project"), expanded=False):
         st.file_uploader(
-            "Projekt laden (.json)", type=["json"],
+            tr("upload_label"), type=["json"],
             key="project_upload", on_change=_load_project,
         )
         project_json = json.dumps(
@@ -793,8 +836,8 @@ with st.sidebar:
             indent=2, ensure_ascii=False,
         )
         st.download_button(
-            "💾 Projekt speichern (.json)", data=project_json,
-            file_name="capsim_projekt.json", mime="application/json",
+            tr("save_btn"), data=project_json,
+            file_name=tr("project_filename"), mime="application/json",
             width="stretch",
         )
     if "_load_msg" in st.session_state:
@@ -802,348 +845,185 @@ with st.sidebar:
         (st.success if kind == "success" else st.error)(msg)
 
     # ---------------- Membran ------------------------------------------
-    with st.expander("Membran", expanded=True):
-        st.selectbox("Material", list(MATERIAL_LABELS), key="p_material")
-        st.checkbox("Resonanzfrequenz vorgeben", key="p_use_f_res",
-                    help="Deaktiviert: Resonanz wird aus Vorspannung, "
-                         "Biegesteifigkeit und Flächendichte berechnet.")
-        st.number_input("Resonanzfrequenz [Hz]", 100.0, 50000.0, step=100.0,
+    with st.expander(tr("exp_membrane"), expanded=True):
+        st.selectbox(tr("lbl_material"), list(MATERIAL_LABELS),
+                     format_func=tr_label, key="p_material")
+        st.checkbox(tr("lbl_use_fres"), key="p_use_f_res",
+                    help=tr("help_use_fres"))
+        st.number_input(tr("lbl_fres"), 100.0, 50000.0, step=100.0,
                         format="%.0f", key="p_f_res_hz",
                         disabled=not st.session_state["p_use_f_res"])
-        st.number_input("Durchmesser [mm]", 3.0, 60.0, step=0.5,
+        st.number_input(tr("lbl_mem_dia"), 3.0, 60.0, step=0.5,
                         key="p_mem_diameter_mm")
-        st.number_input("Dicke [µm]", 0.5, 100.0, step=0.5,
+        st.number_input(tr("lbl_mem_thick"), 0.5, 100.0, step=0.5,
                         key="p_mem_thickness_um")
-        st.number_input("Vorspannung [N/m]", 1.0, 5000.0, step=10.0,
+        st.number_input(tr("lbl_mem_tension"), 1.0, 5000.0, step=10.0,
                         key="p_mem_tension_npm")
 
     # ---------------- Backplate ----------------------------------------
-    with st.expander("Backplate", expanded=True):
-        st.number_input("Luftspalt [µm]", 5.0, 500.0, step=1.0,
+    with st.expander(tr("exp_backplate"), expanded=True):
+        st.number_input(tr("lbl_air_gap"), 5.0, 500.0, step=1.0,
                         key="p_air_gap_um")
-        st.number_input("Durchmesser [mm]", 2.0, 60.0, step=0.5,
+        st.number_input(tr("lbl_bp_dia"), 2.0, 60.0, step=0.5,
                         key="p_bp_diameter_mm")
-        st.number_input("Dicke [mm]", 0.2, 20.0, step=0.1,
+        st.number_input(tr("lbl_bp_thick"), 0.2, 20.0, step=0.1,
                         key="p_bp_thickness_mm")
-        st.number_input("Polarisationsspannung [V]", 0.5, 400.0, step=1.0,
+        st.number_input(tr("lbl_bias"), 0.5, 400.0, step=1.0,
                         key="p_bias_v")
-        st.radio("Architektur", list(ARCH_LABELS), key="p_architecture",
-                 help="K67-Bauform: zwei Membranen außen, zwei innen-"
-                      "liegende Backplates, getrennt nur durch den "
-                      "Backplate-Spalt. Die passive Rückmembran bildet "
-                      "das Phasenschiebernetzwerk (Niere) — Laufzeitglied "
-                      "und Hohlraum entfallen.")
-        st.number_input("Backplate-Spalt (K67) [µm]", 0.0, 500.0, step=5.0,
+        st.radio(tr("lbl_arch"), list(ARCH_LABELS),
+                 format_func=tr_label, key="p_architecture",
+                 help=tr("help_arch"))
+        st.number_input(tr("lbl_center_gap"), 0.0, 500.0, step=5.0,
                         key="p_center_gap_um",
                         disabled=st.session_state["p_architecture"]
                         != K67_LABEL,
-                        help="Spacer zwischen den beiden Backplate-Hälften "
-                             "der Doppelmembran-Bauform. 0 = einteilige, "
-                             "komplett durchbohrte Mittelelektrode "
-                             "(Braunmühl-Weber); die Backplate-Dicke ist "
-                             "dann die HALBE Plattendicke je Seite.")
+                        help=tr("help_center_gap"))
 
-        st.markdown("**Lochmuster**")
-        st.caption("Jeder Lochtyp lässt sich mit ➕ auf mehrere Lochkreise "
-                   "verteilen (je Kreis: Anzahl + Sitz-Ø; Lochkreis-Ø 0 = "
-                   "gleichmäßig verteilt). Die radiale Anordnung wirkt im "
-                   "2D-Feldmodell und auf die Elektrodenporosität; das "
-                   "1D-Spaltmodell nutzt nur die Gesamtzahlen.")
+        st.markdown(tr("hd_holes"))
+        st.caption(tr("cap_holes"))
         _bp_d = st.session_state["p_bp_diameter_mm"]
 
-        st.markdown("Durchgangslöcher",
-                    help="Die Durchgangslöcher sind der einzige Weg durch "
-                         "die Backplate. 0 Löcher insgesamt = Backplate "
-                         "geschlossen → Kapsel hermetisch dicht "
-                         "(Druckempfänger), unabhängig von der Rückseite. "
-                         "Bei Dual-Architektur ist mindestens 1 Loch nötig.")
+        st.markdown(tr("md_through"), help=tr("help_through"))
         _ring_rows("th", _bp_d)
-        st.number_input("Durchgangslöcher — Ø [mm]", 0.05, 5.0, step=0.05,
-                        key="p_d_through_mm",
-                        help="Bohrungsdurchmesser (gilt für alle "
-                             "Lochkreise dieses Typs).")
-        st.toggle("Stufenbohrung (konzentrisch im Sackloch)",
-                  key="p_th_stepped",
-                  help="K67/K87-Bauweise: jedes Durchgangsloch sitzt am "
-                       "GRUND eines Sacklochs mit Sackloch-Ø und Sackloch-"
-                       "Tiefe — nur die Restdicke der Platte ist eng "
-                       "durchbohrt. Zählweise NUR bei aktivem Schalter: "
-                       "Blindlöcher = GESAMTZAHL aller Sacklöcher, "
-                       "Durchgangslöcher = wie viele davon zusätzlich "
-                       "durchgebohrt sind (K67: 120 Sacklöcher, davon 60 "
-                       "durchgebohrt). Bei ausgeschaltetem Schalter bleiben "
-                       "beide Lochtypen unabhängig wie bisher. Erfordert "
-                       "Sackloch-Ø > Durchgangsloch-Ø und Durchgangs- ≤ "
-                       "Blindlochzahl.")
+        st.number_input(tr("lbl_th_dia"), 0.05, 5.0, step=0.05,
+                        key="p_d_through_mm", help=tr("help_hole_dia"))
+        st.toggle(tr("lbl_stepped"), key="p_th_stepped",
+                  help=tr("help_stepped"))
 
-        st.markdown("Blindlöcher",
-                    help="Sacklöcher auf der Membranseite: Dämpfungs- und "
-                         "Volumen-Bohrungen, kein Weg durch die Platte.")
+        st.markdown(tr("md_blind"), help=tr("help_blind"))
         _ring_rows("bh", _bp_d)
-        st.number_input("Blindlöcher — Ø [mm]", 0.05, 5.0, step=0.05,
-                        key="p_d_blind_mm",
-                        help="Bohrungsdurchmesser (gilt für alle "
-                             "Lochkreise dieses Typs).")
+        st.number_input(tr("lbl_bh_dia"), 0.05, 5.0, step=0.05,
+                        key="p_d_blind_mm", help=tr("help_hole_dia"))
         _bd_max = max(0.1, st.session_state["p_bp_thickness_mm"] - 0.1)
         st.session_state["p_blind_depth_mm"] = min(
             st.session_state["p_blind_depth_mm"], _bd_max)
-        st.number_input("Blindlöcher — Tiefe [mm]", 0.05, _bd_max, step=0.05,
+        st.number_input(tr("lbl_bh_depth"), 0.05, _bd_max, step=0.05,
                         key="p_blind_depth_mm")
 
-        st.markdown("**Clearance-Ring (Freistich der Stirnflächen)**",
-                    help="Ringförmiger Freistich in den Elektroden-Stirn"
-                         "flächen (je Seite): Position über den Ring-Ø, "
-                         "radiale Breite, axiale Tiefe. Breite Ringe "
-                         "(≥ 1 Gitterzelle) vertiefen den Spalt lokal und "
-                         "ENTLASTEN die Mündungs-Engstellen dort sitzender "
-                         "Bohrungen — entscheidend für die Nierentiefe bei "
-                         "wenigen engen Durchgangslöchern (z. B. Debenham). "
-                         "Sehr schmale Ringe wirken als Schlitz-Stub. Nur "
-                         "im 2D-Feldmodell wirksam. 0 = kein Ring.")
-        st.number_input("Clearance-Ring — Ø [mm]", 0.0, 60.0, step=0.5,
-                        key="p_clr_dia_mm",
-                        help="Mittlerer Durchmesser des Rings (z. B. der "
-                             "Lochkreis der Durchgangslöcher).")
-        st.number_input("Clearance-Ring — Breite [mm]", 0.0, 10.0, step=0.1,
-                        key="p_clr_width_mm",
-                        help="Radiale Breite des Freistichs.")
-        st.number_input("Clearance-Ring — Tiefe [mm]", 0.0, 5.0, step=0.01,
+        st.markdown(tr("hd_clr"), help=tr("help_clr"))
+        st.number_input(tr("lbl_clr_dia"), 0.0, 60.0, step=0.5,
+                        key="p_clr_dia_mm", help=tr("help_clr_dia"))
+        st.number_input(tr("lbl_clr_w"), 0.0, 10.0, step=0.1,
+                        key="p_clr_width_mm", help=tr("help_clr_w"))
+        st.number_input(tr("lbl_clr_d"), 0.0, 5.0, step=0.01,
                         format="%.3f", key="p_clr_depth_mm",
-                        help="Axialer Abtrag (zusätzliche Spalthöhe im "
-                             "Ringbereich).")
+                        help=tr("help_clr_d"))
 
         # Klemmringe vor den Membranen — nur bei K67-Bauform relevant
         if st.session_state["p_architecture"] == K67_LABEL:
-            st.markdown("**Klemmringe (vor den Membranen)**",
-                        help="Ringe vor beiden Membranen (K67/K87). Sie "
-                             "versenken die Membranen um ihre Dicke → die "
-                             "geometrische Front-Rück-Distanz d_ext wächst "
-                             "um 2×Dicke. Die Nierennull entsteht, wenn die "
-                             "interne Laufzeit des Phasenschieber-Netzwerks "
-                             "(Bohrungen, Spaltfilme, Spacer) diese externe "
-                             "Laufzeit trifft. Die Breite geht nur in den "
-                             "Außenradius ein. 0 = keine Ringe.")
-            st.number_input("Klemmring — Dicke je Seite [mm]", 0.0, 10.0,
+            st.markdown(tr("hd_clamp"), help=tr("help_clamp"))
+            st.number_input(tr("lbl_clamp_t"), 0.0, 10.0,
                             step=0.5, key="p_clamp_ring_mm",
-                            help="Axiale Auftragung vor jeder Membran.")
-            st.number_input("Klemmring — Breite [mm]", 0.0, 10.0, step=0.5,
+                            help=tr("help_clamp_t"))
+            st.number_input(tr("lbl_clamp_w"), 0.0, 10.0, step=0.5,
                             key="p_clamp_width_mm",
-                            help="Radiale Ausdehnung des Rings.")
+                            help=tr("help_clamp_w"))
 
     # ---------------- Rückseite / Laufzeitglied -------------------------
     _is_k67 = st.session_state["p_architecture"] == K67_LABEL
-    with st.expander("Rückseite & Laufzeitglied", expanded=not _is_k67):
+    with st.expander(tr("exp_rear"), expanded=not _is_k67):
         if _is_k67:
-            st.caption("Bei der K67-Bauform übernimmt die passive "
-                       "Rückmembran diese Funktion — die folgenden "
-                       "Parameter sind inaktiv.")
-        st.toggle("Rückseite aktiv", key="p_rear_enabled",
-                  disabled=_is_k67,
-                  help="Deaktiviert: die rückwärtige Baugruppe (Laufzeit-"
-                       "glied, Hohlraum, Einlasslöcher) entfällt — die "
-                       "Durchgangslöcher der Backplate münden dann durch "
-                       "das rückwärtige Gewebe DIREKT ins Schallfeld "
-                       "(einfacher Gradientenempfänger, Wegdifferenz = "
-                       "Spalt + Backplate-Dicke). Hermetisch geschlossen "
-                       "ist die Kapsel nur mit 0 Durchgangslöchern.")
+            st.caption(tr("cap_rear_k67"))
+        st.toggle(tr("lbl_rear_on"), key="p_rear_enabled",
+                  disabled=_is_k67, help=tr("help_rear_on"))
         _rear_on = st.session_state["p_rear_enabled"] and not _is_k67
-        st.markdown("**Spacer & Rückplatte (K103-Bauform)**",
-                    help="Direkt hinter der Backplate: dünner Distanzring "
-                         "(Spacer) und massive, gelochte Rückplatte — wie "
-                         "beim Neumann K103 (TLM 103), dessen K87-artige "
-                         "Front statt einer Rückmembran durch eine Platte "
-                         "abgeschlossen ist. Der enge Spacer liefert den "
-                         "Reibungswiderstand des Nieren-Phasenschiebers. "
-                         "Sind Laufzeitglied, Hohlraum und Einlasslöcher 0, "
-                         "münden die Plattenlöcher direkt ins rückwärtige "
-                         "Schallfeld. Eine Rückplatte ohne Löcher "
-                         "verschließt die Kapsel (Druckempfänger).")
-        st.number_input("Spacer — Höhe [µm]", 0.0, 1000.0, step=5.0,
+        st.markdown(tr("hd_spacer"), help=tr("help_spacer_hd"))
+        st.number_input(tr("lbl_spacer"), 0.0, 1000.0, step=5.0,
                         key="p_spacer_um", disabled=not _rear_on,
-                        help="Luftschicht zwischen Backplate und Rück-"
-                             "platte. 0 = kein Spacer. Enger Spalt = mehr "
-                             "Reibung (R ~ 1/h³) — das Abstimmelement der "
-                             "Richtcharakteristik.")
-        st.number_input("Rückplatte — Dicke [mm]", 0.0, 20.0, step=0.1,
+                        help=tr("help_spacer"))
+        st.number_input(tr("lbl_rp_t"), 0.0, 20.0, step=0.1,
                         key="p_rearplate_mm", disabled=not _rear_on,
-                        help="Massive Platte hinter dem Spacer. "
-                             "0 = keine Rückplatte.")
+                        help=tr("help_rp_t"))
         _rp_on = _rear_on and st.session_state["p_rearplate_mm"] > 0.0
-        st.number_input("Rückplatte — Löcher Anzahl", 0, 2000, step=1,
+        st.number_input(tr("lbl_rp_n"), 0, 2000, step=1,
                         key="p_n_rearplate", disabled=not _rp_on,
-                        help="0 = Rückplatte ohne Löcher → Rückseite "
-                             "verschlossen (Druckempfänger).")
-        st.number_input("Rückplatte — Löcher Ø [mm]", 0.05, 5.0, step=0.05,
+                        help=tr("help_rp_n"))
+        st.number_input(tr("lbl_rp_d"), 0.05, 5.0, step=0.05,
                         key="p_d_rearplate_mm", disabled=not _rp_on)
 
-        st.markdown("**Laufzeitglied & Hohlraum**")
-        st.number_input("Laufzeitglied — Länge [mm]", 0.0, 100.0, step=0.5,
+        st.markdown(tr("hd_delay"))
+        st.number_input(tr("lbl_delay"), 0.0, 100.0, step=0.5,
                         key="p_delay_mm", disabled=not _rear_on,
-                        help="Akustische Leitung hinter der Membran; "
-                             "Laufzeit τ = L/c.")
-        st.number_input("Hohlraum — Länge [mm]", 0.0, 100.0, step=0.5,
+                        help=tr("help_delay"))
+        st.number_input(tr("lbl_cav_len"), 0.0, 100.0, step=0.5,
                         key="p_cavity_length_mm", disabled=not _rear_on)
-        st.number_input("Hohlraum — Wandstärke [mm]", 0.0, 10.0, step=0.1,
+        st.number_input(tr("lbl_cav_wall"), 0.0, 10.0, step=0.1,
                         key="p_cavity_wall_mm", disabled=not _rear_on)
-        st.radio("Hohlraumlöcher — Position", list(POS_LABELS),
+        st.radio(tr("lbl_hole_pos"), list(POS_LABELS),
+                 format_func=tr_label,
                  key="p_hole_position", disabled=not _rear_on)
-        st.number_input("Hohlraumlöcher — Anzahl", 0, 5000, step=1,
+        st.number_input(tr("lbl_cav_n"), 0, 5000, step=1,
                         key="p_n_cavity", disabled=not _rear_on,
-                        help="0 = Rückseite geschlossen → Druckempfänger "
-                             "(Kugelcharakteristik).")
-        st.number_input("Hohlraumlöcher — Ø [mm]", 0.0, 5.0, step=0.05,
+                        help=tr("help_cav_n"))
+        st.number_input(tr("lbl_cav_d"), 0.0, 5.0, step=0.05,
                         key="p_d_cavity_mm", disabled=not _rear_on,
-                        help="0 = Rückseite geschlossen.")
+                        help=tr("help_cav_d"))
         _ax_max = st.session_state["p_cavity_length_mm"]
         st.session_state["p_cavity_axial_mm"] = min(
             st.session_state["p_cavity_axial_mm"], _ax_max)
-        st.number_input("Hohlraumlöcher — axiale Position [mm]", 0.0,
+        st.number_input(tr("lbl_cav_ax"), 0.0,
                         max(_ax_max, 0.5), step=0.5, key="p_cavity_axial_mm",
                         disabled=(not _rear_on)
                         or st.session_state["p_hole_position"] != "Umfang"
                         or _ax_max <= 0.0,
-                        help="Abstand vom Hohlraumeingang "
-                             "(nur bei Position 'Umfang').")
+                        help=tr("help_cav_ax"))
 
     # ---------------- Akustisches Gewebe --------------------------------
-    with st.expander("Akustisches Gewebe", expanded=True):
-        st.number_input("Vor der Membran [Rayl]", 0.0, 100000.0, step=5.0,
+    with st.expander(tr("exp_fabric"), expanded=True):
+        st.number_input(tr("lbl_fab_front"), 0.0, 100000.0, step=5.0,
                         key="p_fabric_front_rayl")
-        st.number_input("Hinter der Backplate [Rayl]", 0.0, 100000.0,
+        st.number_input(tr("lbl_fab_rear"), 0.0, 100000.0,
                         step=5.0, key="p_fabric_rear_rayl")
 
     # ---------------- Gehäuse & Beugung ----------------------------------
-    with st.expander("Gehäuse & Beugung", expanded=False):
-        st.toggle("Beugung am Gehäuse (Druckstau)", key="p_diffraction_on",
-                  help="Streuung der ebenen Welle am starren Kugel-Ersatz-"
-                       "gehäuse (Morse-Reihe): frontaler Druckstau bis "
-                       "+6 dB, rückwärtige Abschattung und Apertureffekt "
-                       "der Membran. Dadurch richtet auch ein reiner "
-                       "Druckempfänger zu hohen Frequenzen hin — wie in "
-                       "der Realität. Deaktivieren nur zum Vergleich mit "
-                       "dem idealisierten Punktmodell.")
+    with st.expander(tr("exp_body"), expanded=False):
+        st.toggle(tr("lbl_diffr"), key="p_diffraction_on",
+                  help=tr("help_diffr"))
         _bd_min = max(st.session_state["p_mem_diameter_mm"],
                       st.session_state["p_bp_diameter_mm"])
         st.session_state["p_body_diameter_mm"] = max(
             st.session_state["p_body_diameter_mm"], _bd_min)
-        st.number_input("Gehäusedurchmesser [mm]", _bd_min, 100.0, step=0.5,
+        st.number_input(tr("lbl_body_dia"), _bd_min, 100.0, step=0.5,
                         key="p_body_diameter_mm",
                         disabled=not st.session_state["p_diffraction_on"],
-                        help="Durchmesser des kugelförmigen Ersatz-"
-                             "gehäuses; bestimmt, ab welcher Frequenz "
-                             "Druckstau und Abschattung einsetzen: "
-                             "ka = 1 bei f ≈ 109/d Hz (d in m) — für "
-                             "Ø 26 mm also ab ≈ 4 kHz.")
+                        help=tr("help_body_dia"))
         if st.session_state["p_architecture"] == K67_LABEL:
-            st.selectbox("Axialer Körper (Front-Rück-Transfer)",
-                         list(AX_LABELS), key="p_axial_body",
+            st.selectbox(tr("lbl_ax_body"),
+                         list(AX_LABELS), format_func=tr_label,
+                         key="p_axial_body",
                          disabled=not st.session_state["p_diffraction_on"],
-                         help="Referenzkörper für den axialen Front-Rück-"
-                              "Transfer G(180°) der Doppelmembran-Bauform. "
-                              "Kugel (d_ext): Standard — beschreibt die am "
-                              "Mikrofonkörper MONTIERTE Kapsel (der Körper "
-                              "unterbindet den Scheibenrand-Umweg). "
-                              "Sphäroid: exakte Streuung an der FREI "
-                              "stehenden Scheibe (radial R_body, axial "
-                              "d_ext/2, eigene Spezialfunktionen mit "
-                              "Wronski-Selbstprüfung) — deutlich längere "
-                              "effektive Distanz (K67: ~32 statt 18 mm, "
-                              "dünne Scheibe: 4R/π am Pol), Minimum "
-                              "wandert weit vor 180°. Dokumentierter "
-                              "Referenzfall, s. Gegenprobe 20. BEM: "
-                              "montagetreues Randelementverfahren auf der "
-                              "Kontur Kopf + Mikrofonkörper (m=0, gegen "
-                              "Kugel- UND Sphäroid-Reihe validiert) — "
-                              "liegt zwischen beiden Referenzkörpern. "
-                              "DEUTLICH langsamer (~1-2 s je Frequenz-"
-                              "punkt), Ergebnisse werden gecacht.")
+                         help=tr("help_ax_body"))
             if AX_LABELS.get(st.session_state["p_axial_body"]) == "bem":
-                st.number_input("BEM: Körper-Ø [mm]", 0.0, 200.0, step=1.0,
+                st.number_input(tr("lbl_bem_dia"), 0.0, 200.0, step=1.0,
                                 key="p_bem_body_dia_mm",
-                                help="Mikrofonkörper-Zylinder unter dem "
-                                     "Kapselkopf; 0 = frei stehender Kopf "
-                                     "(Scheiben-Referenz).")
-                st.number_input("BEM: Luftspalt Kopf→Körper [mm]", 3.0,
+                                help=tr("help_bem_dia"))
+                st.number_input(tr("lbl_bem_gap"), 3.0,
                                 100.0, step=1.0, key="p_bem_body_gap_mm",
-                                help="Axialer Abstand zwischen Kopf-Rück"
-                                     "seite und Körper-Oberseite.")
-                st.number_input("BEM: Körperlänge [mm]", 10.0, 300.0,
+                                help=tr("help_bem_gap"))
+                st.number_input(tr("lbl_bem_len"), 10.0, 300.0,
                                 step=5.0, key="p_bem_body_len_mm",
-                                help="Länge des Körperzylinders (endlich, "
-                                     "verrundet gekappt).")
-                st.caption("⏳ BEM rechnet je Frequenzpunkt ein Rand"
-                           "elementsystem (~200 Elemente). Empfehlung: "
-                           "Frequenzpunkte ≤ 150.")
+                                help=tr("help_bem_len"))
+                st.caption(tr("cap_bem"))
 
     # ---------------- Spaltfilm-Modell -----------------------------------
-    with st.expander("Spaltfilm-Modell", expanded=False):
-        st.toggle("2D-Feldmodell (modifizierte Reynolds-Gleichung)",
-                  key="p_squeeze_2d",
-                  help="Aus: der Luftspalt ist ein Lumped-Element (Škvor-"
-                       "Widerstand + Nachgiebigkeit + Lochimpedanz). Schnell "
-                       "und für dichte gleichmäßige Lochmuster ausreichend.\n\n"
-                       "An: das Druckfeld im Spalt wird als modifizierte "
-                       "Reynolds-Gleichung (Homentcovschi & Miles) axial-"
-                       "symmetrisch gelöst. Trennt den Nachgiebigkeits-"
-                       "Rückweg (Spaltvolumen + Blindlöcher) vom Rück-"
-                       "kopplungsweg (nur Durchgangslöcher) und erfasst den "
-                       "radialen Druckaufbau. Beseitigt die überhöhte "
-                       "Spaltresonanz bei wenigen engen Löchern und nutzt "
-                       "die Lochkreis-Radien (PCD). Etwas langsamer.")
+    with st.expander(tr("exp_squeeze"), expanded=False):
+        st.toggle(tr("lbl_2d"), key="p_squeeze_2d", help=tr("help_2d"))
         if st.session_state["p_squeeze_2d"]:
-            st.caption("Die Lochkreise im Abschnitt Backplate steuern "
-                       "jetzt die radiale Lochverteilung im Spaltfeld.")
-        st.toggle("3D-Feldmodell (diskrete Löcher, r-φ-Sandwich)",
-                  key="p_squeeze_3d",
-                  help="Volles (r, φ)-Feldmodell: alle Spaltfilme UND "
-                       "beide Membranen als Felder, Durchgangs- und "
-                       "Sacklöcher sitzen DISKRET an ihren Positionen "
-                       "(azimutale Zuströmung und teilentkoppelte Sack-"
-                       "löcher werden aufgelöst; bedämpft die interne "
-                       "Helmholtz-Resonanz realistisch). Nur für die "
-                       "Doppelmembran-Bauform mit Durchgangslöchern. "
-                       "Bei Mittelabstand > 0 rechnet der Löser die "
-                       "ZWEITEILIGE Elektrode (K67-Typ): Zwischenspalt "
-                       "als dritter Film, Stufenbohrungen als Zweitor-"
-                       "Kette je Loch, Elektrodenhälften gegeneinander "
-                       "verdreht. Hat Vorrang vor dem 2D-Schalter. "
-                       "DEUTLICH langsamer (einteilig ~1–2 s, K67-Typ "
-                       "je nach Lochzahl bis ~10 s je Frequenzpunkt) — "
-                       "Frequenzpunkte reduzieren!")
+            st.caption(tr("cap_2d"))
+        st.toggle(tr("lbl_3d"), key="p_squeeze_3d", help=tr("help_3d"))
         if st.session_state["p_squeeze_3d"]:
-            st.toggle("Verdrehung der Hälften automatisch "
-                      "(halbe Lochteilung)",
-                      key="p_half_rot_auto",
-                      help="Nur K67-Typ (Mittelabstand > 0): die realen "
-                           "Elektrodenhälften sind so verdreht, dass die "
-                           "Durchgangslöcher nicht zueinander zeigen — "
-                           "automatisch 180°/n_Durchgangslöcher (bei 60 "
-                           "Löchern also 3°). Ausgerichtete Löcher (0°) "
-                           "kurzschließen den Nieren-Phasenschieber "
-                           "durch den Zwischenspalt: flachere 180°-Aus"
-                           "löschung, höhere Empfindlichkeit.")
+            st.toggle(tr("lbl_rot_auto"), key="p_half_rot_auto",
+                      help=tr("help_rot_auto"))
             if not st.session_state["p_half_rot_auto"]:
-                st.number_input("Verdrehung der Elektrodenhälften [°]",
-                                0.0, 180.0, step=0.5,
-                                key="p_half_rot_deg",
-                                help="0° = Durchgangslöcher beider Hälften "
-                                     "zeigen aufeinander (Kurzschluss des "
-                                     "Phasenschiebers); halbe Teilung = "
-                                     "maximaler Versatz wie an der realen "
-                                     "K67.")
-            st.caption("⏳ 3D rechnet je Frequenzpunkt eine LU-Faktori"
-                       "sierung (einteilig ~24 000 Unbekannte; K67-Typ "
-                       "mit drittem Film und feinerer Azimut-Auflösung "
-                       "entsprechend mehr). Empfehlung: Frequenzpunkte "
-                       "≤ 150 (K67-Typ ≤ 100). Ergebnisse werden je "
-                       "Parametersatz gecacht — Reruns ohne Änderung "
-                       "sind sofort da.")
+                st.number_input(tr("lbl_rot_deg"), 0.0, 180.0, step=0.5,
+                                key="p_half_rot_deg", help=tr("help_rot_deg"))
+            st.caption(tr("cap_3d"))
 
     # ---------------- Simulation ---------------------------------------
-    with st.expander("Simulation", expanded=False):
-        st.slider("Frequenzpunkte", 100, 1500, step=50, key="p_n_points")
-        st.toggle("Amplitude auf 1 kHz normieren", key="p_normalize_1khz")
-        st.multiselect("Richtdiagramm-Frequenzen [Hz]", DIRECTIVITY_OPTIONS,
+    with st.expander(tr("exp_sim"), expanded=False):
+        st.slider(tr("lbl_npts"), 100, 1500, step=50, key="p_n_points")
+        st.toggle(tr("lbl_norm"), key="p_normalize_1khz")
+        st.multiselect(tr("lbl_dirf"), DIRECTIVITY_OPTIONS,
                        key="p_dir_freqs", max_selections=10)
 
 # ---------------------------------------------------------------------------
@@ -1157,15 +1037,15 @@ _prog_slot = st.empty()
 
 
 def _show_progress(frac, label):
-    _prog_slot.progress(frac, text=f"⚙️ Berechnung — {label} … "
-                                   f"{100 * frac:.0f} %")
+    _prog_slot.progress(frac, text=tr("prog_fmt", label=label,
+                                      pct=100 * frac))
 
 
 try:
     capsule = get_capsule(params, _show_progress)
 except ValueError as exc:
     _prog_slot.empty()
-    st.error(f"⚠️ Ungültige Parameterkombination: {exc}")
+    st.error(tr("err_params", exc=exc))
     st.stop()
 
 # Cache-Schlüssel: alle Parameter, die Physik oder berechnete Daten ändern.
@@ -1178,33 +1058,29 @@ _cache_key = json.dumps(_key_params, sort_keys=True)
 _res = compute_results(_cache_key, capsule, _show_progress)
 _prog_slot.empty()
 fr, di, aux = _res["fr"], _res["di"], _res["aux"]
-sens_1k, delay, summary_text = _res["sens_1k"], _res["delay"], _res["summary"]
+sens_1k, delay = _res["sens_1k"], _res["delay"]
+summary_text = get_summary(_cache_key, capsule, _lang())
 
 # ---------------------------------------------------------------------------
 # Hauptbereich
 # ---------------------------------------------------------------------------
-st.title("Kondensatormikrofonkapsel — Simulation")
-st.caption("Elektroakustisches Ersatzschaltbild (Lumped-Element-Modell) · "
-           "10 Hz – 25 kHz")
+st.title(tr("app_title"))
+st.caption(tr("app_caption"))
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("Empfindlichkeit @ 1 kHz", f"{sens_1k * 1e3:.1f} mV/Pa",
-          help=f"{20 * np.log10(max(sens_1k, 1e-12)):.1f} dB re 1 V/Pa "
-               "(Leerlauf, ohne Streukapazität)")
-m2.metric("Membranresonanz", f"{capsule.f_res:.0f} Hz",
-          help="Konsistenz-Check aus Vorspannung/Biegesteifigkeit: "
-               f"{capsule.f_res_from_tension:.0f} Hz")
-m3.metric("Ruhekapazität C₀", f"{capsule.C_elec_0 * 1e12:.1f} pF",
-          help=f"je Backplate · Architektur: {capsule.n_bp} Backplate(s)")
+m1.metric(tr("met_sens"), f"{sens_1k * 1e3:.1f} mV/Pa",
+          help=tr("help_met_sens", db=20 * np.log10(max(sens_1k, 1e-12))))
+m2.metric(tr("met_fres"), f"{capsule.f_res:.0f} Hz",
+          help=tr("help_met_fres", f=capsule.f_res_from_tension))
+m3.metric(tr("met_c0"), f"{capsule.C_elec_0 * 1e12:.1f} pF",
+          help=tr("help_met_c0", n=capsule.n_bp))
 _upi = (f"{capsule.U_pullin:.0f} V" if np.isfinite(capsule.U_pullin)
         else "> 20 kV")
-m4.metric("Feder-Erweichung (Bias)",
+m4.metric(tr("met_soft"),
           f"{capsule.softening_ratio * 100:.1f} %",
-          help="Anteil der Membransteifigkeit, den die elektrostatische "
-               "Anziehung am Arbeitspunkt aufzehrt. Pull-in-Spannung "
-               f"dieser Konfiguration: ≈ {_upi}; statische Durchbiegung "
-               f"{capsule.w0_static * 1e6:.1f} µm (Restspalt Mitte "
-               f"{capsule.h_min_static * 1e6:.1f} µm).")
+          help=tr("help_met_soft", upi=_upi,
+                  w0=capsule.w0_static * 1e6,
+                  hmin=capsule.h_min_static * 1e6))
 
 # Laufzeit-Anpassung des Nieren-Phasenschiebers: die 180°-Null entsteht,
 # wenn die interne Rück-Übertragung D_r des Netzwerks die externe
@@ -1213,46 +1089,26 @@ m4.metric("Feder-Erweichung (Bias)",
 # Laufzeit ist frequenzabhängig — RC-Glied, kein reines Laufzeitglied).
 if delay is not None:
     l1, l2, l3, l4 = st.columns(4)
-    l1.metric("Externe Laufzeit τ_ext",
+    l1.metric(tr("met_tau_ext"),
               f"{delay['tau_ext_s'] * 1e6:.1f} µs",
-              help="Front-Rück-Übertragung G(180°) des Schallfelds um "
-                   "den Kapselkörper (axiale Körperbeugung), als Phase "
-                   f"bei {delay['f_probe_hz']:.0f} Hz ausgewertet. "
-                   "Äquivalente Wegstrecke: "
-                   f"{delay['dist_ext_m'] * 1e3:.1f} mm.")
-    l2.metric("Interne Laufzeit τ_int",
+              help=tr("help_tau_ext", f=delay['f_probe_hz'],
+                      d=delay['dist_ext_m'] * 1e3))
+    l2.metric(tr("met_tau_int"),
               f"{delay['tau_int_s'] * 1e6:.1f} µs",
-              help="Rück-Übertragung D_r des internen Phasenschieber-"
-                   "Netzwerks (Bohrungen, Spaltfilme, Spacer, Rückseite), "
-                   f"als Phase bei {delay['f_probe_hz']:.0f} Hz "
-                   "ausgewertet — frequenzabhängig, da RC-Phasenschieber "
-                   "mit Filmträgheit. Äquivalente Wegstrecke: "
-                   f"{delay['dist_int_m'] * 1e3:.1f} mm.")
+              help=tr("help_tau_int", f=delay['f_probe_hz'],
+                      d=delay['dist_int_m'] * 1e3))
     _ratio = delay["ratio"]
-    l3.metric("Verhältnis intern / extern", f"{_ratio:.2f}",
-              delta=f"{(_ratio - 1.0) * 100:+.0f} % vs. Anpassung",
+    l3.metric(tr("met_ratio"), f"{_ratio:.2f}",
+              delta=tr("delta_ratio", d=(_ratio - 1.0) * 100),
               delta_color="off",
-              help="≈ 1: Laufzeiten angepasst → tiefste Auslöschung bei "
-                   "180°. < 1: interne Laufzeit zu kurz — das Pattern-"
-                   "Minimum wandert vor 180° (Richtung Hyperniere). "
-                   "> 1: interne Laufzeit zu lang — das Minimum bleibt "
-                   "bei 180° gepinnt, die Auslöschung wird aber flacher. "
-                   "Nur nahe der Sondenfrequenz aussagekräftig, wenn die "
-                   "interne Helmholtz-Resonanz im Band liegt!")
+              help=tr("help_ratio"))
     _fh = aux["f_helmholtz_hz"]
-    l4.metric("Interne Helmholtz-Resonanz",
+    l4.metric(tr("met_fh"),
               f"{_fh / 1000:.2f} kHz" if _fh is not None else "> 25 kHz",
               delta=None if _fh is None or _fh > 8000.0
-              else "im Übertragungsband!",
+              else tr("fh_band"),
               delta_color="off",
-              help="Resonanz der Durchgangsloch-Trägheit gegen die innere "
-                   "Nachgiebigkeit (Spalt + Blindlöcher), bestimmt als "
-                   "90°-Phasendurchgang von D_r. Liegt sie IM Band, "
-                   "bricht |D_r| darunter ein und die Pattern-Form "
-                   "wandert über die Frequenz (Superniere → breite Niere "
-                   "→ Kugel) — Abhilfe: Stufenbohrung, dünnere Platte, "
-                   "größere/mehr Durchgangslöcher. Gesund: deutlich "
-                   "oberhalb des Übertragungsbands.")
+              help=tr("help_fh"))
 
 col_bode, col_polar = st.columns([11, 9], gap="medium")
 with col_bode:
@@ -1273,10 +1129,9 @@ with col_dr:
         st.plotly_chart(dr_figure(fr, aux), width="stretch",
                         config={"displayModeBar": False})
     else:
-        st.info("Rückseite geschlossen (Druckempfänger) — es gibt keinen "
-                "internen Phasenschieber-Pfad und damit kein D_r.")
+        st.info(tr("info_no_dr"))
 
-with st.expander("Abgeleitete Modellparameter (Diagnose)"):
+with st.expander(tr("exp_diag")):
     # gecachter Text: summary() enthält eine Netzwerkauswertung (bei 3D
     # eine volle LU-Lösung) und liefe sonst bei jedem Rerun mit
     st.code(summary_text, language=None)
@@ -1284,39 +1139,43 @@ with st.expander("Abgeleitete Modellparameter (Diagnose)"):
 # ---------------------------------------------------------------------------
 # Datenansicht & CSV-Export
 # ---------------------------------------------------------------------------
-st.subheader("Daten & Export")
+st.subheader(tr("hd_data"))
 
 df_fr = pd.DataFrame({
-    "frequenz_hz": fr["frequency_hz"],
-    "empfindlichkeit_mv_pa": np.abs(fr["sensitivity_v_pa"]) * 1e3,
-    "amplitude_db_re_1v_pa": fr["amplitude_db"],
-    "amplitude_db_norm_1khz": fr["amplitude_db_norm"],
-    "phase_deg": fr["phase_deg"],
-    "pegel_90_rel0_db": aux["level_90_db"],
-    "pegel_180_rel0_db": aux["level_180_db"],
+    tr("col_freq"): fr["frequency_hz"],
+    tr("col_sens"): np.abs(fr["sensitivity_v_pa"]) * 1e3,
+    tr("col_amp"): fr["amplitude_db"],
+    tr("col_ampn"): fr["amplitude_db_norm"],
+    tr("col_phase"): fr["phase_deg"],
+    tr("col_l90"): aux["level_90_db"],
+    tr("col_l180"): aux["level_180_db"],
 })
 if aux["D_r"] is not None:
-    df_fr["dr_betrag"] = np.abs(aux["D_r"])
-    df_fr["dr_phase_deg"] = np.rad2deg(np.unwrap(np.angle(aux["D_r"])))
-df_di = pd.DataFrame({"winkel_deg": di["angles_deg"]})
+    df_fr[tr("col_drmag")] = np.abs(aux["D_r"])
+    df_fr[tr("col_drph")] = np.rad2deg(np.unwrap(np.angle(aux["D_r"])))
+df_di = pd.DataFrame({tr("col_angle"): di["angles_deg"]})
 for f, pat in sorted(di["patterns"].items()):
     tag = f"{f:.0f}hz"
-    df_di[f"pegel_db_{tag}"] = pat["db"]
-    df_di[f"linear_{tag}"] = pat["linear"]
+    df_di[tr("col_lvl_prefix") + tag] = pat["db"]
+    df_di[tr("col_lin_prefix") + tag] = pat["linear"]
 
-tab_fr, tab_di = st.tabs(["Frequenzgang", "Richtdiagramm"])
+tab_fr, tab_di = st.tabs([tr("tab_fr"), tr("tab_di")])
 with tab_fr:
     st.dataframe(df_fr, height=240, width="stretch", hide_index=True)
 with tab_di:
     st.dataframe(df_di, height=240, width="stretch", hide_index=True)
 
 exp1, exp2, exp3 = st.columns([2, 2, 3])
+# Kanonische Werte ("intl"/"excel_de") im Session-State, damit ein
+# Sprachwechsel die Auswahl nicht ungültig macht (die Anzeige übersetzt
+# format_func).
 sep_choice = exp3.selectbox(
-    "CSV-Format",
-    ["Komma / Punkt (international)", "Semikolon / Komma (Excel DE)"],
+    tr("lbl_csv"), ["intl", "excel_de"],
+    format_func=lambda c: tr("csv_intl") if c == "intl"
+    else tr("csv_excel_de"),
     key="csv_format",
 )
-_sep, _dec = (";", ",") if "Semikolon" in sep_choice else (",", ".")
+_sep, _dec = (";", ",") if sep_choice == "excel_de" else (",", ".")
 
 
 def _to_csv(df):
@@ -1325,14 +1184,11 @@ def _to_csv(df):
     return buf.getvalue().encode("utf-8-sig")  # BOM: Umlaute in Excel
 
 
-exp1.download_button("⬇️ Frequenzgang als CSV", _to_csv(df_fr),
-                     file_name="capsim_frequenzgang.csv", mime="text/csv",
+exp1.download_button(tr("btn_csv_fr"), _to_csv(df_fr),
+                     file_name=tr("csv_fr_name"), mime="text/csv",
                      width="stretch")
-exp2.download_button("⬇️ Richtdiagramm als CSV", _to_csv(df_di),
-                     file_name="capsim_richtdiagramm.csv", mime="text/csv",
+exp2.download_button(tr("btn_csv_di"), _to_csv(df_di),
+                     file_name=tr("csv_di_name"), mime="text/csv",
                      width="stretch")
 
-st.caption("Capsim · Physikmodell: ABCD-Kettenmatrizen, Zwikker–Kosten-"
-           "Lochimpedanzen, Škvor-Squeeze-Film, elektrostatische Wandlung "
-           "mit Feder-Erweichung. Empfindlichkeit = Leerlaufspannung ohne "
-           "Streukapazität/Verstärkerlast.")
+st.caption(tr("footer"))

@@ -3539,82 +3539,144 @@ class MicrophoneCapsule:
     # Diagnose
     # ======================================================================
     @staticmethod
-    def _ring_note(rings):
+    def _ring_note(rings, lang="de"):
         """Kurzform eines Lochmusters für summary(): Anzahl je Lochkreis."""
-        parts = [(f"{cnt} gleichmäßig" if r is None
-                  else f"{cnt} auf LK ⌀{2e3 * r:.1f} mm")
+        en = str(lang).strip().lower() == "en"
+        parts = [((f"{cnt} even" if en else f"{cnt} gleichmäßig") if r is None
+                  else (f"{cnt} on PCD ⌀{2e3 * r:.1f} mm" if en
+                        else f"{cnt} auf LK ⌀{2e3 * r:.1f} mm"))
                  for cnt, r in rings if cnt > 0]
-        return "; ".join(parts) if parts else "keine"
+        return "; ".join(parts) if parts else ("none" if en else "keine")
 
-    def summary(self):
-        """Mehrzeilige Übersicht der abgeleiteten Modellparameter."""
+    def summary(self, lang="de"):
+        """Mehrzeilige Übersicht der abgeleiteten Modellparameter.
+
+        ``lang`` schaltet die Sprache um ("de" Standard, "en" Englisch);
+        die Zahlenformate bleiben identisch. Der Standard "de" hält die
+        Gegenproben im Testlauf unverändert.
+        """
+        en = str(lang).strip().lower() == "en"
+
+        def _t(de_txt, en_txt):
+            return en_txt if en else de_txt
+
+        def _row(label, value):
+            # Label linksbündig auf feste Spaltenbreite, Wert schließt an
+            return f"{label:<30}{value}"
+
         sens = self.transfer_function(1000.0)[0]
         arch_note = {
-            "single": "1 Backplate",
-            "dual": "2 Backplates, Gegentakt",
-            "dual_diaphragm": "K67-Bauform, passive Rückmembran",
+            "single": _t("1 Backplate", "1 backplate"),
+            "dual": _t("2 Backplates, Gegentakt", "2 backplates, push-pull"),
+            "dual_diaphragm": _t("K67-Bauform, passive Rückmembran",
+                                 "K67 design, passive rear membrane"),
         }[self.architecture]
+        sm_note = {
+            "1d": _t("(Lumped-Element)", "(lumped element)"),
+            "2d": _t("(modifizierte Reynolds-Feldlösung)",
+                     "(modified Reynolds field solution)"),
+            "3d": _t("((r,phi)-Sandwich, diskrete Löcher)",
+                     "((r,phi) sandwich, discrete holes)"),
+        }[self.squeeze_model]
         lines = [
-            "MicrophoneCapsule — abgeleitete Parameter",
+            _t("MicrophoneCapsule — abgeleitete Parameter",
+               "MicrophoneCapsule — derived parameters"),
             "-" * 55,
-            f"Architektur:                  {self.architecture} ({arch_note})",
-            f"Spaltfilm-Modell:             {self.squeeze_model} "
-            + {"1d": "(Lumped-Element)",
-               "2d": "(modifizierte Reynolds-Feldlösung)",
-               "3d": "((r,phi)-Sandwich, diskrete Löcher)"}[
-                   self.squeeze_model],
-            f"Membranfläche:                {self.S_mem * 1e6:9.2f} mm²",
-            f"akust. Masse Membran M_A:     {self.M_A_mem:9.2f} kg/m⁴",
-            f"akust. Nachgiebigkeit C_A:    {self.C_A_mem:9.3e} m³/Pa",
-            f"  dto. effektiv (mit Bias):   {self.C_A_eff:9.3e} m³/Pa",
-            f"Feder-Erweichung durch Bias:  {self.softening_ratio * 100:9.2f} %",
-            f"statische Durchbiegung w0:    {self.w0_static * 1e6:9.2f} µm "
-            f"(Restspalt Mitte {self.h_min_static * 1e6:.1f} µm)",
-            f"wirksamer Frontspalt h_eff:   {self.h_gap_front * 1e6:9.2f} µm "
-            f"(nominal {self.h_gap * 1e6:.1f} µm)",
-            ("Pull-in-Spannung U_PI:        "
-             + (f"{self.U_pullin:9.1f} V" if np.isfinite(self.U_pullin)
-                else "     > 20 kV")),
-            f"Elektroden-Porosität:         {100 * (self.phi_th + self.phi_bh):9.1f} % "
-            f"(Durchgang {100 * self.phi_th:.1f} %, Blind {100 * self.phi_bh:.1f} %)",
-            f"Lochmuster Durchgang:         {self.n_th:6d} × ⌀{2e3 * self.r_th:.2f} mm "
-            f"({self._ring_note(self._th_rings)})"
-            + (f" — Stufenbohrung: Kern {self.t_th_eff * 1e3:.2f} mm unter "
-               f"⌀{2e3 * self.r_bh:.2f}-mm-Senkung" if self.stepped else ""),
-            f"Lochmuster Blind:             {self.n_bh:6d} × ⌀{2e3 * self.r_bh:.2f} mm "
-            f"({self._ring_note(self._bh_rings)})"
-            + (f" [+ {self.n_th} durchgebohrte Senkungen = "
-               f"{self.n_bh + self.n_th} gesamt]" if self.stepped else ""),
-            f"Resonanz (Modell):            {self.f_res:9.1f} Hz",
-            f"Resonanz aus Vorspannung/E:   {self.f_res_from_tension:9.1f} Hz",
-            f"  (exakte J0-Modalfrequenz:   {self.f_res_modal_exact:9.1f} Hz"
-            " — Lumped-Kolbenfaktor 4/3 liegt ~1.9 % darüber)",
-            f"Ruhekapazität C0 (je BP):     {self.C_elec_0 * 1e12:9.2f} pF",
-            ("Squeeze-Film-Widerst. R_gap:  "
-             + (f"{self.R_A_gap:9.3e} Pa·s/m³" if self.R_A_gap is not None
-                else "        — (Backplate geschlossen)")),
-            f"Nachgiebigkeit Spalt C_gap:   {self.C_A_gap:9.3e} m³/Pa",
-            f"Nachgiebigkeit Blindl. C_bh:  {self.C_A_blind:9.3e} m³/Pa",
-            f"rückwärtige Baugruppe:        {self.rear_network_enabled}",
-            f"Rückseite offen (Gradient):   {self.rear_open}",
-            f"äußere Wegdifferenz d_ext:    {self.d_ext * 1e3:9.2f} mm",
-            f"Beugung am Gehäuse:           "
-            f"{self.include_diffraction and _HAS_SCIPY}",
+            _row(_t("Architektur:", "Architecture:"),
+                 f"{self.architecture} ({arch_note})"),
+            _row(_t("Spaltfilm-Modell:", "Gap-film model:"),
+                 f"{self.squeeze_model} " + sm_note),
+            _row(_t("Membranfläche:", "Membrane area:"),
+                 f"{self.S_mem * 1e6:9.2f} mm²"),
+            _row(_t("akust. Masse Membran M_A:", "acoust. membrane mass M_A:"),
+                 f"{self.M_A_mem:9.2f} kg/m⁴"),
+            _row(_t("akust. Nachgiebigkeit C_A:", "acoust. compliance C_A:"),
+                 f"{self.C_A_mem:9.3e} m³/Pa"),
+            _row(_t("  dto. effektiv (mit Bias):", "  same, effective (bias):"),
+                 f"{self.C_A_eff:9.3e} m³/Pa"),
+            _row(_t("Feder-Erweichung durch Bias:", "Spring softening (bias):"),
+                 f"{self.softening_ratio * 100:9.2f} %"),
+            _row(_t("statische Durchbiegung w0:", "static deflection w0:"),
+                 f"{self.w0_static * 1e6:9.2f} µm "
+                 + _t(f"(Restspalt Mitte {self.h_min_static * 1e6:.1f} µm)",
+                      f"(residual center gap {self.h_min_static * 1e6:.1f} "
+                      "µm)")),
+            _row(_t("wirksamer Frontspalt h_eff:", "effective front gap "
+                    "h_eff:"),
+                 f"{self.h_gap_front * 1e6:9.2f} µm "
+                 f"(nominal {self.h_gap * 1e6:.1f} µm)"),
+            _row(_t("Pull-in-Spannung U_PI:", "Pull-in voltage U_PI:"),
+                 (f"{self.U_pullin:9.1f} V" if np.isfinite(self.U_pullin)
+                  else "     > 20 kV")),
+            _row(_t("Elektroden-Porosität:", "Electrode porosity:"),
+                 f"{100 * (self.phi_th + self.phi_bh):9.1f} % "
+                 + _t(f"(Durchgang {100 * self.phi_th:.1f} %, Blind "
+                      f"{100 * self.phi_bh:.1f} %)",
+                      f"(through {100 * self.phi_th:.1f} %, blind "
+                      f"{100 * self.phi_bh:.1f} %)")),
+            _row(_t("Lochmuster Durchgang:", "Hole pattern through:"),
+                 f"{self.n_th:6d} × ⌀{2e3 * self.r_th:.2f} mm "
+                 f"({self._ring_note(self._th_rings, lang)})"
+                 + (_t(f" — Stufenbohrung: Kern {self.t_th_eff * 1e3:.2f} mm "
+                       f"unter ⌀{2e3 * self.r_bh:.2f}-mm-Senkung",
+                       f" — stepped bore: core {self.t_th_eff * 1e3:.2f} mm "
+                       f"below ⌀{2e3 * self.r_bh:.2f} mm counterbore")
+                    if self.stepped else "")),
+            _row(_t("Lochmuster Blind:", "Hole pattern blind:"),
+                 f"{self.n_bh:6d} × ⌀{2e3 * self.r_bh:.2f} mm "
+                 f"({self._ring_note(self._bh_rings, lang)})"
+                 + (_t(f" [+ {self.n_th} durchgebohrte Senkungen = "
+                       f"{self.n_bh + self.n_th} gesamt]",
+                       f" [+ {self.n_th} drilled-through counterbores = "
+                       f"{self.n_bh + self.n_th} total]")
+                    if self.stepped else "")),
+            _row(_t("Resonanz (Modell):", "Resonance (model):"),
+                 f"{self.f_res:9.1f} Hz"),
+            _row(_t("Resonanz aus Vorspannung/E:", "Resonance from "
+                    "tension/E:"),
+                 f"{self.f_res_from_tension:9.1f} Hz"),
+            _t(f"  (exakte J0-Modalfrequenz:   {self.f_res_modal_exact:9.1f} "
+               "Hz — Lumped-Kolbenfaktor 4/3 liegt ~1.9 % darüber)",
+               f"  (exact J0 modal frequency:  {self.f_res_modal_exact:9.1f} "
+               "Hz — lumped piston factor 4/3 is ~1.9 % above)"),
+            _row(_t("Ruhekapazität C0 (je BP):", "Static capacitance C0/BP:"),
+                 f"{self.C_elec_0 * 1e12:9.2f} pF"),
+            _row(_t("Squeeze-Film-Widerst. R_gap:", "Squeeze-film res. "
+                    "R_gap:"),
+                 (f"{self.R_A_gap:9.3e} Pa·s/m³" if self.R_A_gap is not None
+                  else _t("        — (Backplate geschlossen)",
+                          "        — (backplate closed)"))),
+            _row(_t("Nachgiebigkeit Spalt C_gap:", "Compliance gap C_gap:"),
+                 f"{self.C_A_gap:9.3e} m³/Pa"),
+            _row(_t("Nachgiebigkeit Blindl. C_bh:", "Compliance blind C_bh:"),
+                 f"{self.C_A_blind:9.3e} m³/Pa"),
+            _row(_t("rückwärtige Baugruppe:", "rear assembly:"),
+                 f"{self.rear_network_enabled}"),
+            _row(_t("Rückseite offen (Gradient):", "rear open (gradient):"),
+                 f"{self.rear_open}"),
+            _row(_t("äußere Wegdifferenz d_ext:", "outer path diff. d_ext:"),
+                 f"{self.d_ext * 1e3:9.2f} mm"),
+            _row(_t("Beugung am Gehäuse:", "Diffraction at body:"),
+                 f"{self.include_diffraction and _HAS_SCIPY}"),
         ]
         if (self.architecture != "dual_diaphragm"
                 and self.rear_network_enabled
                 and (self.h_sp > 0.0 or self.t_rp > 0.0)):
             sp = (f"Spacer {self.h_sp * 1e6:.0f} µm" if self.h_sp > 0
-                  else "kein Spacer")
+                  else _t("kein Spacer", "no spacer"))
             if self.t_rp > 0:
-                rp = f"Rückplatte {self.t_rp * 1e3:.2f} mm"
+                rp = _t(f"Rückplatte {self.t_rp * 1e3:.2f} mm",
+                        f"Rear plate {self.t_rp * 1e3:.2f} mm")
                 rp += (f", {self.n_rp} × ⌀{2e3 * self.r_rp:.2f} mm"
-                       if self.n_rp > 0 else ", ohne Löcher (dicht)")
+                       if self.n_rp > 0
+                       else _t(", ohne Löcher (dicht)",
+                               ", without holes (sealed)"))
                 if self._plate_vents:
-                    rp += " → Schallfeld"
+                    rp += _t(" → Schallfeld", " → sound field")
             else:
-                rp = "keine Rückplatte"
-            lines.append(f"Spacer/Rückplatte (K103):     {sp}; {rp}")
+                rp = _t("keine Rückplatte", "no rear plate")
+            lines.append(_row(_t("Spacer/Rückplatte (K103):",
+                                 "Spacer/rear plate (K103):"), f"{sp}; {rp}"))
         if (self.architecture != "dual_diaphragm"
                 and self.rear_network_enabled
                 and (self.l_delay > 0.0 or self.l_cav > 0.0)):
@@ -3623,9 +3685,12 @@ class MicrophoneCapsule:
             # Zylinderrohres liegt bei k·R = 1.8412 — darüber können
             # (v. a. seitlich angeregte) Quermoden das 1D-Bild verfälschen.
             f_quer = 1.8412 * C_AIR / (2.0 * np.pi * self.a_bp)
-            lines.append(
-                f"1D-Leitungsgrenze (Quermode): {f_quer:9.1f} Hz "
-                "(erste azimutale Hohlraum-Mode)")
+            lines.append(_row(
+                _t("1D-Leitungsgrenze (Quermode):", "1D line limit "
+                   "(transv.):"),
+                f"{f_quer:9.1f} Hz "
+                + _t("(erste azimutale Hohlraum-Mode)",
+                     "(first azimuthal cavity mode)")))
         if self.architecture == "dual_diaphragm":
             # Druckleck der Doppelmembran-Bauform: die Rückmembran liegt
             # als Nachgiebigkeit in SERIE im rückwärtigen Pfad; das innere
@@ -3639,15 +3704,22 @@ class MicrophoneCapsule:
             delta = C_int / self.C_A_mem
             f_floor = delta * C_AIR / (2.0 * np.pi * 1.5 * self.d_ext)
             lines += [
-                f"Druckleck δ = C_int/C_mem:    {delta:9.4f}",
-                f"Pattern-Untergrenze f_δ:      {f_floor:9.1f} Hz "
-                "(darunter -> Kugel)",
+                _row(_t("Druckleck δ = C_int/C_mem:", "Pressure leak "
+                        "δ=C_int/C_mem:"), f"{delta:9.4f}"),
+                _row(_t("Pattern-Untergrenze f_δ:", "Pattern lower limit "
+                        "f_δ:"),
+                     f"{f_floor:9.1f} Hz "
+                     + _t("(darunter -> Kugel)", "(below -> omni)")),
             ]
         lines += [
-            f"Ersatz-Gehäuseradius R_body:  {self.R_body * 1e3:9.2f} mm "
-            f"(ka=1 bei {C_AIR / (2 * np.pi * self.R_body):.0f} Hz)",
-            f"Empfindlichkeit @ 1 kHz:      {abs(sens) * 1e3:9.2f} mV/Pa "
-            f"({20 * np.log10(abs(sens)):.1f} dB re 1 V/Pa)",
+            _row(_t("Ersatz-Gehäuseradius R_body:", "Equiv. body radius "
+                    "R_body:"),
+                 f"{self.R_body * 1e3:9.2f} mm "
+                 + _t(f"(ka=1 bei {C_AIR / (2 * np.pi * self.R_body):.0f} Hz)",
+                      f"(ka=1 at {C_AIR / (2 * np.pi * self.R_body):.0f} Hz)")),
+            _row(_t("Empfindlichkeit @ 1 kHz:", "Sensitivity @ 1 kHz:"),
+                 f"{abs(sens) * 1e3:9.2f} mV/Pa "
+                 f"({20 * np.log10(abs(sens)):.1f} dB re 1 V/Pa)"),
         ]
         return "\n".join(lines)
 

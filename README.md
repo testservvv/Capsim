@@ -9,6 +9,22 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 |---|---|
 | `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell, elektrostatische Wandlung mit Pull-in, Gehäusebeugung) — eigenständig lauffähig mit Testlauf |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
+| `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
+
+## Sprache / Language
+
+Die Oberfläche ist zweisprachig (**Englisch** als Standard, Deutsch
+umschaltbar) — die Sprachwahl steht oben in der Seitenleiste. Sie ist eine
+reine Anzeige-Einstellung und wandert **nicht** in die Projektdateien: die
+kanonischen Auswahl-Werte (Architektur, Material, axialer Körper …) bleiben
+sprachunabhängig gespeichert, sodass Projekte zwischen beiden Sprachen
+voll austauschbar sind. Auch der Diagnose-Summary (`MicrophoneCapsule.
+summary(lang=…)`) folgt der Sprachwahl.
+
+The interface is bilingual (**English** default, German selectable via the
+language switch at the top of the sidebar). The language is a display-only
+setting and is **not** written to project files, so projects stay fully
+interchangeable between both languages.
 
 ## Spaltfilm-Modell: 1D vs. 2D
 
