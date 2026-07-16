@@ -98,7 +98,8 @@ ARCH_LABELS = {
 K67_LABEL = "Doppelmembran (K67-Bauform)"
 POS_LABELS = {"Umfang": "circumference", "Ende (Stirnfläche)": "end"}
 AX_LABELS = {"Kugel (d_ext, montiert)": "sphere",
-             "Sphäroid (freie Scheibe)": "spheroid"}
+             "Sphäroid (freie Scheibe)": "spheroid",
+             "BEM (Kopf + Körper)": "bem"}
 
 DIRECTIVITY_OPTIONS = [50, 100, 125, 250, 500, 1000, 2000, 4000,
                        5000, 8000, 10000, 12500, 16000, 20000]
@@ -164,8 +165,12 @@ DEFAULTS = {
     "body_diameter_mm": 32.0,
     # Axialer Körper für den Front-Rück-Transfer der Doppelmembran:
     # Kugel (d_ext) = montierte Kapsel (Standard); Sphäroid = frei
-    # stehende Scheibe (dokumentierter Referenzfall, Gegenprobe 20).
+    # stehende Scheibe (Referenzfall, Gegenprobe 20); BEM = montagetreue
+    # Kontur Kopf + Mikrofonkörper (Gegenprobe 21).
     "axial_body": "Kugel (d_ext, montiert)",
+    "bem_body_dia_mm": 56.0,
+    "bem_body_gap_mm": 15.0,
+    "bem_body_len_mm": 80.0,
     # Spaltfilm-Modell (Debenham braucht 2D für die tiefe Niere;
     # 3D = diskrete Löcher, nur einteilige Doppelmembran-Elektrode)
     "squeeze_2d": True,
@@ -399,6 +404,9 @@ def build_capsule(p):
         axial_body_model=AX_LABELS.get(p.get("axial_body",
                                              "Kugel (d_ext, montiert)"),
                                        "sphere"),
+        bem_body_diameter=p.get("bem_body_dia_mm", 56.0) * 1e-3,
+        bem_body_gap=p.get("bem_body_gap_mm", 15.0) * 1e-3,
+        bem_body_length=p.get("bem_body_len_mm", 80.0) * 1e-3,
         squeeze_model=("3d" if p.get("squeeze_3d") else
                        ("2d" if p["squeeze_2d"] else "1d")),
     )
@@ -1033,7 +1041,30 @@ with st.sidebar:
                               "effektive Distanz (K67: ~32 statt 18 mm, "
                               "dünne Scheibe: 4R/π am Pol), Minimum "
                               "wandert weit vor 180°. Dokumentierter "
-                              "Referenzfall, s. Gegenprobe 20.")
+                              "Referenzfall, s. Gegenprobe 20. BEM: "
+                              "montagetreues Randelementverfahren auf der "
+                              "Kontur Kopf + Mikrofonkörper (m=0, gegen "
+                              "Kugel- UND Sphäroid-Reihe validiert) — "
+                              "liegt zwischen beiden Referenzkörpern. "
+                              "DEUTLICH langsamer (~1-2 s je Frequenz-"
+                              "punkt), Ergebnisse werden gecacht.")
+            if AX_LABELS.get(st.session_state["p_axial_body"]) == "bem":
+                st.number_input("BEM: Körper-Ø [mm]", 0.0, 200.0, step=1.0,
+                                key="p_bem_body_dia_mm",
+                                help="Mikrofonkörper-Zylinder unter dem "
+                                     "Kapselkopf; 0 = frei stehender Kopf "
+                                     "(Scheiben-Referenz).")
+                st.number_input("BEM: Luftspalt Kopf→Körper [mm]", 3.0,
+                                100.0, step=1.0, key="p_bem_body_gap_mm",
+                                help="Axialer Abstand zwischen Kopf-Rück"
+                                     "seite und Körper-Oberseite.")
+                st.number_input("BEM: Körperlänge [mm]", 10.0, 300.0,
+                                step=5.0, key="p_bem_body_len_mm",
+                                help="Länge des Körperzylinders (endlich, "
+                                     "verrundet gekappt).")
+                st.caption("⏳ BEM rechnet je Frequenzpunkt ein Rand"
+                           "elementsystem (~200 Elemente). Empfehlung: "
+                           "Frequenzpunkte ≤ 150.")
 
     # ---------------- Spaltfilm-Modell -----------------------------------
     with st.expander("Spaltfilm-Modell", expanded=False):

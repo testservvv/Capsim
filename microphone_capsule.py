@@ -319,6 +319,9 @@ class MicrophoneCapsule:
         body_diameter=None,
         include_diffraction=True,
         axial_body_model="sphere",
+        bem_body_diameter=56e-3,
+        bem_body_gap=15e-3,
+        bem_body_length=80e-3,
         # --- Spaltfilm-Modell -----------------------------------------------
         squeeze_model="1d",
     ):
@@ -578,14 +581,31 @@ class MicrophoneCapsule:
         # Distanz, am Pol bis 4R/π; ein dahinterliegender Mikrofonkörper
         # unterbindet den Scheibenrand-Umweg, weshalb die Kugel der
         # montierten Realität entspricht, s. Gegenprobe 20).
+        # "bem": axisymmetrisches Randelementverfahren auf der Kontur
+        # Kapselkopf + Mikrofonkörper (Zylinder ⌀ bem_body_diameter,
+        # Länge bem_body_length, axialer Luftspalt bem_body_gap unter dem
+        # Kopf; Durchmesser 0 = frei stehender Kopf). Das ist die
+        # montagetreue Rechnung ZWISCHEN den Referenzkörpern d_ext-Kugel
+        # (montiert-idealisiert) und freiem Sphäroid.
         ab = str(axial_body_model).strip().lower()
-        if ab not in ("sphere", "spheroid"):
+        if ab not in ("sphere", "spheroid", "bem"):
             raise ValueError(
-                "axial_body_model muss 'sphere' oder 'spheroid' sein."
+                "axial_body_model muss 'sphere', 'spheroid' oder 'bem' sein."
             )
-        if ab == "spheroid" and not _HAS_SCIPY:
-            raise ValueError("axial_body_model='spheroid' erfordert SciPy.")
+        if ab in ("spheroid", "bem") and not _HAS_SCIPY:
+            raise ValueError(
+                f"axial_body_model='{ab}' erfordert SciPy.")
         self.axial_body_model = ab
+        self.bem_body_diameter = float(bem_body_diameter)
+        self.bem_body_gap = float(bem_body_gap)
+        self.bem_body_length = float(bem_body_length)
+        if ab == "bem" and self.bem_body_diameter > 0.0:
+            if self.bem_body_gap <= 2e-3 or self.bem_body_length <= 5e-3:
+                raise ValueError(
+                    "BEM-Körper: Luftspalt > 2 mm und Länge > 5 mm nötig "
+                    "(getrennte, verrundete Konturen)."
+                )
+        self._bem_geo = None
 
         # ------------------------ abgeleitete Größen ------------------------
         self._derive_parameters()
@@ -1143,14 +1163,15 @@ class MicrophoneCapsule:
         self._ring_cos = float(np.clip(
             (self.R_body - self.d_rear_ax) / self.R_body, -1.0, 1.0))
 
-        # Sphäroid-Körpermodell: nur für die Doppelmembran-Bauform und
-        # nur wenn die Scheibe wirklich oblat ist (b = d_ext/2 < R_body).
-        if self.axial_body_model == "spheroid":
+        # Sphäroid-/BEM-Körpermodell: nur für die Doppelmembran-Bauform.
+        if self.axial_body_model in ("spheroid", "bem"):
             if self.architecture != "dual_diaphragm":
                 raise ValueError(
-                    "axial_body_model='spheroid' gilt nur für die "
-                    "Doppelmembran-Bauform (axialer Pol-zu-Pol-Transfer)."
+                    f"axial_body_model='{self.axial_body_model}' gilt nur "
+                    "für die Doppelmembran-Bauform (axialer Front-Rück-"
+                    "Transfer)."
                 )
+        if self.axial_body_model == "spheroid":
             if 0.5 * self.d_ext >= 0.98 * self.R_body:
                 raise ValueError(
                     "axial_body_model='spheroid': die axiale Halbachse "
@@ -1885,6 +1906,202 @@ class MicrophoneCapsule:
         return self._spheroid_pole_transfer(omega, theta, self.R_body,
                                             0.5 * self.d_ext)
 
+    # ------------------------------------------------------------------
+    # Axisymmetrisches Randelementverfahren (m = 0) für starre
+    # Rotationskörper: direkte Kirchhoff-Helmholtz-Kollokation,
+    #     u(x)/2 = p_inc(x) + PV ∮ (∂G/∂n_y) u(y) dS_y,
+    # Konvention e^{-iωt}, G = e^{ikR}/(4πR), am Ende konjugiert.
+    # m=0 genügt: Front-/Rückmembran-MITTELWERTE sind exakt die
+    # azimutalen m=0-Projektionen (wie die Ring-/Kalottenmittelung der
+    # Kugelbeugung); der m=0-Anteil der ebenen Welle unter θ ist
+    #     p_inc,0(r, z) = J0(k r sinθ) · e^{-i k z cosθ}.
+    # Diagonale über die statische Raumwinkel-Identität
+    # Σ_j K0_ij = -1/2 (Außenraum, x auf S); irreguläre Frequenzen
+    # (innere Dirichlet-Eigenfrequenzen) fängt CHIEF ab (Achsen- und
+    # Innenpunkte, Least-Squares). Verrundete Kanten (Fillets) halten
+    # die Fläche glatt; auf ebenen Flächenstücken verschwindet der
+    # Doppelschichtkern koplanarer Paare exakt.
+    # Validiert (Gegenprobe 21): Kugelkontur trifft die Morse-Reihe und
+    # Sphäroidkontur die Sphäroid-Reihe auf < 1e-3 über das Band.
+    # ------------------------------------------------------------------
+    _BEM_NPHI = 96
+    _BEM_G4 = np.array([-0.8611363116, -0.3399810436,
+                        0.3399810436, 0.8611363116])
+    _BEM_W4 = np.array([0.3478548451, 0.6521451549,
+                        0.6521451549, 0.3478548451]) / 2.0
+
+    @staticmethod
+    def _bem_contour(segments, rf=0.8e-3, h=1.0e-3):
+        """Meridian-Polylinie aus Linien-/Bogenstücken (Ecken verrundet).
+
+        ``segments``: Liste von ("line", p0, p1) / ("arc", cen, r, a0, a1);
+        Rückgabe: (M, 2)-Punktfolge. Die Kontur muss von der Achse (oben,
+        größtes z) zur Achse (unten) laufen — dann zeigt die Normale
+        (-dz, dr)/L nach außen.
+        """
+        pts = [segments[0][1] if segments[0][0] == "line" else None]
+
+        def _line(p0, p1):
+            n = max(2, int(np.hypot(p1[0] - p0[0], p1[1] - p0[1]) / h))
+            for i in range(1, n + 1):
+                pts.append((p0[0] + (p1[0] - p0[0]) * i / n,
+                            p0[1] + (p1[1] - p0[1]) * i / n))
+
+        def _arc(cen, r, a0, a1, n=7):
+            for i in range(1, n + 1):
+                a = a0 + (a1 - a0) * i / n
+                pts.append((cen[0] + r * np.cos(a), cen[1] + r * np.sin(a)))
+
+        for seg in segments:
+            if seg[0] == "line":
+                _line(seg[1], seg[2])
+            else:
+                _arc(seg[1], seg[2], seg[3], seg[4])
+        return np.array(pts)
+
+    @staticmethod
+    def _bem_elems(pts):
+        """Konstante Elemente: Mittelpunkte, Außennormalen, Längen,
+        Gauß-Knoten (4 je Element) entlang des Meridians."""
+        p0, p1 = pts[:-1], pts[1:]
+        d = p1 - p0
+        L = np.hypot(d[:, 0], d[:, 1])
+        ok = L > 1e-12
+        p0, d, L = p0[ok], d[ok], L[ok]
+        mid = p0 + 0.5 * d
+        G4 = MicrophoneCapsule._BEM_G4
+        return dict(
+            mid_r=mid[:, 0], mid_z=mid[:, 1],
+            nr=-d[:, 1] / L, nz=d[:, 0] / L, L=L,
+            gr=mid[:, 0][:, None] + 0.5 * d[:, 0][:, None] * G4[None, :],
+            gz=mid[:, 1][:, None] + 0.5 * d[:, 1][:, None] * G4[None, :],
+        )
+
+    @classmethod
+    def _bem_phi_quad(cls):
+        """φ-Quadratur [0, 2π), t²-geclustert um φ = 0 (Nähe-Peak)."""
+        t = (np.arange(cls._BEM_NPHI) + 0.5) / cls._BEM_NPHI
+        phi = np.pi * t**2
+        w = 2.0 * (2.0 * np.pi * t / cls._BEM_NPHI)
+        return np.cos(phi), w
+
+    @staticmethod
+    def _bem_ring_rows(k, xr, xz, elems, cphi, wphi, static=False):
+        """Zeilenblock des Ringkern-Operators: für Aufpunkte (xr, xz)
+        [Form (B,)] die Integrale ∮ ∂G/∂n_y dS über alle Elemente.
+        Rückgabe (B, N)."""
+        gr = elems["gr"][None, :, :, None]           # (1, N, 4, 1)
+        gz = elems["gz"][None, :, :, None]
+        nr = elems["nr"][None, :, None, None]
+        nz = elems["nz"][None, :, None, None]
+        xr_ = xr[:, None, None, None]
+        xz_ = xz[:, None, None, None]
+        R2 = ((xz_ - gz)**2 + xr_**2 + gr**2
+              - 2.0 * xr_ * gr * cphi)
+        R = np.sqrt(np.maximum(R2, 1e-30))
+        ndot = nr * (gr - xr_ * cphi) + nz * (gz - xz_)
+        if static:
+            g = -ndot / (4.0 * np.pi * R**3)
+        else:
+            g = (ndot * (1j * k * R - 1.0) * np.exp(1j * k * R)
+                 / (4.0 * np.pi * R**3))
+        ring = np.sum(g * (gr * wphi), axis=-1)      # (B, N, 4)
+        W4 = MicrophoneCapsule._BEM_W4
+        return np.sum(ring * W4[None, None, :], axis=-1) * elems["L"][None, :]
+
+    def _bem_geometry(self):
+        """Kontur Kapselkopf (+ optionaler Körperzylinder), Membranmasken,
+        CHIEF-Punkte — einmalig aufgebaut und am Objekt gehalten."""
+        if getattr(self, "_bem_geo", None) is not None:
+            return self._bem_geo
+        rf = 0.8e-3
+        Rh, zf = self.R_body, 0.5 * self.d_ext
+        zr = -zf
+        segs = [("line", (0.0, zf), (Rh - rf, zf)),
+                ("arc", (Rh - rf, zf - rf), rf, np.pi / 2, 0.0),
+                ("line", (Rh, zf - rf), (Rh, zr + rf)),
+                ("arc", (Rh - rf, zr + rf), rf, 0.0, -np.pi / 2),
+                ("line", (Rh - rf, zr), (0.0, zr))]
+        pts = self._bem_contour(segs, h=1.0e-3)
+        elems = self._bem_elems(pts)
+        n_head = elems["L"].size
+        chief = [(0.0, 0.0), (0.55 * Rh, 0.0)]
+        if self.bem_body_diameter > 0.0:
+            Rb = 0.5 * self.bem_body_diameter
+            z0 = zr - self.bem_body_gap
+            z1 = z0 - self.bem_body_length
+            segs_b = [("line", (0.0, z0), (Rb - rf, z0)),
+                      ("arc", (Rb - rf, z0 - rf), rf, np.pi / 2, 0.0),
+                      ("line", (Rb, z0 - rf), (Rb, z1 + rf)),
+                      ("arc", (Rb - rf, z1 + rf), rf, 0.0, -np.pi / 2),
+                      ("line", (Rb - rf, z1), (0.0, z1))]
+            eb = self._bem_elems(self._bem_contour(segs_b, h=1.6e-3))
+            elems = {kk: np.concatenate([elems[kk], eb[kk]], axis=0)
+                     for kk in elems}
+            chief += [(0.0, z0 - 0.25 * self.bem_body_length),
+                      (0.0, z0 - 0.75 * self.bem_body_length),
+                      (0.5 * Rb, z0 - 0.5 * self.bem_body_length)]
+        mr, mz = elems["mid_r"], elems["mid_z"]
+        w_area = 2.0 * np.pi * mr * elems["L"]
+        front = (np.abs(mz - zf) < 1e-6) & (mr <= self.a_mem)
+        rear = ((np.abs(mz - zr) < 1e-6) & (mr <= self.a_mem)
+                & (np.arange(mr.size) < n_head))
+        self._bem_geo = dict(elems=elems, chief=chief, w_area=w_area,
+                             front=front, rear=rear)
+        return self._bem_geo
+
+    def _bem_axial_transfer(self, omega, theta):
+        """Front-Rück-Transfer G(θ) = ⟨p⟩_Rückmembran / ⟨p⟩_Frontmembran
+        aus dem m=0-BEM auf der Kontur Kopf + Mikrofonkörper."""
+        from scipy.special import j0 as _bessel_j0
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        theta = np.atleast_1d(np.asarray(theta, dtype=float))
+        geo = self._bem_geometry()
+        elems, chief = geo["elems"], geo["chief"]
+        w_area, front, rear = geo["w_area"], geo["front"], geo["rear"]
+        N = elems["L"].size
+        cphi, wphi = self._bem_phi_quad()
+        mr, mz = elems["mid_r"], elems["mid_z"]
+        cr = np.array([c[0] for c in chief])
+        cz = np.array([c[1] for c in chief])
+        ct, st = np.cos(theta), np.sin(theta)
+
+        def _pinc(k, r, z):
+            return (_bessel_j0(np.outer(st * k, r))
+                    * np.exp(-1j * np.outer(ct * k, z))).T   # (Npunkte, Nθ)
+
+        G = np.empty((omega.size, theta.size), dtype=complex)
+        wsum = np.zeros(N)
+        for i, om in enumerate(omega):
+            k = om / C_AIR
+            K = np.empty((N, N), dtype=complex)
+            K0 = np.empty((N, N), dtype=complex)
+            for b0 in range(0, N, 32):
+                b1 = min(b0 + 32, N)
+                K[b0:b1] = self._bem_ring_rows(k, mr[b0:b1], mz[b0:b1],
+                                               elems, cphi, wphi)
+                K0[b0:b1] = self._bem_ring_rows(0.0, mr[b0:b1], mz[b0:b1],
+                                                elems, cphi, wphi,
+                                                static=True)
+            # Diagonale: statische Identität Σ_j K0_ij = -1/2
+            rows = np.arange(N)
+            row0 = np.sum(K0, axis=1) - K0[rows, rows]
+            K[rows, rows] = (K[rows, rows] - K0[rows, rows]
+                             + (-0.5 - row0))
+            wsum = np.abs(row0 + K0[rows, rows] + 0.5)
+            A = 0.5 * np.eye(N) - K
+            b = _pinc(k, mr, mz)
+            K_c = self._bem_ring_rows(k, cr, cz, elems, cphi, wphi)
+            A = np.vstack([A, -K_c])
+            b = np.vstack([b, _pinc(k, cr, cz)])
+            u, *_ = np.linalg.lstsq(A, b, rcond=None)
+            p_f = (w_area[front] @ u[front]) / np.sum(w_area[front])
+            p_r = (w_area[rear] @ u[rear]) / np.sum(w_area[rear])
+            G[i] = np.conj(p_r / p_f)
+        # Diagnose: Residuum der Raumwinkel-Identität (Gitterqualität)
+        self._bem_solid_angle_residual = float(np.max(wsum))
+        return G
+
     def _axial_body_transfer(self, omega, theta):
         """Front-Rück-Transfer G(θ) = p_rück/p_front der Doppelmembran-Scheibe.
 
@@ -2273,9 +2490,12 @@ class MicrophoneCapsule:
                 # Ausdehnung d_ext (s. _axial_body_transfer): geometrische
                 # Laufzeit + Beugungsumweg + Amplituden-Asymmetrie, alles
                 # aus der exakten Streureihe, ohne Fit-Koeffizient.
-                G_ax = (self._axial_spheroid_transfer(omega, theta)
-                        if self.axial_body_model == "spheroid"
-                        else self._axial_body_transfer(omega, theta))
+                if self.axial_body_model == "spheroid":
+                    G_ax = self._axial_spheroid_transfer(omega, theta)
+                elif self.axial_body_model == "bem":
+                    G_ax = self._bem_axial_transfer(omega, theta)
+                else:
+                    G_ax = self._axial_body_transfer(omega, theta)
                 return F_f, F_f * G_ax
             return F_f, F_r
         p_front = np.ones((omega.size, theta.size), dtype=complex)
@@ -4231,5 +4451,110 @@ if __name__ == "__main__":
               f"Wronski {k67._spheroid_wronski_max:.1e}; freie K67-Scheibe "
               f"d_eff = {d_eff_k67*1e3:.1f} mm -> Minimum {na_s:.0f}° "
               "(montiert: Kugel bleibt Standard)  OK")
+
+    # --------- Gegenprobe 21: axisymmetrisches BEM (Kopf + Körper) ---------
+    # a) Kugelkontur reproduziert die Morse-Reihe (Pol-zu-Pol) < 2e-3.
+    # b) Sphäroidkontur reproduziert die Sphäroid-Reihe < 2e-3 — zwei
+    #    unabhängige exakte Referenzen für denselben Löser.
+    # c) MONTIERT: die effektive Distanz der Kopf+Körper-Kontur liegt
+    #    ZWISCHEN d_ext-Kugel und frei stehender Scheibe (der Körper
+    #    unterbindet einen Teil des Scheibenrand-Umwegs); |G| ~ 1 im
+    #    Tiefband; Raumwinkel-Residuum (Gitterqualität) klein.
+    # d) Gatter: nur Doppelmembran-Bauform.
+    if _HAS_SCIPY:
+        k67_bem = MicrophoneCapsule(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=34e-3,
+            squeeze_model="2d", axial_body_model="bem")
+        th21 = np.deg2rad(np.array([0.0, 60.0, 120.0, 180.0]))
+
+        def _inject(pts):
+            el = MicrophoneCapsule._bem_elems(pts)
+            n_el = el["L"].size
+            fr_m = np.zeros(n_el, bool)
+            fr_m[0] = True
+            re_m = np.zeros(n_el, bool)
+            re_m[-1] = True
+            k67_bem._bem_geo = dict(
+                elems=el, chief=[(0.0, 0.0)],
+                w_area=2.0 * np.pi * el["mid_r"] * el["L"],
+                front=fr_m, rear=re_m)
+
+        psi21 = np.linspace(0.0, np.pi, 121)
+        R21 = 9e-3
+        _inject(np.stack([R21 * np.sin(psi21), R21 * np.cos(psi21)], 1))
+        worst_k = 0.0
+        for f21 in (100.0, 1000.0, 5000.0):
+            om21 = np.array([2.0 * np.pi * f21])
+            G_b = k67_bem._bem_axial_transfer(om21, th21)[0]
+            d_save = k67.d_ext
+            k67.d_ext = 2.0 * R21
+            G_ref = k67._axial_body_transfer(om21, th21)[0]
+            k67.d_ext = d_save
+            worst_k = max(worst_k, float(np.max(np.abs(G_b - G_ref)
+                                                / np.abs(G_ref))))
+        assert worst_k < 2e-3, \
+            f"BEM-Kugelkontur muss die Morse-Reihe treffen ({worst_k:.1e})"
+        _inject(np.stack([17e-3 * np.sin(psi21),
+                          6.1e-3 * np.cos(psi21)], 1))
+        worst_o = 0.0
+        for f21 in (1000.0, 5000.0):
+            om21 = np.array([2.0 * np.pi * f21])
+            G_b = k67_bem._bem_axial_transfer(om21, th21)[0]
+            G_ref = k67._spheroid_pole_transfer(om21, th21, 17e-3,
+                                                6.1e-3)[0]
+            worst_o = max(worst_o, float(np.max(np.abs(G_b - G_ref)
+                                                / np.abs(G_ref))))
+        assert worst_o < 2e-3, \
+            f"BEM-Sphäroidkontur muss die Sphäroid-Reihe treffen " \
+            f"({worst_o:.1e})"
+        # c) montierte Kapsel vs. freie Scheibe vs. d_ext-Kugel
+        k67_bem._bem_geo = None
+        om100 = np.array([2.0 * np.pi * 100.0])
+        th180 = np.array([np.pi])
+        k100 = om100[0] / C_AIR
+        G_mnt = k67_bem._bem_axial_transfer(om100, th180)[0, 0]
+        d_mnt = float(np.angle(G_mnt)) / k100
+        assert k67_bem._bem_solid_angle_residual < 5e-3, \
+            "BEM-Gitterqualität (Raumwinkel-Residuum)"
+        k67_frei = MicrophoneCapsule(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=34e-3,
+            axial_body_model="bem", bem_body_diameter=0.0)
+        G_frei = k67_frei._bem_axial_transfer(om100, th180)[0, 0]
+        d_frei = float(np.angle(G_frei)) / k100
+        d_kugel = 1.5 * k67_bem.d_ext
+        assert d_kugel < d_mnt < d_frei, \
+            (f"montiert muss zwischen Kugel und freier Scheibe liegen "
+             f"({d_kugel * 1e3:.1f} < {d_mnt * 1e3:.1f} < "
+             f"{d_frei * 1e3:.1f} mm)")
+        assert abs(abs(G_mnt) - 1.0) < 0.02, "BEM: |G| ~ 1 im Tiefband"
+        try:
+            MicrophoneCapsule(architecture="single",
+                              axial_body_model="bem",
+                              membrane_resonance_hz=8000.0)
+            raise AssertionError("BEM ohne dual_diaphragm muss scheitern")
+        except ValueError:
+            pass
+        print(f"BEM: Kugelkontur {worst_k:.1e}, Sphäroidkontur "
+              f"{worst_o:.1e}; d_eff Kugel {d_kugel*1e3:.1f} < montiert "
+              f"{d_mnt*1e3:.1f} < freie Scheibe {d_frei*1e3:.1f} mm "
+              "(Körper unterbindet Teil des Rand-Umwegs)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

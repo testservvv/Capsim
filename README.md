@@ -206,6 +206,25 @@ unterbindet den Scheibenrand-Umweg** — deshalb bleibt die d_ext-Kugel
 (montierte Kapsel) Standard; das Sphäroid ist der dokumentierte
 Referenzfall der freien Scheibe (GUI: „Axialer Körper").
 
+**Montagetreues BEM (`axial_body_model="bem"`):** Die dritte Stufe
+rechnet den Front-Rück-Transfer per **axisymmetrischem
+Randelementverfahren** (m = 0) auf der tatsächlichen Kontur
+*Kapselkopf-Scheibe + Mikrofonkörper-Zylinder* (⌀/Luftspalt/Länge als
+Parameter `bem_body_*`, GUI-Felder; ⌀ 0 = freier Kopf). Direkte
+Kirchhoff-Helmholtz-Kollokation mit verrundeten Kanten, Diagonale aus
+der statischen Raumwinkel-Identität, CHIEF-Punkte gegen irreguläre
+Frequenzen; Membranmittelwerte sind exakte m=0-Projektionen.
+**Validiert gegen beide exakten Referenzen** (Gegenprobe 21):
+Kugelkontur trifft die Morse-Reihe und Sphäroidkontur die
+Sphäroid-Reihe auf < 2·10⁻⁴. Ergebnis für die K67 (56-mm-Körper):
+d_eff läuft mit dem Montagespalt von 16,9 mm (5 mm Spalt) über
+23,3 mm (15 mm) bis 33,3 mm (frei) — **die d_ext-Kugel (18,3 mm)
+entspricht ~7 mm Spalt, genau der realen Sattelmontage**. Damit ist
+der Kugel-Standard quantitativ begründet, und abweichende Aufbauten
+(Messabstand zum Body, Grenzflächen-Montagen) sind ehrlich rechenbar.
+Kosten: ~1–2 s je Frequenzpunkt (~200 Elemente), Ergebnisse werden
+gecacht.
+
 ### Nierenform der dünnen Doppelmembran-Scheibe
 
 Front- und Rückmembran der K67 sitzen auf den zwei Flächen einer nur
