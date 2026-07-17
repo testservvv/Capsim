@@ -109,6 +109,9 @@ rechnen gar nichts mehr; auch der Diagnose-Summary-Text kommt aus dem
 Cache (Streamlit führt eingeklappte Expander-Inhalte bei jedem Rerun
 aus, und summary() enthält bei 3D eine volle LU-Lösung). Gerade beim
 3D-Modell macht erst das die Bedienung auf Streamlit Cloud praktikabel.
+Im Projekt-Panel setzt ein Reset-Button nach einem Bestätigungsschritt
+alle Kapselparameter auf null (bzw. auf den kleinsten baubaren Wert) —
+eine leere Leinwand für Entwürfe von Grund auf.
 
 ### Laufzeit-Indikator (GUI) / `delay_diagnostics()`
 
@@ -164,6 +167,8 @@ python microphone_capsule.py
 Parametersatz einer Neumann-K67/K870-Kapsel (U87Ai, Nierenmodus) in der
 echten Doppelmembran-Bauform: zwei 26-mm-Membranen (6 µm Mylar) außen,
 zwei innenliegende Backplate-Hälften (je ~4 mm) mit 50-µm-Spacer, 60 V.
+Dieser Parametersatz (im 2D-Feldmodell) ist zugleich die
+**Voreinstellung beim App-Start**.
 Die passive Rückmembran bildet das Phasenschiebernetzwerk, und das
 Lochbild ist die verifizierte **Stufenbohr-Geometrie**: je Seite 120
 Bohrungen ⌀1,3 mm × 3,7 mm tief, jede zweite mit konzentrischem
@@ -346,8 +351,7 @@ bleiben verengt); deckt der Freistich dagegen alle Lochkreise ab (im
 GUI-Clearance-Ring einstellbar, physikalisch ≈ angesenkte/entgratete
 Mündungen), wird sie breitbandig tief (−13…−15 dB @ 250 Hz–2 kHz, Null
 exakt 180°). Die reale Kapsel dürfte solche Mündungs-Fasen haben (in
-Zeichnungen selten bemaßt). Dieser Parametersatz ist zugleich die
-Voreinstellung beim App-Start.
+Zeichnungen selten bemaßt).
 
 `examples/k103_bauform_demo.json` — Demonstration der **K103-Bauform**
 (Neumann TLM 103): Einzelmembran-Niere auf K87-Basis, deren Rückseite

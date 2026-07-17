@@ -65,6 +65,42 @@ TR = {
         "en": "Could not load project: {exc}",
         "de": "Projekt konnte nicht geladen werden: {exc}",
     },
+    "btn_reset": {
+        "en": "🗑️ Set all values to zero",
+        "de": "🗑️ Alle Werte auf null setzen",
+    },
+    "help_reset": {
+        "en": "Sets every capsule parameter to zero (or to the smallest "
+              "permitted value where zero is not allowed) after a "
+              "confirmation step — a blank canvas to design from scratch. "
+              "Selections (material, architecture, …), model options "
+              "(2D/3D, diffraction) and simulation settings are kept.",
+        "de": "Setzt nach einem Bestätigungsschritt alle Kapselparameter "
+              "auf null (bzw. auf den kleinsten zulässigen Wert, wo null "
+              "nicht erlaubt ist) — eine leere Leinwand für einen Entwurf "
+              "von Grund auf. Auswahlen (Material, Architektur, …), "
+              "Modelloptionen (2D/3D, Beugung) und Simulations-"
+              "einstellungen bleiben erhalten.",
+    },
+    "reset_confirm": {
+        "en": "Really set ALL capsule parameters to zero? The current "
+              "values are lost — save the project first if needed.",
+        "de": "Wirklich ALLE Kapselparameter auf null setzen? Die "
+              "aktuellen Werte gehen verloren — bei Bedarf vorher das "
+              "Projekt speichern.",
+    },
+    "btn_reset_yes": {
+        "en": "✔️ Yes, set to zero",
+        "de": "✔️ Ja, auf null",
+    },
+    "btn_reset_no": {
+        "en": "✖️ Cancel",
+        "de": "✖️ Abbrechen",
+    },
+    "reset_done": {
+        "en": "All capsule parameters set to zero.",
+        "de": "Alle Kapselparameter auf null gesetzt.",
+    },
 
     # ------------------------- Membran ----------------------------------
     "exp_membrane": {"en": "Membrane", "de": "Membran"},

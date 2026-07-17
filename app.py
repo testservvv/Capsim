@@ -147,45 +147,44 @@ DIRECTIVITY_OPTIONS = [50, 100, 125, 250, 500, 1000, 2000, 4000,
                        5000, 8000, 10000, 12500, 16000, 20000]
 
 # (key, Widget-Art, Default) — Gruppen s. Sidebar-Aufbau weiter unten
-# Voreinstellungen beim Start: die Debenham/Robinson/Stebbings-Kapsel
-# ("A Stereo Condenser Microphone", Hi-Fi News) — Braunmühl-Weber-Bauform
-# mit einteiliger durchbohrter Mittelelektrode; identisch zu
-# examples/debenham_stereo_condenser.json.
+# Voreinstellungen beim Start: die K67/K870-Kapsel (U87Ai, Nierenmodus)
+# in der echten Doppelmembran-Bauform mit zweiteiliger Elektrode und
+# Stufenbohrungen, gerechnet im 2D-Feldmodell — identisch zu
+# examples/u87_k67_projekt.json (dort ausführlich dokumentiert).
+# Die Debenham-Kapsel liegt weiter unter examples/.
 DEFAULTS = {
     # Membran
     "material": "PET (Mylar)",
     "use_f_res": True,
-    "f_res_hz": 2100.0,
-    "mem_diameter_mm": 25.4,
+    "f_res_hz": 1150.0,
+    "mem_diameter_mm": 26.0,
     "mem_thickness_um": 6.0,
-    "mem_tension_npm": 45.0,
+    "mem_tension_npm": 13.7,
     # Backplate
-    "air_gap_um": 38.1,
-    "bp_diameter_mm": 23.9,
-    "bp_thickness_mm": 3.125,
-    "bias_v": 50.0,
+    "air_gap_um": 65.0,
+    "bp_diameter_mm": 25.0,
+    "bp_thickness_mm": 4.0,
+    "bias_v": 60.0,
     "architecture": "Doppelmembran (K67-Bauform)",
-    "center_gap_um": 0.0,
+    "center_gap_um": 50.0,
     # Lochmuster als Lochkreis-Listen [Anzahl, Lochkreis-Ø in mm];
-    # Lochkreis-Ø 0 = gleichmäßig verteilt. Debenham-Zeichnung: Lochkreise
-    # 0.860/0.688/0.516/0.344/0.172 Zoll = 21.84/17.48/13.11/8.74/4.37 mm.
-    "d_through_mm": 0.71,
-    "th_rings": [[6, 21.84], [3, 17.48], [3, 8.74]],
-    "th_stepped": False,
-    "d_blind_mm": 1.2,
-    "blind_depth_mm": 3.0,
-    "bh_rings": [[12, 21.84], [12, 17.48], [12, 13.11], [6, 8.74],
-                 [4, 4.37]],
+    # Lochkreis-Ø 0 = gleichmäßig verteilt. K67 (Stufenbohrungs-
+    # Zählweise): 120 Sacklöcher 1.3 x 3.7 mm GESAMT, davon 60 mit
+    # 0.6-mm-Kern durchgebohrt.
+    "d_through_mm": 0.6,
+    "th_rings": [[60, 0.0]],
+    "th_stepped": True,
+    "d_blind_mm": 1.3,
+    "blind_depth_mm": 3.7,
+    "bh_rings": [[120, 0.0]],
     # Klemmringe vor den Membranen (nur K67-Bauform); 0 = keine.
-    # Debenham: 2 mm dick, Aussen-Ø 32 mm -> 3 mm breit.
+    # K67: je ~2 mm dick, Außen-Ø 34 mm -> 4 mm breit.
     "clamp_ring_mm": 2.0,
-    "clamp_width_mm": 3.0,
-    # Clearance-Ring: Stirnflaechen-Freistich am Elektrodenrand der
-    # Debenham-Elektrode (aus der Konstruktionszeichnung: Abtrag 0.038 mm
-    # ueber die aeusseren 1.27 mm; mittlerer Ring-Oe 23.9 - 1.27 mm).
-    "clr_dia_mm": 22.63,
-    "clr_width_mm": 1.27,
-    "clr_depth_mm": 0.038,
+    "clamp_width_mm": 4.0,
+    # Clearance-Ring (Stirnflächen-Freistich): bei der K67 keiner.
+    "clr_dia_mm": 0.0,
+    "clr_width_mm": 0.0,
+    "clr_depth_mm": 0.0,
     # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
     # Spacer + massive gelochte Rückplatte (K103-Bauform); 0 = nicht vorhanden
@@ -202,9 +201,9 @@ DEFAULTS = {
     "cavity_axial_mm": 2.5,
     "fabric_front_rayl": 0.0,
     "fabric_rear_rayl": 0.0,
-    # Gehäuse & Beugung
+    # Gehäuse & Beugung (34 mm = Kapselkopf-Außen-Ø inkl. Klemmring)
     "diffraction_on": True,
-    "body_diameter_mm": 32.0,
+    "body_diameter_mm": 34.0,
     # Axialer Körper für den Front-Rück-Transfer der Doppelmembran:
     # Kugel (d_ext) = montierte Kapsel (Standard); Sphäroid = frei
     # stehende Scheibe (Referenzfall, Gegenprobe 20); BEM = montagetreue
@@ -226,7 +225,7 @@ DEFAULTS = {
     # Simulation
     "n_points": 400,
     "normalize_1khz": True,
-    "dir_freqs": [100, 1000, 10000],
+    "dir_freqs": [125, 1000, 4000, 8000, 16000],
 }
 
 _FLOAT_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, float)}
@@ -374,6 +373,49 @@ def _load_project():
     except Exception as exc:  # defekte Datei darf die App nicht stoppen
         st.session_state["_load_msg"] = (
             "error", tr("load_fail", exc=exc))
+
+
+# Null-Zustand für den Reset-Button: 0 überall, wo die Widgets 0 zulassen,
+# sonst der KLEINSTE zulässige Widget-Wert (die Kapsel bleibt so baubar
+# und die App rechenfähig). Auswahl- (Material, Architektur, Position,
+# axialer Körper), Modell- (2D/3D, Beugung, Verdrehung) und Simulations-
+# einstellungen (Frequenzpunkte, Normierung, Sprache) bleiben unberührt.
+_ZERO_STATE = {
+    # air_gap 50 statt Widget-Minimum 5 µm: mit der weichsten Membran
+    # (f_res 100 Hz) läge die Pull-in-Spannung sonst unter dem kleinsten
+    # Bias (0.5 V) — der Null-Zustand muss BAUBAR bleiben (U_PI ≈ 1.2 V).
+    "f_res_hz": 100.0, "mem_diameter_mm": 3.0, "mem_thickness_um": 0.5,
+    "mem_tension_npm": 1.0, "air_gap_um": 50.0, "bp_diameter_mm": 2.0,
+    "bp_thickness_mm": 0.2, "bias_v": 0.5, "center_gap_um": 0.0,
+    "d_through_mm": 0.05, "th_stepped": False, "d_blind_mm": 0.05,
+    "blind_depth_mm": 0.05, "clamp_ring_mm": 0.0, "clamp_width_mm": 0.0,
+    "clr_dia_mm": 0.0, "clr_width_mm": 0.0, "clr_depth_mm": 0.0,
+    "rear_enabled": False, "spacer_um": 0.0, "rearplate_mm": 0.0,
+    "n_rearplate": 0, "d_rearplate_mm": 0.05, "delay_mm": 0.0,
+    "cavity_length_mm": 0.0, "cavity_wall_mm": 0.0, "n_cavity": 0,
+    "d_cavity_mm": 0.0, "cavity_axial_mm": 0.0,
+    "fabric_front_rayl": 0.0, "fabric_rear_rayl": 0.0,
+    "body_diameter_mm": 3.0,
+}
+
+
+def _zero_all_params():
+    """Bestätigter Null-Reset (on_click-Callback: läuft VOR dem
+    Widget-Aufbau und darf deren Session-Keys setzen)."""
+    for key, val in _ZERO_STATE.items():
+        st.session_state["p_" + key] = val
+    _set_ring_state("th", [[0, 0.0]])
+    _set_ring_state("bh", [[0, 0.0]])
+    st.session_state["_confirm_reset"] = False
+    st.session_state["_load_msg"] = ("success", tr("reset_done"))
+
+
+def _ask_reset():
+    st.session_state["_confirm_reset"] = True
+
+
+def _cancel_reset():
+    st.session_state["_confirm_reset"] = False
 
 
 def _add_ring(prefix):
@@ -895,6 +937,18 @@ with st.sidebar:
             file_name=tr("project_filename"), mime="application/json",
             width="stretch",
         )
+        # Null-Reset mit Bestätigungsschritt (zweistufig, s. _ZERO_STATE)
+        if not st.session_state.get("_confirm_reset", False):
+            st.button(tr("btn_reset"), key="btn_reset_ask",
+                      width="stretch", on_click=_ask_reset,
+                      help=tr("help_reset"))
+        else:
+            st.warning(tr("reset_confirm"))
+            rc1, rc2 = st.columns(2)
+            rc1.button(tr("btn_reset_yes"), key="btn_reset_yes",
+                       width="stretch", on_click=_zero_all_params)
+            rc2.button(tr("btn_reset_no"), key="btn_reset_no",
+                       width="stretch", on_click=_cancel_reset)
     if "_load_msg" in st.session_state:
         kind, msg = st.session_state.pop("_load_msg")
         (st.success if kind == "success" else st.error)(msg)
