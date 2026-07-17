@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <!-- Gradient for the outer casing -->
+    <linearGradient id="casingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3A4A5A" />
+      <stop offset="100%" stop-color="#1E2A38" />
+    </linearGradient>
+
+    <!-- Gradient for the gold-sputtered diaphragm -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F9D423" />
+      <stop offset="100%" stop-color="#F83600" />
+    </linearGradient>
+
+    <!-- Subtle overlay for the diaphragm to give it a metallic shine -->
+    <linearGradient id="shineGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.1" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0" />
+    </linearGradient>
+
+    <!-- A single row of stylized backplate holes -->
+    <g id="hole-row">
+      <circle cx="250" cy="195" r="5" fill="#B36200" opacity="0.4" />
+      <circle cx="250" cy="165" r="6" fill="#B36200" opacity="0.4" />
+      <circle cx="250" cy="130" r="7" fill="#B36200" opacity="0.4" />
+      <circle cx="250" cy="95" r="8" fill="#B36200" opacity="0.4" />
+    </g>
+
+    <!-- Outer mounting screw -->
+    <g id="screw">
+      <circle cx="250" cy="40" r="7" fill="#7F8C8D" />
+      <circle cx="250" cy="40" r="6" fill="#95A5A6" />
+      <line x1="250" y1="35" x2="250" y2="45" stroke="#2C3E50" stroke-width="1.5" />
+    </g>
+  </defs>
+
+  <!-- Background Drop Shadow -->
+  <circle cx="252" cy="254" r="220" fill="#000000" opacity="0.15" />
+
+  <!-- Outer Casing (Brass/Metal Ring) -->
+  <circle cx="250" cy="250" r="220" fill="url(#casingGrad)" />
+  <circle cx="250" cy="250" r="205" fill="#2C3E50" />
+
+  <!-- Mounting Screws (Rotated around the center) -->
+  <use href="#screw" transform="rotate(0 250 250)" />
+  <use href="#screw" transform="rotate(45 250 250)" />
+  <use href="#screw" transform="rotate(90 250 250)" />
+  <use href="#screw" transform="rotate(135 250 250)" />
+  <use href="#screw" transform="rotate(180 250 250)" />
+  <use href="#screw" transform="rotate(225 250 250)" />
+  <use href="#screw" transform="rotate(270 250 250)" />
+  <use href="#screw" transform="rotate(315 250 250)" />
+
+  <!-- Inner Rim -->
+  <circle cx="250" cy="250" r="185" fill="#BDC3C7" />
+  <circle cx="250" cy="250" r="175" fill="#34495E" />
+
+  <!-- Diaphragm -->
+  <circle cx="250" cy="250" r="170" fill="url(#goldGrad)" />
+  <circle cx="250" cy="250" r="170" fill="url(#shineGrad)" />
+
+  <!-- Backplate Hole Pattern -->
+  <use href="#hole-row" transform="rotate(0 250 250)" />
+  <use href="#hole-row" transform="rotate(30 250 250)" />
+  <use href="#hole-row" transform="rotate(60 250 250)" />
+  <use href="#hole-row" transform="rotate(90 250 250)" />
+  <use href="#hole-row" transform="rotate(120 250 250)" />
+  <use href="#hole-row" transform="rotate(150 250 250)" />
+  <use href="#hole-row" transform="rotate(180 250 250)" />
+  <use href="#hole-row" transform="rotate(210 250 250)" />
+  <use href="#hole-row" transform="rotate(240 250 250)" />
+  <use href="#hole-row" transform="rotate(270 250 250)" />
+  <use href="#hole-row" transform="rotate(300 250 250)" />
+  <use href="#hole-row" transform="rotate(330 250 250)" />
+
+  <!-- Center Lead Wire (Ableitdraht) -->
+  <path d="M 250 250 C 180 290, 110 350, 45 460" fill="none" stroke="#2C3E50" stroke-width="8" stroke-linecap="round" />
+  <!-- Center Lead Wire Highlight -->
+  <path d="M 250 250 C 180 290, 110 350, 45 460" fill="none" stroke="#ECF0F1" stroke-width="2" stroke-linecap="round" opacity="0.8" transform="translate(-1, -2)" />
+
+  <!-- Center Termination (Mittenkontakt) -->
+  <circle cx="250" cy="250" r="18" fill="#ECF0F1" />
+  <circle cx="250" cy="250" r="14" fill="#BDC3C7" />
+  <circle cx="250" cy="250" r="5" fill="#2C3E50" />
+  <line x1="243" y1="243" x2="257" y2="257" stroke="#2C3E50" stroke-width="2" />
+
+</svg>

@@ -20,6 +20,7 @@ Start:  streamlit run app.py
 import datetime as _dt
 import io
 import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,8 @@ from plotly.subplots import make_subplots
 
 from microphone_capsule import MicrophoneCapsule
 from translations import TR, LABEL_TR
+
+_LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo.svg")
 
 # ---------------------------------------------------------------------------
 # Sprache (GUI-Einstellung, KEIN Kapselparameter — bleibt außerhalb der
@@ -70,10 +73,13 @@ def _label_formatter():
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title=tr("page_title"),
-    page_icon="🎙️",
+    page_icon=_LOGO_PATH,
     layout="wide",
     initial_sidebar_state="expanded",
 )
+# Logo oben links im Hauptbereich und in der Seitenleiste (ersetzt das
+# frühere Emoji-Icon); dasselbe Bild dient auch als eingeklapptes Icon.
+st.logo(_LOGO_PATH, icon_image=_LOGO_PATH, size="large")
 
 # Farbrollen (validierte Referenzpalette, hell)
 INK = "#0b0b0b"          # primäre Schrift
@@ -855,7 +861,7 @@ _init_state()
 _heal_canonical_state()   # Selbstheilung nach Sprachwechsel (s. oben)
 
 with st.sidebar:
-    st.title("🎙️ Capsim")
+    st.title("Capsim")
     st.caption(tr("sidebar_caption"))
 
     # ---------------- Sprache / Language -------------------------------
