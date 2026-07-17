@@ -624,33 +624,38 @@ TR = {
         "de": "3D-Feldmodell (diskrete Löcher, r-φ-Sandwich)",
     },
     "help_3d": {
-        "en": "Full (r, φ) field model: all gap films AND both membranes "
+        "en": "Full (r, φ) field model: all gap films AND the membrane(s) "
               "as fields; through and blind holes sit DISCRETELY at their "
               "positions (azimuthal inflow and partially decoupled blind "
               "holes are resolved; damps the internal Helmholtz resonance "
-              "realistically). Only for the dual-diaphragm design with "
-              "through holes. With center gap > 0 the solver computes the "
-              "TWO-PIECE electrode (K67 type): center gap as a third "
-              "film, stepped bores as a two-port chain per hole, "
-              "electrode halves rotated against each other. Takes "
-              "precedence over the 2D switch. CONSIDERABLY slower "
-              "(one-piece ~1–2 s, K67 type up to ~10 s per frequency "
-              "point depending on hole count) — reduce frequency points!",
+              "realistically). All architectures with through holes: "
+              "single/dual route the discrete holes into a manifold node "
+              "terminated by the same lumped rear assembly as 1D/2D "
+              "(spacer/rear plate, delay line, cavity). Dual diaphragm "
+              "with center gap > 0 computes the TWO-PIECE electrode (K67 "
+              "type): center gap as a third film, stepped bores as a "
+              "two-port chain per hole, electrode halves rotated against "
+              "each other. Takes precedence over the 2D switch. "
+              "CONSIDERABLY slower (~1–2 s, K67 type up to ~10 s per "
+              "frequency point) — reduce frequency points!",
         "de": "Volles (r, φ)-Feldmodell: alle Spaltfilme UND "
-              "beide Membranen als Felder, Durchgangs- und "
+              "die Membran(en) als Felder, Durchgangs- und "
               "Sacklöcher sitzen DISKRET an ihren Positionen "
               "(azimutale Zuströmung und teilentkoppelte Sack-"
               "löcher werden aufgelöst; bedämpft die interne "
-              "Helmholtz-Resonanz realistisch). Nur für die "
-              "Doppelmembran-Bauform mit Durchgangslöchern. "
-              "Bei Mittelabstand > 0 rechnet der Löser die "
-              "ZWEITEILIGE Elektrode (K67-Typ): Zwischenspalt "
-              "als dritter Film, Stufenbohrungen als Zweitor-"
-              "Kette je Loch, Elektrodenhälften gegeneinander "
-              "verdreht. Hat Vorrang vor dem 2D-Schalter. "
-              "DEUTLICH langsamer (einteilig ~1–2 s, K67-Typ "
-              "je nach Lochzahl bis ~10 s je Frequenzpunkt) — "
-              "Frequenzpunkte reduzieren!",
+              "Helmholtz-Resonanz realistisch). Alle Bauformen "
+              "mit Durchgangslöchern: single/dual führen die "
+              "diskreten Löcher in einen Sammelknoten, dessen "
+              "Abschluss dieselbe Lumped-Rückbaugruppe wie bei "
+              "1D/2D bildet (Spacer/Rückplatte, Laufzeitglied, "
+              "Hohlraum). Doppelmembran mit Mittelabstand > 0 "
+              "rechnet die ZWEITEILIGE Elektrode (K67-Typ): "
+              "Zwischenspalt als dritter Film, Stufenbohrungen "
+              "als Zweitor-Kette je Loch, Elektrodenhälften "
+              "gegeneinander verdreht. Hat Vorrang vor dem "
+              "2D-Schalter. DEUTLICH langsamer (~1–2 s, K67-Typ "
+              "bis ~10 s je Frequenzpunkt) — Frequenzpunkte "
+              "reduzieren!",
     },
     "lbl_rot_auto": {
         "en": "Half rotation automatic (half hole pitch)",

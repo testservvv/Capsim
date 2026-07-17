@@ -208,9 +208,9 @@ DEFAULTS = {
     "bem_body_gap_mm": 15.0,
     "bem_body_len_mm": 80.0,
     # Spaltfilm-Modell (Debenham braucht 2D für die tiefe Niere;
-    # 3D = diskrete Löcher; center_gap > 0 -> K67-Modus: Zwischenspalt
-    # als dritter Film, Stufenbohrungen als Zweitor-Kette, Elektroden-
-    # hälften gegeneinander verdreht — Gegenprobe 22)
+    # 3D = diskrete Löcher, alle Architekturen: dual_diaphragm mit
+    # center_gap > 0 als K67-Modus (Gegenprobe 22), single/dual über
+    # Sammelknoten + Lumped-Rückbaugruppe (Gegenprobe 23))
     "squeeze_2d": True,
     "squeeze_3d": False,
     # Verdrehung der Elektrodenhälften (nur 3D-K67-Modus): automatisch =

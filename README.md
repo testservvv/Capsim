@@ -54,17 +54,29 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   liefert den glatten Präsenzpeak der echten Kapsel — bei gleicher
   Niere (Null bei 180°). Reziprok und passiv (im Test geprüft).
   Braucht SciPy.
-- **3D:** volles (r, φ)-Sandwich der durchbohrten Doppelmembran-
-  Elektrode: alle Spaltfilme UND beide Membranen als Felder, Durchgangs-
-  und Sacklöcher **diskret** an ihren Positionen (Azimutwinkel als
-  dokumentierte Konvention, da nicht gezeichnet). Zwei Bauformen:
+- **3D:** volles (r, φ)-Sandwich der durchbohrten Elektrode(n): alle
+  Spaltfilme UND die Membran(en) als Felder, Durchgangs- und Sacklöcher
+  **diskret** an ihren Positionen (Azimutwinkel als dokumentierte
+  Konvention, da nicht gezeichnet). Bauformen der Doppelmembran:
   die **einteilige** Elektrode (Debenham-Typ, `center_gap = 0`, zwei
   Filme) und seit Gegenprobe 22 die **zweiteilige** Elektrode (K67-Typ,
   `center_gap > 0`): der Zwischenspalt wird als dritter Reynolds-Film
   gerechnet, Stufenbohrungen als Zweitor-Kette je Loch (Senkung als
   Leitungsstück + Karal-Stufe + enger Kern), und die Elektrodenhälften
   sind gegeneinander **verdreht** (`half_rotation_deg`, Standard eine
-  halbe Lochteilung 180°/n wie an der realen K67). Der Löser löst die
+  halbe Lochteilung 180°/n wie an der realen K67). Seit Gegenprobe 23
+  rechnet der Löser auch **single/dual**: ein Membranfeld, ein Film je
+  Backplate; die Durchgangslöcher münden als Zweitor-Ketten in einen
+  **Sammelknoten**, dessen Abschluss die baugleiche Lumped-Kette des
+  1D/2D-Pfads bildet (Spacer/Rückplatte, Gewebe, Laufzeitglied,
+  Hohlraum; vorn Strahlung + Gewebe). Verankert über exakte
+  Port-Reziprozität (Maschinengenauigkeit), den K103-dicht-Grenzfall
+  (3D ≡ 1D auf wenige %), die geschlossene Rückseite (exakte Kugel,
+  Betrag UND Phase == 1D — die 3D-Ausgänge folgen seither der
+  Ketten-Vorzeichenkonvention aller Modelle) und die
+  D_r-Übereinstimmung mit 2D (~1 %); die absolute Empfindlichkeit
+  trägt die dokumentierte Membranfeld-Klasse (±2–3 dB), das
+  PfadVERHÄLTNIS (Pattern) ist robust. Der Löser löst die
   azimutale Zuströmung zu den einzelnen Bohrungen und die dadurch
   teilentkoppelten Sacklöcher auf — bedämpft die interne
   Helmholtz-Resonanz realistisch und macht die Mündungs-Engstellen der

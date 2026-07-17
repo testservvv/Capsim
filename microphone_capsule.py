@@ -554,22 +554,29 @@ class MicrophoneCapsule:
         if sm not in ("1d", "2d", "3d"):
             raise ValueError("squeeze_model muss '1d', '2d' oder '3d' sein.")
         if sm == "3d":
-            # Der 3D-(r,phi)-Löser rechnet das komplette Sandwich der
-            # Doppelmembran-Bauform mit DISKRETEN Löchern. Zwei Moden:
-            #   * center_gap = 0: einteilige durchbohrte Elektrode
+            # Der 3D-(r,phi)-Löser rechnet das Sandwich der durchbohrten
+            # Elektrode(n) mit DISKRETEN Löchern. Moden:
+            #   * dual_diaphragm, center_gap = 0: einteilige Elektrode
             #     (Debenham-Typ, 2 Filme) — der ursprüngliche Löser;
-            #   * center_gap > 0: ZWEI Elektrodenhälften mit Zwischen-
-            #     spalt als drittem Reynolds-Film (K67-Typ), eigene,
-            #     gegeneinander um half_rotation_deg VERDREHTE Loch-
-            #     bilder je Hälfte, Stufenbohrungen als Zweitor-Kette
-            #     je Loch (Gegenprobe 22).
-            if self.architecture != "dual_diaphragm":
-                raise ValueError("squeeze_model='3d' erfordert die "
-                                 "Doppelmembran-Bauform (dual_diaphragm).")
-            if self.stepped and self.h_center <= 0.0:
+            #   * dual_diaphragm, center_gap > 0: ZWEI Elektrodenhälften
+            #     mit Zwischenspalt als drittem Reynolds-Film (K67-Typ),
+            #     eigene, um half_rotation_deg VERDREHTE Lochbilder je
+            #     Hälfte, Stufenbohrungen als Zweitor-Kette je Loch
+            #     (Gegenprobe 22);
+            #   * single: EIN Film + EIN Membranfeld; die Durchgangs-
+            #     löcher münden in einen SAMMELKNOTEN, dessen Abschluss
+            #     die rückwärtige Baugruppe (Spacer/Rückplatte, Gewebe,
+            #     Laufzeitglied, Hohlraum) als Lumped-Kette bildet
+            #     (Gegenprobe 23);
+            #   * dual: ZWEI Filme um das Membranfeld; je Backplate ein
+            #     eigener Sammelknoten (vorn: Gewebe+Strahlung, hinten:
+            #     rückwärtige Baugruppe).
+            if self.architecture == "dual_diaphragm" and self.stepped \
+                    and self.h_center <= 0.0:
                 raise ValueError("squeeze_model='3d' mit Stufenbohrung "
-                                 "erfordert center_gap > 0 (zwei "
-                                 "Elektrodenhälften, K67-Typ).")
+                                 "erfordert bei der Doppelmembran-Bauform "
+                                 "center_gap > 0 (zwei Elektrodenhälften, "
+                                 "K67-Typ).")
             if self.n_th <= 0:
                 raise ValueError("squeeze_model='3d' erfordert "
                                  "Durchgangslöcher.")
@@ -2168,8 +2175,8 @@ class MicrophoneCapsule:
         """Einmalige Gitter-/Lochgeometrie für ``squeeze_model='3d'``.
 
         Das 3D-Modell löst das komplette Sandwich der durchbohrten
-        Elektrode als EIN gekoppeltes Feldproblem auf einem
-        (r, phi)-Gitter. Zwei Bauformen:
+        Elektrode(n) als EIN gekoppeltes Feldproblem auf einem
+        (r, phi)-Gitter. Bauformen der Doppelmembran-Architektur:
 
         * ``center_gap = 0`` (einteilig, Debenham-Typ, 2 Filme):
 
@@ -2193,6 +2200,17 @@ class MicrophoneCapsule:
           Bohrungen nicht zueinander zeigen) — ausgerichtete Löcher
           (0°) kurzschließen den Phasenschieber durch den Spalt,
           s. Gegenprobe 22.
+
+        SINGLE/DUAL (Gegenprobe 23): EIN Membranfeld; je Backplate ein
+        Film, dessen Durchgangslöcher als Zweitor-Ketten in einen
+        SAMMELKNOTEN münden. Die Knoten-Abschlüsse sind die baugleichen
+        Lumped-Ketten des 1D/2D-Pfads: hinten die rückwärtige Baugruppe
+        (_rear_chain_mats: Spacer/Rückplatte, Gewebe, Laufzeitglied,
+        Hohlraum, Einlasslöcher), vorn Strahlung + Gewebe vor der
+        Membran (single: Frontknoten über der Membranfläche, Grenzfall
+        Z -> 0 = direkter Quelldruck; dual: vor der vorderen Backplate).
+        Die 3D-Ausgänge folgen der Ketten-Flussrichtung (Vorzeichen wie
+        1D/2D, s. _solve_3d) — H ist über alle Modelle phasengleich.
 
         Gegenüber dem axialsymmetrischen 2D-Modell fällt damit die
         Homogenisierung der Löcher weg: Durchgangs- und Sacklöcher sitzen
@@ -2294,31 +2312,60 @@ class MicrophoneCapsule:
                         out.append((int(c_k), float(r_k)))
             return out
 
-        # Filmzahl: 2 (einteilige Elektrode) oder 3 (K67: Zwischenspalt
-        # als eigener Reynolds-Film zwischen den Hälften)
-        n_films = 3 if self.h_center > 0.0 else 2
+        # Architektur-Layout des DOF-Vektors:
+        #   [Filme n_films·NF][Membranfelder n_mem·NM][Sammelknoten]
+        # dual_diaphragm: 2 Membranen, 2 Filme (einteilig) bzw. 3 (K67:
+        #   Zwischenspalt), keine Knoten — Quellen wirken auf die Membranen.
+        # single: 1 Membran, 1 Film; Knoten 0 = Frontvolumen (Strahlung +
+        #   Gewebe vor der Membran), Knoten 1 = Sammelknoten hinter den
+        #   Durchgangslöchern (Abschluss: _rear_chain_mats).
+        # dual: 1 Membran zwischen 2 Filmen; Knoten 0 = Frontknoten hinter
+        #   der vorderen Backplate (Gewebe + Strahlung -> p_front),
+        #   Knoten 1 = Sammelknoten hinter der hinteren Backplate.
+        arch = self.architecture
+        if arch == "dual_diaphragm":
+            n_films = 3 if self.h_center > 0.0 else 2
+            n_mem, n_nodes = 2, 0
+        elif arch == "dual":
+            n_films, n_mem, n_nodes = 2, 1, 2
+        else:                                        # single
+            n_films, n_mem, n_nodes = 1, 1, 2
         rot = self.half_rotation_deg
+        # Membranseitige Mündung: bei Stufenbohrung die WEITE Senkung
+        r_mouth = self.r_bh if self.stepped else self.r_th
         th_rings_l = _ring_list(self._th_rings, self.n_th)
-        if n_films == 2:
+        th_cells = None
+        th_f = th_r = th_cf = th_cr = None
+        if arch == "dual_diaphragm" and n_films == 2:
             # Einteilige Platte: Durchgangsloch verbindet beide Filme an
             # DENSELBEN Zellen; Rück-Sacklöcher nach alter Konvention.
             th_cells = []
             for m, (cnt, rr) in enumerate(th_rings_l):
                 th_cells += _foot(rr, cnt, 20.0 * m, self.r_th)
-            th_f = th_r = th_cf = th_cr = None
-        else:
+        elif arch == "dual_diaphragm":
             # K67: je Hälfte ein eigenes Lochbild; die Rückhälfte ist
             # GLOBAL um rot verdreht. Membranseitig mündet (bei Stufen-
             # bohrung) die WEITE Senkung, zwischenspaltseitig der enge
             # Kern.
-            r_mouth = self.r_bh if self.stepped else self.r_th
             th_f, th_cf, th_r, th_cr = [], [], [], []
             for m, (cnt, rr) in enumerate(th_rings_l):
                 th_f += _foot(rr, cnt, 20.0 * m, r_mouth)
                 th_cf += _foot(rr, cnt, 20.0 * m, self.r_th)
                 th_r += _foot(rr, cnt, 20.0 * m + rot, r_mouth)
                 th_cr += _foot(rr, cnt, 20.0 * m + rot, self.r_th)
-            th_cells = None
+        elif arch == "dual":
+            # zwei getrennte Platten: eigene Lochbilder, hinten um eine
+            # halbe Teilung versetzt (keine direkte Kopplung der Filme,
+            # der Versatz ist nur Konvention wie bei den Sacklöchern)
+            th_f, th_r = [], []
+            for m, (cnt, rr) in enumerate(th_rings_l):
+                th_f += _foot(rr, cnt, 20.0 * m, r_mouth)
+                th_r += _foot(rr, cnt,
+                              20.0 * m + 180.0 / max(cnt, 1), r_mouth)
+        else:                                        # single
+            th_f = []
+            for m, (cnt, rr) in enumerate(th_rings_l):
+                th_f += _foot(rr, cnt, 20.0 * m, r_mouth)
         bhf_cells = []
         bhr_cells = []
         for m, (cnt, rr) in enumerate(_ring_list(self._bh_rings, self.n_bh)):
@@ -2327,9 +2374,10 @@ class MicrophoneCapsule:
             bhr_cells += _foot(rr, cnt, 15.0 + 20.0 * m + bh_rot,
                                self.r_bh)
 
-        # Statische COO-Anteile: Membran-Spannungsoperator (beidseitig,
-        # eingespannter Rand) + Feder-Erweichung (nur Front, Elektroden-
-        # bereich). Alle übrigen Einträge sind frequenzabhängig.
+        # Statische COO-Anteile: Membran-Spannungsoperator (eingespannter
+        # Rand) + Feder-Erweichung (polarisierte Membran, Elektroden-
+        # bereich) + Druckkopplungen. Alle übrigen Einträge sind
+        # frequenzabhängig.
         rows = []
         cols = []
         vals = []
@@ -2360,29 +2408,64 @@ class MicrophoneCapsule:
                     vals.extend((-Gp, -Gp, Gp, Gp))
 
         off_wf = n_films * NF
-        off_wr = n_films * NF + NM
+        off_wr = n_films * NF + NM                   # nur n_mem = 2
+        off_n = n_films * NF + n_mem * NM            # Sammelknoten
         _lap(off_wf, T_mem)
-        _lap(off_wr, T_mem)
-        for i in range(Nr):                          # Erweichung nur vorn
+        if n_mem == 2:
+            _lap(off_wr, T_mem)
+        for i in range(Nr):        # Erweichung: polarisierte (Front-)Membran
             for j in range(Np_):
                 k1_ = off_wf + i * Np_ + j
                 rows.append(k1_)
                 cols.append(k1_)
                 vals.append(-kappa * A_m[i])
-        # Druckkopplung Membranzeilen (omega-unabhängig): vorn -p_f, hinten +p_r
-        for i in range(Nr):
-            for j in range(Np_):
-                rows.append(off_wf + i * Np_ + j)
-                cols.append(i * Np_ + j)
-                vals.append(-A_f[i])
-                rows.append(off_wr + i * Np_ + j)
-                cols.append(NF + i * Np_ + j)
-                vals.append(+A_f[i])
+        # Druckkopplung Membranzeilen (omega-unabhängig)
+        if arch == "dual_diaphragm":
+            # Frontmembran: -p_film0; Rückmembran: +p_film1 (Quelle p_front/
+            # p_rear wirkt als rhs direkt auf die Membranaußenseiten)
+            for i in range(Nr):
+                for j in range(Np_):
+                    rows.append(off_wf + i * Np_ + j)
+                    cols.append(i * Np_ + j)
+                    vals.append(-A_f[i])
+                    rows.append(off_wr + i * Np_ + j)
+                    cols.append(NF + i * Np_ + j)
+                    vals.append(+A_f[i])
+        elif arch == "dual":
+            # Mittelmembran zwischen den Filmen, w positiv = nach VORN
+            # (Film 0 liegt VOR der Membran und drückt sie nach hinten,
+            # Film 1 dahinter nach vorn) — Vorzeichen gespiegelt zur
+            # Frontmembran der Doppelmembran-Bauform, deren Film HINTER
+            # ihr liegt. Kraft ~ (p_film0 − p_film1) in Rückrichtung.
+            for i in range(Nr):
+                for j in range(Np_):
+                    rows.append(off_wf + i * Np_ + j)
+                    cols.append(i * Np_ + j)
+                    vals.append(+A_f[i])
+                    rows.append(off_wf + i * Np_ + j)
+                    cols.append(NF + i * Np_ + j)
+                    vals.append(-A_f[i])
+        else:                                        # single
+            # Film hinter der Membran: -p_film0; Vorderseite sieht den
+            # FRONTKNOTEN (Strahlung + Gewebe -> p_front): +p_node über die
+            # GESAMTE Membranfläche (Grenzfall Z_front -> 0: p_node = p_front
+            # reproduziert exakt den direkten Quelldruck).
+            for i in range(Nr):
+                for j in range(Np_):
+                    rows.append(off_wf + i * Np_ + j)
+                    cols.append(i * Np_ + j)
+                    vals.append(-A_f[i])
+            for i in range(Nr_m):
+                for j in range(Np_):
+                    rows.append(off_wf + i * Np_ + j)
+                    cols.append(off_n + 0)
+                    vals.append(+A_m[i])
 
         self._g3d = dict(
             Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, dphi=dphi,
             r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM,
-            n_films=n_films, sigma=sigma, T_mem=T_mem, kappa=kappa,
+            arch=arch, n_films=n_films, n_mem=n_mem, n_nodes=n_nodes,
+            sigma=sigma, T_mem=T_mem, kappa=kappa,
             th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
             th_f=th_f, th_cf=th_cf, th_r=th_r, th_cr=th_cr,
             static=(np.array(rows), np.array(cols),
@@ -2425,11 +2508,18 @@ class MicrophoneCapsule:
         idx_all = np.arange(NF)
         i_of = idx_all // Np_
         srows, scols, svals = g["static"]
-        n_films = g["n_films"]
+        arch = g["arch"]
+        n_films, n_mem, n_nodes = g["n_films"], g["n_mem"], g["n_nodes"]
         off_w = n_films * NF
-        N_tot = n_films * NF + 2 * NM
-        # Ausgangs- (Elektrodenbereich) und Anregungs-Gewichte (Vollfläche)
-        w_out = np.repeat(A_f, Np_)
+        off_n = off_w + n_mem * NM
+        N_tot = off_n + n_nodes
+        # Ausgangs- (Elektrodenbereich) und Anregungs-Gewichte (Vollfläche).
+        # Vorzeichen: die interne w-Konvention (positiv = von der Elektrode
+        # weg) ist der 1D/2D-Flussrichtung (q_mem front -> rück) entgegen-
+        # gesetzt; das Minus richtet die 3D-Ausgänge an der Kettenkonvention
+        # aus, sodass H über alle Modelle phasengleich ist (Beträge und das
+        # Verhältnis D_r = −X_f/X_r sind davon unberührt).
+        w_out = -np.repeat(A_f, Np_)
         rhs_w = np.repeat(A_m, Np_)
 
         def _two_port_stamp(rows, cols, vals, ca, offa, cb, offb,
@@ -2453,9 +2543,23 @@ class MicrophoneCapsule:
             cols.append(np.tile(aa, nb))
             vals.append(np.full(na * nb, Y12 / (na * nb), dtype=complex))
 
-        sides = [(0, self.h_gap_front, True), (1, self.h_gap, True)]
-        if n_films == 3:
-            sides.append((2, self.h_center, False))
+        # Filmliste: (Filmindex, Spalthöhe, Membran-Offset|None, Vorzeichen
+        # der Membranquelle im Filmring). dual_diaphragm: Film 0/1 gehören
+        # zu Front-/Rückmembran, Film 2 (K67) ist der membranlose
+        # Zwischenspalt. single/dual: alle Filme koppeln an DIE Membran
+        # (off_w) — bei 'dual' mit entgegengesetztem Vorzeichen beidseits.
+        if arch == "dual_diaphragm":
+            sides = [(0, self.h_gap_front, off_w, +1.0),
+                     (1, self.h_gap, off_w + NM, -1.0)]
+            if n_films == 3:
+                sides.append((2, self.h_center, None, 0.0))
+        elif arch == "dual":
+            # w positiv = nach vorn: komprimiert den VORDEREN Film (−jw
+            # analog zur Rückmembran der K67-Bauform), dehnt den hinteren
+            sides = [(0, self.h_gap_front, off_w, -1.0),
+                     (1, self.h_gap_front, off_w, +1.0)]
+        else:                                        # single
+            sides = [(0, self.h_gap_front, off_w, +1.0)]
 
         for fidx, om in enumerate(omega):
             rows = [srows]
@@ -2463,8 +2567,9 @@ class MicrophoneCapsule:
             vals = [svals]
             # Filmringe (Membranseiten ggf. mit Clearance-Relief; der
             # Zwischenspalt ist eben und hat weder Relief noch Membran)
-            for side, h0, mem_side in sides:
+            for side, h0, mem_off, sgn in sides:
                 off = side * NF
+                mem_side = mem_off is not None
                 h_ring = h0 + (self._clr_relief if mem_side else 0.0)
                 K = np.empty(Nr, dtype=complex)
                 cg = np.empty(Nr, dtype=complex)
@@ -2495,11 +2600,9 @@ class MicrophoneCapsule:
                 vals += [1j * om * np.repeat(cg * A_f, Np_)]
                 if not mem_side:
                     continue
-                # Membranquelle (+jw vorn, -jw hinten)
-                sgn = 1.0 if side == 0 else -1.0
-                woff = off_w + side * NM
+                # Membranquelle im Filmring
                 rows += [off + idx_all]
-                cols += [woff + idx_all]
+                cols += [mem_off + idx_all]
                 vals += [sgn * 1j * om * np.repeat(A_f, Np_)]
                 # Clearance-Ring als Schlitz-Stub (schmaler Ring)
                 if self._clr_stub_cell is not None:
@@ -2515,7 +2618,106 @@ class MicrophoneCapsule:
                     cols += [off + cells]
                     vals += [np.full(Np_, y_st, dtype=complex)]
             om_a = np.array([om])
-            if n_films == 2:
+            if arch != "dual_diaphragm":
+                # ---- single/dual: Löcher in die Sammelknoten, Knoten-
+                # Abschlüsse aus den Lumped-Ketten -----------------------
+                # Loch-Zweitor Membranfilm -> Knoten. Membranseitige
+                # Mündung löst der Film auf; die knotenseitige trägt
+                # Fok-Mündungsmasse + viskose Mündung (visc_ends=1), wie
+                # im 1D-Pfad (_through_hole_impedance) abzüglich des
+                # filmseitigen Flanschterms.
+                S_th = np.pi * self.r_th ** 2
+                vents_directly = not self.rear_network_enabled
+                if self.stepped:
+                    gcb, Zccb = self._narrow_duct_propagation(om_a,
+                                                              self.r_bh)
+                    gl = gcb[0] * self.d_bh
+                    ch, sh = np.cosh(gl), np.sinh(gl)
+                    A2, B2 = ch, Zccb[0] * sh
+                    C2, D2 = sh / Zccb[0], ch
+                    karal = 1.0 - self.r_th / self.r_bh
+                    Z_step = (1j * om * RHO0 * 0.85 * self.r_th * karal
+                              / S_th
+                              + self._hole_impedance(
+                                  om_a, self.r_th,
+                                  (3.0 * np.pi / 16.0) * self.r_th, 1,
+                                  end_correction=False)[0].real * karal)
+                    Z_core = self._hole_impedance(om_a, self.r_th,
+                                                  self.t_th_eff, 1,
+                                                  end_correction=False,
+                                                  visc_ends=1)[0]
+                    Zs = (Z_step + Z_core
+                          + 1j * om * RHO0 * 0.85 * self.r_th
+                          * self._fok_th / S_th)
+                    A1, B1 = A2, A2 * Zs + B2
+                    C1, D1 = C2, C2 * Zs + D2
+                else:
+                    Zs = (self._hole_impedance(om_a, self.r_th, self.t_bp,
+                                               1, end_correction=False,
+                                               visc_ends=1)[0]
+                          + 1j * om * RHO0 * 0.85 * self.r_th
+                          * self._fok_th / S_th)
+                    A1, B1, C1, D1 = 1.0, Zs, 0.0, 1.0
+                Y11 = D1 / B1
+                Y22 = A1 / B1
+                Y12 = -1.0 / B1
+                node1 = np.array([0])
+                # single: Film 0 -> Knoten 1 (Rückseite); dual: Film 0 ->
+                # Knoten 0 (Front), Film 1 -> Knoten 1 (Rückseite)
+                if arch == "single":
+                    for cf in g["th_f"]:
+                        _two_port_stamp(rows, cols, vals, cf, 0,
+                                        node1, off_n + 1, Y11, Y12, Y22)
+                else:
+                    for cf in g["th_f"]:
+                        _two_port_stamp(rows, cols, vals, cf, 0,
+                                        node1, off_n + 0, Y11, Y12, Y22)
+                    for cr_ in g["th_r"]:
+                        _two_port_stamp(rows, cols, vals, cr_, NF,
+                                        node1, off_n + 1, Y11, Y12, Y22)
+                # Frontknoten-Abschluss: single = Strahlung + Gewebe VOR
+                # der Membran (Grenzfall Z -> 0: p_node = p_front); dual =
+                # dieselbe Kette vor der vorderen Backplate.
+                Z_fr = (self._radiation_impedance_membrane(om_a)[0]
+                        + self.rayl_front / self.S_mem)
+                rows += [np.array([off_n + 0])]
+                cols += [np.array([off_n + 0])]
+                vals += [np.array([1.0 / Z_fr], dtype=complex)]
+                if arch == "single":
+                    # Membran-Volumenfluss zieht am Frontknoten
+                    midx_n = off_w + np.arange(NM)
+                    rows += [np.full(NM, off_n + 0)]
+                    cols += [midx_n]
+                    vals += [-1j * om * rhs_w.astype(complex)]
+                # Rückknoten-Abschluss: Lumped-Kette hinter den Löchern
+                # (baugleich zum 1D/2D-Pfad); mündet die Platte direkt ins
+                # Schallfeld, kommt die Array-Strahlung der Lochmündungen
+                # als Serie hinzu (im 1D-Pfad steckt sie je Loch in
+                # _through_hole_impedance).
+                mats = self._rear_chain_mats(om_a)
+                if vents_directly:
+                    S_holes = self.n_th * S_th
+                    Z_rad_h = (RHO0 * C_AIR / S_holes) * min(
+                        (om / C_AIR * self.r_th) ** 2 / 2.0, 1.0)
+                    mats = [self._abcd_series(
+                        np.full(1, Z_rad_h, dtype=complex), om_a)] + mats
+                if mats:
+                    T_b = reduce(self._mmul, mats)
+                    Ab, Bb = complex(T_b[0, 0][0]), complex(T_b[0, 1][0])
+                    Cb, Db = complex(T_b[1, 0][0]), complex(T_b[1, 1][0])
+                else:
+                    Ab, Bb, Cb, Db = 1.0, 0.0, 0.0, 1.0
+                if self.rear_open and abs(Bb) > 0.0:
+                    y_bk, src_bk = Db / Bb, 1.0 / Bb
+                elif self.rear_open:
+                    # leere Kette: Knoten liegt direkt am Schallfeld
+                    y_bk, src_bk = 1e12, 1e12
+                else:
+                    y_bk, src_bk = Cb / Ab, 0.0
+                rows += [np.array([off_n + 1])]
+                cols += [np.array([off_n + 1])]
+                vals += [np.array([y_bk], dtype=complex)]
+            elif n_films == 2:
                 # Einteilige Platte: Rohr durch die volle Dicke verbindet
                 # beide Filme an denselben Fußabdruck-Zellen.
                 Zth = self._hole_impedance(om_a, self.r_th,
@@ -2574,7 +2776,9 @@ class MicrophoneCapsule:
             if self.n_bh > 0:
                 ybh = 1.0 / self._closed_hole_stub(om_a, self.r_bh,
                                                    self.d_bh)[0]
-                for side, bl in ((0, g["bhf_cells"]), (1, g["bhr_cells"])):
+                bh_sides = (((0, g["bhf_cells"]),) if arch == "single"
+                            else ((0, g["bhf_cells"]), (1, g["bhr_cells"])))
+                for side, bl in bh_sides:
                     off = side * NF
                     for cells in bl:
                         yv = np.full(cells.size, ybh / cells.size,
@@ -2586,7 +2790,8 @@ class MicrophoneCapsule:
             mterm = (-om ** 2 * g["sigma"]
                      * (1.0 - 1j / self._Q_MEMBRANE_INTERNAL))
             midx = np.arange(NM)
-            for woff in (off_w, off_w + NM):
+            for m_i in range(n_mem):
+                woff = off_w + m_i * NM
                 rows += [woff + midx]
                 cols += [woff + midx]
                 vals += [mterm * rhs_w]
@@ -2596,15 +2801,36 @@ class MicrophoneCapsule:
                 shape=(N_tot, N_tot)).tocsc()
             lu = splu(S)
             rhs = np.zeros((N_tot, 2), dtype=complex)
-            rhs[off_w:off_w + NM, 0] = -rhs_w        # p_front = 1
-            rhs[off_w + NM:, 1] = +rhs_w             # p_rear  = 1
+            if arch == "dual_diaphragm":
+                rhs[off_w:off_w + NM, 0] = -rhs_w    # p_front = 1
+                rhs[off_w + NM:off_n, 1] = +rhs_w    # p_rear  = 1
+            elif arch == "dual":
+                rhs[off_n + 0, 0] = 1.0 / Z_fr       # p_front am Frontknoten
+                rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
+            else:                                    # single
+                rhs[off_n + 0, 0] = 1.0 / Z_fr       # p_front am Frontknoten
+                rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
             x = lu.solve(rhs)
             wf = x[off_w:off_w + NF, :]              # Elektrodenbereich
-            wr = x[off_w + NM:off_w + NM + NF, :]
             Xf[fidx] = np.sum(w_out[:, None] * wf, axis=0)[0]
             Xr[fidx] = np.sum(w_out[:, None] * wf, axis=0)[1]
-            Bf[fidx] = np.sum(w_out[:, None] * wr, axis=0)[0]
-            Br[fidx] = np.sum(w_out[:, None] * wr, axis=0)[1]
+            if arch == "dual_diaphragm":
+                wr = x[off_w + NM:off_w + NM + NF, :]
+                Bf[fidx] = np.sum(w_out[:, None] * wr, axis=0)[0]
+                Br[fidx] = np.sum(w_out[:, None] * wr, axis=0)[1]
+            else:
+                # Reziprozitäts-Diagnose der akustischen Zweitor-Ports
+                # (Flüsse IN das Netzwerk an den Quell-Terminals):
+                # Y21 = q_rück(p_front = 1) = −q_port = −p_knoten/B und
+                # Y12 = q_front(p_rück = 1) = (0 − p_node)/Z_front
+                # müssen übereinstimmen.
+                p_n = x[off_n + 0, :]
+                p_m = x[off_n + 1, :]
+                q_rear_pf = -p_m[0] / Bb if abs(Bb) > 0 else 0.0
+                q_front_pr = -p_n[1] / Z_fr
+                self._recip_3d = (complex(q_rear_pf), complex(q_front_pr))
+                Bf[fidx] = Xf[fidx]
+                Br[fidx] = Xr[fidx]
         if want_rear:
             return Xf, Xr, Bf, Br
         return Xf, Xr
@@ -3164,21 +3390,37 @@ class MicrophoneCapsule:
         rear = [self._backplate_gap_abcd(omega, outside_to_membrane=False,
                                          holes_radiate=vents_directly,
                                          polarized=True)]
+        # geschlossene Backplate (n_th = 0): Port unmittelbar blockiert —
+        # _rear_chain_mats liefert dann eine leere Liste
+        rear += self._rear_chain_mats(omega)
+        T_rear = reduce(self._mmul, rear)
+        T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
+        return T_total, T_rear
 
+    def _rear_chain_mats(self, omega):
+        """Ketten-Elemente HINTER den Backplate-Durchgangslöchern.
+
+        Alles vom Loch-Austritt bis zum rückwärtigen Port: Spacer +
+        Rückplatte (K103), Gewebe, Laufzeitglied, Hohlraum, Einlass-
+        löcher. Geteilt zwischen dem 1D/2D-Kettenpfad
+        (:meth:`_assemble_network`) und dem 3D-Löser, der diese Kette
+        als Lumped-Abschluss an seinem SAMMELKNOTEN hinter den diskreten
+        Löchern nutzt — so bleiben beide Pfade baugleich. In den
+        "blockiert"-Fällen (geschlossene Backplate, Rückplatte ohne
+        Löcher, geschlossene Rückseite) endet die Liste einfach früher;
+        die Abschlussbedingung (q_port = 0) trägt ``rear_open``.
+        """
+        mats = []
         if self.n_th == 0:
-            # geschlossene Backplate: Port unmittelbar blockiert
-            # (Gewebe/Laufzeitglied/Hohlraum sind akustisch unerreichbar)
-            T_rear = reduce(self._mmul, rear)
-            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
-            return T_total, T_rear
+            # geschlossene Backplate: Gewebe/Laufzeitglied/Hohlraum sind
+            # akustisch unerreichbar
+            return mats
 
-        if vents_directly:
+        if not self.rear_network_enabled:
             # kein Laufzeitglied/Hohlraum: Gewebe liegt über den Öffnungen,
             # Port = rückwärtiges Schallfeld
-            rear.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
-            T_rear = reduce(self._mmul, rear)
-            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
-            return T_total, T_rear
+            mats.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
+            return mats
 
         # ------- Spacer + massive Rückplatte (K103-Bauform) ----------------
         # Dünner Distanzspalt hinter der Backplate; die Strömung tritt über
@@ -3190,24 +3432,22 @@ class MicrophoneCapsule:
             Y_sp = self._film_compliance_Y(omega, self.h_sp, self.S_bp)
             phi_sp = self._film_R_dynamic(omega, self.h_sp)
             if plate and self.n_rp > 0:
-                rear.append(self._abcd_series(self.R_A_sp_in * phi_sp,
+                mats.append(self._abcd_series(self.R_A_sp_in * phi_sp,
                                               omega))
-                rear.append(self._abcd_shunt(Y_sp, omega))
-                rear.append(self._abcd_series(self.R_A_sp_out * phi_sp,
+                mats.append(self._abcd_shunt(Y_sp, omega))
+                mats.append(self._abcd_series(self.R_A_sp_out * phi_sp,
                                               omega))
             else:
                 # ohne (gelochte) Rückplatte wirkt der Spacer nur als
                 # zusätzliches Luftvolumen (axialer Durchtritt, kein
                 # nennenswerter lateraler Widerstand)
-                rear.append(self._abcd_shunt(Y_sp, omega))
+                mats.append(self._abcd_shunt(Y_sp, omega))
         if plate:
             if self.n_rp == 0:
                 # Rückplatte ohne Löcher: Rückseite hier verschlossen —
                 # alles Dahinterliegende ist akustisch unerreichbar
                 # (rear_open=False blockiert den Port).
-                T_rear = reduce(self._mmul, rear)
-                T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
-                return T_total, T_rear
+                return mats
             # Durchgangslöcher der Rückplatte: thermoviskoses Rohr über
             # die Plattendicke; münden sie direkt ins Schallfeld
             # (K103-Fall), kommt die Strahlungsimpedanz hinzu. Die äußere
@@ -3221,36 +3461,35 @@ class MicrophoneCapsule:
             S_rp = np.pi * self.r_rp**2
             Z_rp = Z_rp + (1j * omega * RHO0 * 0.85 * self.r_rp
                            * (1.0 + self._fok_rp) / (S_rp * self.n_rp))
-            rear.append(self._abcd_series(Z_rp, omega))
+            mats.append(self._abcd_series(Z_rp, omega))
 
         # Gewebe hinter der Backplate/Rückplatte (überspannt die Fläche,
         # liegt im Direktmündungsfall über den Plattenöffnungen)
-        rear.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
+        mats.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
 
         if self._plate_vents:
             # K103-Fall: hinter der Rückplatte folgt nichts mehr —
             # Port = rückwärtiges Schallfeld an den Plattenlöchern
-            T_rear = reduce(self._mmul, rear)
-            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
-            return T_total, T_rear
+            return mats
 
         # Laufzeitglied als akustische Leitung (tau = L/c)
         if self.l_delay > 0.0:
-            rear.append(self._abcd_line(omega, self.l_delay, self.a_bp))
+            mats.append(self._abcd_line(omega, self.l_delay, self.a_bp))
 
         if self.rear_open:
             if self.cavity_hole_position == "circumference":
                 # Leitung bis zur axialen Lochposition ...
                 if self.x_ch > 0.0:
-                    rear.append(self._abcd_line(omega, self.x_ch, self.a_bp))
+                    mats.append(self._abcd_line(omega, self.x_ch, self.a_bp))
                 # ... dahinter wirkt das geschlossene Reststück als Shunt
                 l_rest = self.l_cav - self.x_ch
                 if l_rest > 1e-9:
-                    Z_stub = self._closed_stub_impedance(omega, l_rest, self.a_bp)
-                    rear.append(self._abcd_shunt(1.0 / Z_stub, omega))
+                    Z_stub = self._closed_stub_impedance(omega, l_rest,
+                                                         self.a_bp)
+                    mats.append(self._abcd_shunt(1.0 / Z_stub, omega))
                 hole_len = self.t_cav_wall  # radiale Löcher durch die Wand
             else:  # "end": Löcher in der hinteren Stirnfläche
-                rear.append(self._abcd_line(omega, self.l_cav, self.a_bp))
+                mats.append(self._abcd_line(omega, self.l_cav, self.a_bp))
                 hole_len = self.t_cav_wall
             # Einlasslöcher: thermoviskoses Rohr + Strahlung ins Freifeld;
             # beide Mündungen öffnen in große Volumina (Hohlraum/Freifeld)
@@ -3259,14 +3498,12 @@ class MicrophoneCapsule:
                 omega, self.r_ch, hole_len, self.n_ch,
                 end_correction=True, radiates=True, visc_ends=2,
             )
-            rear.append(self._abcd_series(Z_ch, omega))
+            mats.append(self._abcd_series(Z_ch, omega))
         else:
             # geschlossene Rückseite: gesamter Hohlraum, Port ist "blockiert"
-            rear.append(self._abcd_line(omega, self.l_cav, self.a_bp))
+            mats.append(self._abcd_line(omega, self.l_cav, self.a_bp))
 
-        T_rear = reduce(self._mmul, rear)
-        T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
-        return T_total, T_rear
+        return mats
 
     def _membrane_volume_velocity(self, omega, T_total, T_rear, p_front, p_rear):
         """Löst das Netzwerk für den Volumenfluss der Membran.
@@ -4352,9 +4589,10 @@ if __name__ == "__main__":
               f"{p1:.1f} dB (Null {na1:.0f}°)  OK")
 
     # --------- Gegenprobe 16: 3D-(r,phi)-Löser (diskrete Löcher) -----------
-    # a) Gültigkeits-Gatter: '3d' erfordert die Doppelmembran-Bauform mit
-    #    Durchgangslöchern; Stufenbohrungen erfordern center_gap > 0
-    #    (zwei Elektrodenhälften, K67-Typ, s. Gegenprobe 22).
+    # a) Gültigkeits-Gatter: '3d' erfordert Durchgangslöcher; Stufen-
+    #    bohrungen der Doppelmembran-Bauform erfordern center_gap > 0
+    #    (zwei Elektrodenhälften, K67-Typ, s. Gegenprobe 22). single/dual
+    #    rechnet der Löser seit Gegenprobe 23 ebenfalls.
     # b) Reziprozität des Feldsystems: Frontantwort auf Rückdruck ==
     #    Rückantwort auf Frontdruck (±3 %).
     # c) Physik: Null bei 180°; ein Freistich, der ALLE Loch-Mündungen
@@ -4362,8 +4600,10 @@ if __name__ == "__main__":
     #    deutlich (Mündungs-Engstellen-Mechanismus, s. Gegenprobe 15).
     if _HAS_SCIPY:
         try:
-            MicrophoneCapsule(squeeze_model="3d")
-            raise AssertionError("'3d' ohne dual_diaphragm müsste scheitern")
+            MicrophoneCapsule(squeeze_model="3d", n_through_holes=0,
+                              n_blind_holes=30)
+            raise AssertionError("'3d' ohne Durchgangslöcher müsste "
+                                 "scheitern")
         except ValueError:
             pass
         try:
@@ -4894,5 +5134,153 @@ if __name__ == "__main__":
               f"{res22[0.0][1]:.0f}° -> {res22[3.0][1]:.0f}°, Empf. "
               f"{res22[0.0][2]:.1f} -> {res22[3.0][2]:.1f} mV/Pa "
               f"(2D: {p2d:.1f} dB, {e2d:.1f} mV/Pa)  OK")
+
+    # --------- Gegenprobe 23: 3D-Löser für single/dual-Architekturen -------
+    # Der 3D-Löser rechnet jetzt auch die Einzel-Backplate- und die
+    # Dual-Backplate-Bauform: EIN Membranfeld, ein Film je Backplate,
+    # Durchgangslöcher als Zweitor in SAMMELKNOTEN, deren Abschluss die
+    # baugleiche Lumped-Kette des 1D/2D-Pfads bildet (_rear_chain_mats;
+    # vorn: Strahlung + Gewebe). Verankert ohne Fit-Koeffizient:
+    # a) REZIPROZITÄT der akustischen Ports: q_rück(p_front = 1) ==
+    #    q_front(p_rück = 1) — exakt (Maschinengenauigkeit), validiert
+    #    alle Kopplungsvorzeichen (Film-Membran, Knoten, Ketten).
+    # b) GESCHLOSSENE RÜCKSEITE: exakte Kugel (ohne Beugung) und
+    #    Übereinstimmung mit 1D nach Betrag UND PHASE — die 3D-Ausgänge
+    #    folgen jetzt der Ketten-Flussrichtung (Vorzeichenkonvention).
+    # c) K103-GRENZFALL DICHT (Spacer + Rückplatte ohne Durchlass):
+    #    3D == 1D auf wenige Prozent über das Band.
+    # d) K103 OFFEN: die interne Rück-Übertragung D_r (das Verhältnis
+    #    beider Pfade) stimmt mit dem 2D-Feldmodell auf ~1 % überein —
+    #    die absoluten Empfindlichkeiten tragen die dokumentierte
+    #    Membranfeld-Klasse (±2–3 dB), ihr VERHÄLTNIS ist robust.
+    # e) NIERE (Laufzeitglied + Hohlraum): Richtdiagramm 3D nahe 2D
+    #    (90°/180°/Minimum-Winkel), Empfindlichkeit in der Klasse.
+    # f) DUAL: Reziprozität + LF-Empfindlichkeit nahe 2D.
+    if _HAS_SCIPY:
+        f23 = np.array([100.0, 1000.0])
+        sg23 = dict(architecture="single",
+                    membrane_material="PET", membrane_resonance_hz=8000.0,
+                    membrane_diameter=22e-3, membrane_thickness=6e-6,
+                    membrane_tension=400.0, air_gap=40e-6,
+                    backplate_diameter=20e-3, backplate_thickness=3e-3,
+                    bias_voltage=60.0, n_through_holes=60,
+                    through_hole_diameter=1.0e-3, n_blind_holes=30,
+                    blind_hole_diameter=1.2e-3, delay_length=3e-3,
+                    cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
+                    n_cavity_holes=200, cavity_hole_diameter=0.2e-3,
+                    cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
+                    fabric_rear_rayl=0.0, body_diameter=24e-3,
+                    include_diffraction=False)
+        # b) geschlossene Rückseite: Kugel + Betrag/Phase == 1D
+        cl3 = MicrophoneCapsule(**{**sg23, "n_cavity_holes": 0},
+                                squeeze_model="3d")
+        cl1 = MicrophoneCapsule(**{**sg23, "n_cavity_holes": 0},
+                                squeeze_model="1d")
+        lin_c = cl3.directivity(
+            frequencies_hz=(1000.0,))["patterns"][1000.0]["linear"]
+        assert np.max(np.abs(lin_c - 1.0)) < 1e-6, \
+            "3D single geschlossen muss exakte Kugel liefern"
+        r_cl = (cl3.transfer_function(f23[:1])
+                / cl1.transfer_function(f23[:1]))[0]
+        assert 0.90 < abs(r_cl) < 1.02, \
+            f"3D/1D geschlossen @100 Hz ({abs(r_cl):.3f})"
+        assert abs(np.angle(r_cl)) < np.deg2rad(12.0), \
+            (f"3D muss der Ketten-Phasenkonvention folgen "
+             f"({np.rad2deg(np.angle(r_cl)):.1f}°)")
+        # a) Reziprozität (offene Niere, fordert alle Pfade; bei
+        # geschlossener Rückseite ist der Kreuzfluss trivial 0)
+        card3 = MicrophoneCapsule(**{**sg23, "n_cavity_holes": 60,
+                                     "cavity_hole_diameter": 0.6e-3},
+                                  squeeze_model="3d")
+        card3.transfer_function(np.array([1000.0]))
+        rez_s = abs(card3._recip_3d[0]) / abs(card3._recip_3d[1])
+        assert abs(rez_s - 1.0) < 1e-6, \
+            f"3D single muss reziprok sein ({rez_s:.8f})"
+        # c)+d) K103: dicht == 1D; offen: D_r == 2D
+        k23 = dict(architecture="single",
+                   membrane_resonance_hz=1800.0, membrane_diameter=25.4e-3,
+                   membrane_thickness=6e-6, membrane_tension=100.0,
+                   air_gap=50e-6, backplate_diameter=24e-3,
+                   backplate_thickness=3e-3, bias_voltage=60.0,
+                   n_through_holes=36, through_hole_diameter=1.0e-3,
+                   n_blind_holes=0, blind_hole_diameter=1.2e-3,
+                   blind_hole_depth=1e-3, rear_spacer_height=40e-6,
+                   rear_plate_thickness=2e-3,
+                   rear_plate_hole_diameter=1.0e-3, delay_length=0.0,
+                   cavity_length=0.0, n_cavity_holes=0,
+                   fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+                   body_diameter=27e-3, include_diffraction=False)
+        kd3 = MicrophoneCapsule(**k23, n_rear_plate_holes=0,
+                                squeeze_model="3d")
+        kd1 = MicrophoneCapsule(**k23, n_rear_plate_holes=0,
+                                squeeze_model="1d")
+        r_kd = np.abs(kd3.transfer_function(f23)
+                      / kd1.transfer_function(f23))
+        assert np.all((r_kd > 0.93) & (r_kd < 1.07)), \
+            f"K103 dicht: 3D muss 1D treffen ({r_kd})"
+        dr23 = {}
+        for sm in ("2d", "3d"):
+            ko = MicrophoneCapsule(**k23, n_rear_plate_holes=60,
+                                   squeeze_model=sm)
+            dr23[sm] = ko.angle_responses(f23)["D_r"]
+        d_dr = np.max(np.abs(dr23["3d"] - dr23["2d"]))
+        assert d_dr < 0.05, \
+            (f"K103 offen: interne Rück-Übertragung D_r muss das "
+             f"2D-Feldmodell treffen (|ΔD_r| = {d_dr:.3f})")
+        # e) Niere: Richtdiagramm 3D nahe 2D
+        n23 = dict(architecture="single",
+                   membrane_resonance_hz=2100.0, membrane_diameter=25.4e-3,
+                   membrane_thickness=6e-6, membrane_tension=45.0,
+                   air_gap=38.1e-6, backplate_diameter=23.9e-3,
+                   backplate_thickness=3.125e-3, bias_voltage=50.0,
+                   n_through_holes=48, through_hole_diameter=1.0e-3,
+                   n_blind_holes=24, blind_hole_diameter=1.2e-3,
+                   blind_hole_depth=1.5e-3, delay_length=3e-3,
+                   cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
+                   n_cavity_holes=60, cavity_hole_diameter=0.6e-3,
+                   cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
+                   fabric_rear_rayl=0.0, body_diameter=28e-3)
+        pat23 = {}
+        for sm in ("2d", "3d"):
+            cn = MicrophoneCapsule(**n23, squeeze_model=sm)
+            di = cn.directivity(frequencies_hz=(1000.0,))
+            db = di["patterns"][1000.0]["db"]
+            lin = di["patterns"][1000.0]["linear"]
+            na = di["angles_deg"][:181][int(np.argmin(lin[:181]))]
+            H1 = abs(cn.transfer_function(np.array([1000.0]))[0])
+            pat23[sm] = (db[90], db[180], na, H1)
+        assert abs(pat23["3d"][0] - pat23["2d"][0]) < 1.5, \
+            (f"Niere 90°: 3D nahe 2D ({pat23['2d'][0]:.1f} vs. "
+             f"{pat23['3d'][0]:.1f} dB)")
+        assert abs(pat23["3d"][1] - pat23["2d"][1]) < 2.5, \
+            (f"Niere 180°: 3D nahe 2D ({pat23['2d'][1]:.1f} vs. "
+             f"{pat23['3d'][1]:.1f} dB)")
+        assert abs(pat23["3d"][2] - pat23["2d"][2]) <= 15.0, \
+            (f"Minimum-Winkel: 3D nahe 2D ({pat23['2d'][2]:.0f}° vs. "
+             f"{pat23['3d'][2]:.0f}°)")
+        r_e = pat23["3d"][3] / pat23["2d"][3]
+        assert 0.6 < r_e < 1.05, \
+            f"Niere Empfindlichkeit 3D/2D @1 kHz ({r_e:.2f})"
+        # f) dual: Reziprozität + LF nahe 2D
+        du23 = dict(sg23, architecture="dual", n_cavity_holes=200,
+                    cavity_hole_diameter=0.2e-3)
+        du3 = MicrophoneCapsule(**du23, squeeze_model="3d")
+        du2 = MicrophoneCapsule(**du23, squeeze_model="2d")
+        r_du = (du3.transfer_function(f23[:1])
+                / du2.transfer_function(f23[:1]))[0]
+        rez_d = abs(du3._recip_3d[0]) / abs(du3._recip_3d[1])
+        assert abs(rez_d - 1.0) < 1e-6, \
+            f"3D dual muss reziprok sein ({rez_d:.8f})"
+        assert 0.75 < abs(r_du) < 1.05, \
+            f"dual: 3D/2D @100 Hz ({abs(r_du):.3f})"
+        print(f"3D single/dual: reziprok (single {rez_s:.6f}, dual "
+              f"{rez_d:.6f}); geschlossen = Kugel, 3D/1D @100 Hz "
+              f"{abs(r_cl):.3f} ∠{np.rad2deg(np.angle(r_cl)):+.1f}°; "
+              f"K103 dicht {r_kd.round(3)}, offen |ΔD_r| = {d_dr:.3f}; "
+              f"Niere 90/180/Min: 2D {pat23['2d'][0]:.1f}/"
+              f"{pat23['2d'][1]:.1f}/{pat23['2d'][2]:.0f}° vs. 3D "
+              f"{pat23['3d'][0]:.1f}/{pat23['3d'][1]:.1f}/"
+              f"{pat23['3d'][2]:.0f}°, Empf. {r_e:.2f}; dual @100 Hz "
+              f"{abs(r_du):.3f}  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
