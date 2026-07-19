@@ -142,6 +142,10 @@ POS_LABELS = {"Umfang": "circumference", "Ende (Stirnfläche)": "end"}
 AX_LABELS = {"Kugel (d_ext, montiert)": "sphere",
              "Sphäroid (freie Scheibe)": "spheroid",
              "BEM (Kopf + Körper)": "bem"}
+# Position des rückwärtigen Gewebes (kanonische Werte wie die übrigen
+# Auswahl-Widgets; Anzeige übersetzt LABEL_TR)
+FAB_POS_LABELS = {"An der Backplate": "backplate",
+                  "Über den Einlassöffnungen": "inlet"}
 
 DIRECTIVITY_OPTIONS = [50, 100, 125, 250, 500, 1000, 2000, 4000,
                        5000, 8000, 10000, 12500, 16000, 20000]
@@ -201,6 +205,10 @@ DEFAULTS = {
     "cavity_axial_mm": 2.5,
     "fabric_front_rayl": 0.0,
     "fabric_rear_rayl": 0.0,
+    # Gewebe-Position hinten: an der Backplate (im Zylinder, Bestand)
+    # oder außen über den Einlassöffnungen (nur Lochfläche durchströmt,
+    # hinter den Shunt-Volumina — Gegenprobe 24; nicht bei K67-Bauform)
+    "fabric_rear_pos": "An der Backplate",
     # Gehäuse & Beugung (34 mm = Kapselkopf-Außen-Ø inkl. Klemmring)
     "diffraction_on": True,
     "body_diameter_mm": 34.0,
@@ -282,7 +290,9 @@ def _heal_canonical_state():
             ("p_material", MATERIAL_LABELS, DEFAULTS["material"]),
             ("p_architecture", ARCH_LABELS, DEFAULTS["architecture"]),
             ("p_hole_position", POS_LABELS, DEFAULTS["hole_position"]),
-            ("p_axial_body", AX_LABELS, DEFAULTS["axial_body"])):
+            ("p_axial_body", AX_LABELS, DEFAULTS["axial_body"]),
+            ("p_fabric_rear_pos", FAB_POS_LABELS,
+             DEFAULTS["fabric_rear_pos"])):
         v = st.session_state.get(key)
         if v is not None and v not in valid:
             st.session_state[key] = _DISPLAY_TO_CANON.get(v, dflt)
@@ -332,6 +342,8 @@ def _coerce(key, val):
     if key == "architecture" and val in ARCH_LABELS:
         return val
     if key == "hole_position" and val in POS_LABELS:
+        return val
+    if key == "fabric_rear_pos" and val in FAB_POS_LABELS:
         return val
     raise ValueError(f"ungültiger Wert für '{key}': {val!r}")
 
@@ -522,6 +534,13 @@ def build_capsule(p):
         cavity_hole_axial_position=p["cavity_axial_mm"] * 1e-3,
         fabric_front_rayl=p["fabric_front_rayl"],
         fabric_rear_rayl=p["fabric_rear_rayl"],
+        # Doppelmembran hat keinen rückwärtigen Einlass — dort bleibt die
+        # Position fest "backplate" (Gewebe über der Rückmembran), damit
+        # ein Architekturwechsel nie am Gatter scheitert.
+        fabric_rear_position=(
+            FAB_POS_LABELS.get(p.get("fabric_rear_pos"), "backplate")
+            if ARCH_LABELS[p["architecture"]] != "dual_diaphragm"
+            else "backplate"),
         body_diameter=p["body_diameter_mm"] * 1e-3,
         include_diffraction=p["diffraction_on"],
         axial_body_model=AX_LABELS.get(p.get("axial_body",
@@ -1083,6 +1102,11 @@ with st.sidebar:
                         key="p_fabric_front_rayl")
         st.number_input(tr("lbl_fab_rear"), 0.0, 100000.0,
                         step=5.0, key="p_fabric_rear_rayl")
+        st.radio(tr("lbl_fab_pos"), list(FAB_POS_LABELS),
+                 format_func=_label_formatter(), key="p_fabric_rear_pos",
+                 disabled=_is_k67, help=tr("help_fab_pos"))
+        if _is_k67:
+            st.caption(tr("cap_fab_pos_k67"))
 
     # ---------------- Gehäuse & Beugung ----------------------------------
     with st.expander(tr("exp_body"), expanded=False):

@@ -315,6 +315,7 @@ class MicrophoneCapsule:
         cavity_hole_axial_position=6e-3,
         fabric_front_rayl=10.0,
         fabric_rear_rayl=25.0,
+        fabric_rear_position="backplate",
         # --- Gehäuse & Beugung ----------------------------------------------
         body_diameter=None,
         include_diffraction=True,
@@ -545,6 +546,28 @@ class MicrophoneCapsule:
 
         self.rayl_front = float(fabric_front_rayl)
         self.rayl_rear = float(fabric_rear_rayl)
+        # Position des rückwärtigen Gewebes: "backplate" = im Zylinder
+        # direkt hinter der Backplate, über die volle Bohrung gespannt
+        # (Z = Rayl/S_bp, Bestand); "inlet" = außen ÜBER den Einlass-
+        # öffnungen (Hohlraum-Einlasslöcher, K103-Rückplattenlöcher bzw.
+        # bei Direktmündung die Durchgangslöcher selbst). Dort zählt nur
+        # die LOCHFLÄCHE als Durchströmfläche — dasselbe Tuch ist um den
+        # Faktor S_bp/S_Löcher hochohmiger — und der Widerstand liegt
+        # HINTER den Shunt-Volumina von Laufzeitrohr/Hohlraum sowie in
+        # Serie mit der Einlassloch-Masse (bedämpft deren Helmholtz-
+        # Resonator direkt). Bei geschlossener Rückseite gibt es keinen
+        # Einlass — das Gewebe entfällt dann wirkungslos (s.
+        # _rear_chain_mats, Gegenprobe 24).
+        frp = str(fabric_rear_position).strip().lower()
+        if frp not in ("backplate", "inlet"):
+            raise ValueError("fabric_rear_position muss 'backplate' oder "
+                             "'inlet' sein.")
+        if frp == "inlet" and self.architecture == "dual_diaphragm":
+            raise ValueError(
+                "fabric_rear_position='inlet': die Doppelmembran-Bauform "
+                "hat keine rückwärtigen Einlasslöcher — ihr rückwärtiges "
+                "Gewebe liegt über der Rückmembran ('backplate' nutzen).")
+        self.fabric_rear_position = frp
 
         self.body_diameter = (None if body_diameter is None
                               else float(body_diameter))
@@ -3411,6 +3434,11 @@ class MicrophoneCapsule:
         die Abschlussbedingung (q_port = 0) trägt ``rear_open``.
         """
         mats = []
+        # "inlet": Gewebe außen ÜBER den Einlassöffnungen statt im
+        # Zylinder an der Backplate — wirksame Durchströmfläche ist die
+        # LOCHFLÄCHE des jeweiligen Ports, und der Widerstand liegt
+        # hinter den Shunt-Volumina (s. Konstruktor-Kommentar).
+        at_inlet = self.fabric_rear_position == "inlet"
         if self.n_th == 0:
             # geschlossene Backplate: Gewebe/Laufzeitglied/Hohlraum sind
             # akustisch unerreichbar
@@ -3418,8 +3446,11 @@ class MicrophoneCapsule:
 
         if not self.rear_network_enabled:
             # kein Laufzeitglied/Hohlraum: Gewebe liegt über den Öffnungen,
-            # Port = rückwärtiges Schallfeld
-            mats.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
+            # Port = rückwärtiges Schallfeld. "inlet": das Tuch sitzt AUF
+            # den Durchgangsloch-Mündungen (nur die Lochfläche zählt).
+            S_f = (self.n_th * np.pi * self.r_th**2 if at_inlet
+                   else self.S_bp)
+            mats.append(self._abcd_series(self.rayl_rear / S_f, omega))
             return mats
 
         # ------- Spacer + massive Rückplatte (K103-Bauform) ----------------
@@ -3463,13 +3494,19 @@ class MicrophoneCapsule:
                            * (1.0 + self._fok_rp) / (S_rp * self.n_rp))
             mats.append(self._abcd_series(Z_rp, omega))
 
-        # Gewebe hinter der Backplate/Rückplatte (überspannt die Fläche,
-        # liegt im Direktmündungsfall über den Plattenöffnungen)
-        mats.append(self._abcd_series(self.rayl_rear / self.S_bp, omega))
+        # Gewebe hinter der Backplate/Rückplatte (überspannt die Fläche);
+        # bei "inlet" wandert es stattdessen ans Ende der Kette
+        if not at_inlet:
+            mats.append(self._abcd_series(self.rayl_rear / self.S_bp,
+                                          omega))
 
         if self._plate_vents:
             # K103-Fall: hinter der Rückplatte folgt nichts mehr —
-            # Port = rückwärtiges Schallfeld an den Plattenlöchern
+            # Port = rückwärtiges Schallfeld an den Plattenlöchern.
+            # "inlet": Tuch auf den Rückplatten-Lochmündungen.
+            if at_inlet:
+                S_f = self.n_rp * np.pi * self.r_rp**2
+                mats.append(self._abcd_series(self.rayl_rear / S_f, omega))
             return mats
 
         # Laufzeitglied als akustische Leitung (tau = L/c)
@@ -3499,8 +3536,17 @@ class MicrophoneCapsule:
                 end_correction=True, radiates=True, visc_ends=2,
             )
             mats.append(self._abcd_series(Z_ch, omega))
+            # "inlet": um den Zylinder gewickeltes Tuch über den
+            # Einlasslöchern — in Serie mit deren Lochmasse, wirksame
+            # Fläche = Gesamt-Lochfläche (rear_open garantiert n_ch,
+            # r_ch > 0)
+            if at_inlet:
+                S_f = self.n_ch * np.pi * self.r_ch**2
+                mats.append(self._abcd_series(self.rayl_rear / S_f, omega))
         else:
-            # geschlossene Rückseite: gesamter Hohlraum, Port ist "blockiert"
+            # geschlossene Rückseite: gesamter Hohlraum, Port ist
+            # "blockiert" — es gibt keinen Einlass, über dem ein
+            # "inlet"-Gewebe liegen könnte (es entfällt wirkungslos)
             mats.append(self._abcd_line(omega, self.l_cav, self.a_bp))
 
         return mats
@@ -5282,5 +5328,101 @@ if __name__ == "__main__":
               f"{pat23['3d'][0]:.1f}/{pat23['3d'][1]:.1f}/"
               f"{pat23['3d'][2]:.0f}°, Empf. {r_e:.2f}; dual @100 Hz "
               f"{abs(r_du):.3f}  OK")
+
+    # --------- Gegenprobe 24: Position des rückwärtigen Gewebes ------------
+    # fabric_rear_position: "backplate" (im Zylinder hinter der Platte,
+    # über die volle Bohrung gespannt — Bestand) vs. "inlet" (außen ÜBER
+    # den Einlassöffnungen). Physik ohne Fit-Koeffizient:
+    # a) Ohne Gewebe (0 Rayl) ist die Position EXAKT wirkungslos.
+    # b) Dasselbe Tuch wirkt am Einlass um S_bp/S_Löcher stärker (nur
+    #    die Lochfläche wird durchströmt) und liegt HINTER den Shunt-
+    #    Volumina sowie in Serie mit der Einlassloch-Masse: interne
+    #    Laufzeit steigt deutlich (0.64 -> 3.0), die rückwärtige
+    #    Auslöschung bricht ein (Empfindlichkeit +38 %), die
+    #    250-Hz-Auslöschung vertieft sich.
+    # c) Der 3D-Löser teilt die Kette (_rear_chain_mats) und zeigt
+    #    dieselbe Richtung.
+    # d) K103 (großflächige Plattenlöcher): kleiner, gleichgerichteter
+    #    Effekt. e) Gatter: Doppelmembran hat keinen Einlass.
+    if _HAS_SCIPY:
+        g24 = dict(architecture="single",
+                   membrane_resonance_hz=2100.0, membrane_diameter=25.4e-3,
+                   membrane_thickness=6e-6, membrane_tension=45.0,
+                   air_gap=38.1e-6, backplate_diameter=23.9e-3,
+                   backplate_thickness=3.125e-3, bias_voltage=50.0,
+                   n_through_holes=48, through_hole_diameter=1.0e-3,
+                   n_blind_holes=24, blind_hole_diameter=1.2e-3,
+                   blind_hole_depth=1.5e-3, delay_length=3e-3,
+                   cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
+                   n_cavity_holes=60, cavity_hole_diameter=0.6e-3,
+                   cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
+                   fabric_rear_rayl=25.0, body_diameter=28e-3)
+        # a) 0 Rayl: Position exakt wirkungslos
+        z24 = {**g24, "fabric_rear_rayl": 0.0}
+        f24 = np.array([100.0, 1000.0, 8000.0])
+        Ha = MicrophoneCapsule(**z24, squeeze_model="2d",
+                               fabric_rear_position="backplate"
+                               ).transfer_function(f24)
+        Hb = MicrophoneCapsule(**z24, squeeze_model="2d",
+                               fabric_rear_position="inlet"
+                               ).transfer_function(f24)
+        assert np.allclose(Ha, Hb, rtol=1e-12, atol=0.0), \
+            "0 Rayl: Gewebe-Position muss exakt wirkungslos sein"
+
+        def _fab24(sm, pos):
+            c = MicrophoneCapsule(**g24, squeeze_model=sm,
+                                  fabric_rear_position=pos)
+            H1 = abs(c.transfer_function(np.array([1000.0]))[0]) * 1e3
+            rat = c.delay_diagnostics()["ratio"]
+            p250 = c.directivity(
+                frequencies_hz=(250.0,))["patterns"][250.0]["db"][180]
+            return H1, rat, p250
+
+        Hb2, rb2, pb2 = _fab24("2d", "backplate")
+        Hi2, ri2, pi2 = _fab24("2d", "inlet")
+        assert rb2 < 0.8 and ri2 > 2.0, \
+            (f"Einlass-Gewebe muss die interne Laufzeit stark verlängern "
+             f"({rb2:.2f} -> {ri2:.2f})")
+        assert Hi2 > 1.2 * Hb2, \
+            (f"Einlass-Gewebe muss die rückwärtige Auslöschung schwächen "
+             f"({Hb2:.1f} -> {Hi2:.1f} mV/Pa)")
+        assert pi2 < pb2 - 1.0, \
+            (f"250-Hz-Auslöschung muss sich vertiefen "
+             f"({pb2:.1f} -> {pi2:.1f} dB)")
+        # c) 3D teilt die Kette: gleiche Richtung
+        Hb3, rb3, _ = _fab24("3d", "backplate")
+        Hi3, ri3, _ = _fab24("3d", "inlet")
+        assert ri3 > 2.0 and ri3 > rb3 + 1.5 and Hi3 > Hb3, \
+            (f"3D muss die Einlass-Gewebe-Richtung teilen "
+             f"(ratio {rb3:.2f} -> {ri3:.2f}, H {Hb3:.1f} -> {Hi3:.1f})")
+        # d) K103: Plattenlöcher großflächig -> kleiner Effekt, gleiche
+        # Richtung
+        k24 = dict(g24, delay_length=0.0, cavity_length=0.0,
+                   cavity_wall_thickness=0.0, n_cavity_holes=0,
+                   cavity_hole_diameter=0.0, cavity_hole_axial_position=0.0,
+                   rear_spacer_height=60e-6, rear_plate_thickness=2.5e-3,
+                   n_rear_plate_holes=60, rear_plate_hole_diameter=1.0e-3)
+        rk_b = MicrophoneCapsule(**k24, squeeze_model="2d",
+                                 fabric_rear_position="backplate"
+                                 ).delay_diagnostics()["ratio"]
+        rk_i = MicrophoneCapsule(**k24, squeeze_model="2d",
+                                 fabric_rear_position="inlet"
+                                 ).delay_diagnostics()["ratio"]
+        assert rk_i > rk_b + 0.01, \
+            f"K103: gleiche Wirkrichtung erwartet ({rk_b:.2f} -> {rk_i:.2f})"
+        # e) Gatter
+        try:
+            MicrophoneCapsule(architecture="dual_diaphragm",
+                              membrane_resonance_hz=1150.0,
+                              fabric_rear_position="inlet")
+            raise AssertionError("dual_diaphragm+inlet müsste scheitern")
+        except ValueError:
+            pass
+        print(f"Gewebe-Position: 0 Rayl exakt wirkungslos; Einlass statt "
+              f"Backplate (25 Rayl): intern/extern {rb2:.2f} -> {ri2:.2f}, "
+              f"Empf. {Hb2:.1f} -> {Hi2:.1f} mV/Pa, 250 Hz/180° {pb2:.1f} "
+              f"-> {pi2:.1f} dB (3D gleichgerichtet: {rb3:.2f} -> "
+              f"{ri3:.2f}); K103 {rk_b:.2f} -> {rk_i:.2f}; Gatter "
+              f"Doppelmembran greift  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

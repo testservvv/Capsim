@@ -504,6 +504,45 @@ TR = {
         "en": "Behind the backplate [Rayl]",
         "de": "Hinter der Backplate [Rayl]",
     },
+    "lbl_fab_pos": {
+        "en": "Rear fabric position",
+        "de": "Gewebe-Position (Rückseite)",
+    },
+    "help_fab_pos": {
+        "en": "At the backplate: the cloth spans the full cylinder bore "
+              "directly behind the plate (Z = Rayl/S_bore — often nearly "
+              "transparent). Over the inlet openings: the cloth is "
+              "wrapped/laid OVER the rear inlet holes (cavity inlets, "
+              "K103 rear-plate holes, or the through holes when venting "
+              "directly). Only the hole area is traversed — the same "
+              "cloth acts S_bore/S_holes times stronger — and the "
+              "resistance sits behind the delay-line/cavity volumes, in "
+              "series with the inlet-hole mass (damps their Helmholtz "
+              "resonator directly). With a closed rear there is no inlet "
+              "and the fabric has no effect. Not applicable to the "
+              "dual-diaphragm design (its rear fabric lies over the rear "
+              "membrane).",
+        "de": "An der Backplate: das Tuch überspannt die volle Zylinder-"
+              "bohrung direkt hinter der Platte (Z = Rayl/S_Bohrung — "
+              "oft fast transparent). Über den Einlassöffnungen: das "
+              "Tuch liegt AUSSEN über den rückwärtigen Einlässen "
+              "(Hohlraum-Einlasslöcher, K103-Rückplattenlöcher bzw. bei "
+              "Direktmündung die Durchgangslöcher). Durchströmt wird nur "
+              "die Lochfläche — dasselbe Tuch wirkt um den Faktor "
+              "S_Bohrung/S_Löcher stärker — und der Widerstand liegt "
+              "hinter den Volumina von Laufzeitrohr/Hohlraum, in Serie "
+              "mit der Einlassloch-Masse (bedämpft deren Helmholtz-"
+              "Resonator direkt). Bei geschlossener Rückseite gibt es "
+              "keinen Einlass — das Gewebe bleibt wirkungslos. Für die "
+              "Doppelmembran-Bauform nicht anwendbar (ihr rückwärtiges "
+              "Gewebe liegt über der Rückmembran).",
+    },
+    "cap_fab_pos_k67": {
+        "en": "Dual-diaphragm design: the rear fabric lies over the rear "
+              "membrane — the position choice does not apply.",
+        "de": "Doppelmembran-Bauform: das rückwärtige Gewebe liegt über "
+              "der Rückmembran — die Positionswahl entfällt.",
+    },
 
     # ------------------------- Gehäuse & Beugung ------------------------
     "exp_body": {"en": "Body & diffraction", "de": "Gehäuse & Beugung"},
@@ -1037,6 +1076,15 @@ LABEL_TR = {
     # Hohlraumloch-Position
     "Umfang": {"en": "Circumference", "de": "Umfang"},
     "Ende (Stirnfläche)": {"en": "End (face)", "de": "Ende (Stirnfläche)"},
+    # Gewebe-Position (Rückseite)
+    "An der Backplate": {
+        "en": "At the backplate",
+        "de": "An der Backplate",
+    },
+    "Über den Einlassöffnungen": {
+        "en": "Over the inlet openings",
+        "de": "Über den Einlassöffnungen",
+    },
     # Axialer Körper
     "Kugel (d_ext, montiert)": {
         "en": "Sphere (d_ext, mounted)",

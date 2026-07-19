@@ -99,6 +99,24 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   weicht modellbedingt ≤ 2–3 dB von 1D/2D ab (Membran als Feld statt
   Grundmode).
 
+### Position des rückwärtigen Gewebes (`fabric_rear_position`)
+
+Das Gewebe hinter der Backplate kann an zwei Orten sitzen (GUI-Option
+im Gewebe-Panel, Gegenprobe 24): **an der Backplate** (Bestand — das
+Tuch überspannt die volle Zylinderbohrung, Z = Rayl/S_Bohrung) oder
+**über den Einlassöffnungen** (außen auf den Hohlraum-Einlasslöchern,
+K103-Rückplattenlöchern bzw. bei Direktmündung den Durchgangslöchern).
+Am Einlass wird nur die **Lochfläche** durchströmt — dasselbe Tuch ist
+um den Faktor S_Bohrung/S_Löcher hochohmiger — und der Widerstand liegt
+**hinter** den Shunt-Volumina von Laufzeitrohr/Hohlraum, in Serie mit
+der Einlassloch-Masse (bedämpft deren Helmholtz-Resonator direkt).
+Referenzfall (Nieren-Single, 25 Rayl, 60 Einlässe ⌀0,6 mm, Faktor 26):
+an der Backplate praktisch transparent, am Einlass steigt die interne
+Laufzeit von 0,64 auf 3,0 des externen Wegs und die Empfindlichkeit um
++38 % (die rückwärtige Auslöschung bricht ein). Ohne Gewebe (0 Rayl)
+ist die Position exakt wirkungslos; die Doppelmembran-Bauform hat
+keinen rückwärtigen Einlass (Gatter). 1D/2D/3D teilen die Kette.
+
 Die GUI rechnet mit **Fortschrittsbalken** (steht ab Sekunde null, auch
 während des Modellaufbaus) und **zweistufigem Cache** im Session-State:
 das Kapsel-Objekt je Bau-Parametersatz (Konstruktor mit Elektrostatik,
