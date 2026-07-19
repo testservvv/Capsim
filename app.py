@@ -691,8 +691,19 @@ def compute_results(cache_key, capsule, progress=None):
         _tick(1, f"Richtdiagramm {fd:.0f} Hz")
     sens_1k = float(abs(capsule.transfer_function(np.array([1000.0]))[0]))
     delay = capsule.delay_diagnostics()
+    # Eigenrauschen (thermisch-akustisch, FDT/Nyquist) — nur 1D/2D; der
+    # 3D-Feldlöser hat keinen konzentrierten Membranzweig.
+    noise = None
+    if capsule.squeeze_model != "3d":
+        try:
+            f_n = np.logspace(np.log10(10.0), np.log10(25000.0), 400)
+            spn = capsule.noise_spectrum(f_n)
+            noise = {"self": capsule.self_noise(),
+                     "f": f_n, "asd": spn["asd_pa_shz"]}
+        except Exception:            # Rauschen darf nie die App stoppen
+            noise = None
     result = {"fr": fr, "di": di, "aux": aux, "sens_1k": sens_1k,
-              "delay": delay}
+              "delay": delay, "noise": noise}
     store[cache_key] = result
     while len(store) > _RESULTS_CACHE_MAX:
         store.pop(next(iter(store)))
@@ -806,6 +817,37 @@ def rear_bode_figure(fr, aux):
                                   y=1.0, xanchor="right", x=1.0,
                                   font=dict(color=INK_2)),
                       title=dict(text=tr("fig_rear_title"),
+                                 font=dict(color=INK, size=16)))
+    return _base_layout(fig, 420)
+
+
+def noise_figure(noise):
+    """Äquivalente Eingangs-Rauschdichte über die Frequenz [dB re 20 µPa/√Hz]."""
+    f = noise["f"]
+    asd_db = 20.0 * np.log10(np.maximum(noise["asd"], 1e-30) / 2.0e-5)
+    sn = noise["self"]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=f, y=asd_db, mode="lines", name=tr("noise_asd_name"),
+        line=dict(color=SERIES[7], width=2),
+        hovertemplate="%{x:.0f} Hz · %{y:.1f} dB<extra></extra>"))
+    fig.add_hline(
+        y=sn["spl_a_db"], line=dict(color=SERIES[5], width=1, dash="dot"),
+        annotation_text=tr("noise_asd_aline", v=sn["spl_a_db"]),
+        annotation_font=dict(color=SERIES[5], size=11))
+    fig.update_xaxes(type="log", gridcolor=GRID, griddash="dot",
+                     linecolor=AXIS, tickcolor=AXIS,
+                     tickfont=dict(color=MUTED), zeroline=False,
+                     tickvals=[10, 100, 1000, 10000],
+                     ticktext=["10", "100", "1k", "10k"],
+                     title_text=tr("fig_freq"),
+                     title_font=dict(color=INK_2))
+    fig.update_yaxes(title_text=tr("noise_asd_axis"),
+                     gridcolor=GRID, griddash="dot", linecolor=AXIS,
+                     tickfont=dict(color=MUTED),
+                     title_font=dict(color=INK_2), zeroline=False)
+    fig.update_layout(hovermode="x unified", showlegend=False,
+                      title=dict(text=tr("fig_noise_title"),
                                  font=dict(color=INK, size=16)))
     return _base_layout(fig, 420)
 
@@ -1192,6 +1234,7 @@ _res = compute_results(_cache_key, capsule, _show_progress)
 _prog_slot.empty()
 fr, di, aux = _res["fr"], _res["di"], _res["aux"]
 sens_1k, delay = _res["sens_1k"], _res["delay"]
+noise = _res.get("noise")
 summary_text = get_summary(_cache_key, capsule, _lang())
 
 # ---------------------------------------------------------------------------
@@ -1243,6 +1286,28 @@ if delay is not None:
               delta_color="off",
               help=tr("help_fh"))
 
+# Eigenrauschen: thermisch-akustischer Ersatzgeräuschpegel + Pfad-Anteile
+if noise is not None:
+    sn = noise["self"]
+    n1, n2, n3, n4 = st.columns(4)
+    # dominanter Rauschpfad (Front/Membranfilm/Rückpfad)
+    _paths = [(sn["spl_a_front_db"], tr("noise_path_front")),
+              (sn["spl_a_mem_db"], tr("noise_path_mem")),
+              (sn["spl_a_rear_db"], tr("noise_path_rear"))]
+    _dom = max(_paths, key=lambda t: t[0])
+    n1.metric(tr("met_noise_a"), f"{sn['spl_a_db']:.1f} dB(A)",
+              help=tr("help_noise_a"))
+    n2.metric(tr("met_noise_z"), f"{sn['spl_z_db']:.1f} dB",
+              help=tr("help_noise_z"))
+    n3.metric(tr("met_snr"),
+              f"{94.0 - sn['spl_a_db']:.1f} dB(A)",
+              help=tr("help_snr"))
+    n4.metric(tr("met_noise_dom"), _dom[1],
+              delta=f"{_dom[0]:.1f} dB(A)", delta_color="off",
+              help=tr("help_noise_dom",
+                      f=sn["spl_a_front_db"], m=sn["spl_a_mem_db"],
+                      r=sn["spl_a_rear_db"]))
+
 col_bode, col_polar = st.columns([11, 9], gap="medium")
 with col_bode:
     st.plotly_chart(bode_figure(fr, params["normalize_1khz"]),
@@ -1263,6 +1328,13 @@ with col_dr:
                         config={"displayModeBar": False})
     else:
         st.info(tr("info_no_dr"))
+
+# Eigenrauschen: äquivalente Eingangs-Rauschdichte über die Frequenz
+if noise is not None:
+    st.plotly_chart(noise_figure(noise), width="stretch",
+                    config={"displayModeBar": False})
+elif capsule.squeeze_model == "3d":
+    st.info(tr("noise_no_3d"))
 
 with st.expander(tr("exp_diag")):
     # gecachter Text: summary() enthält eine Netzwerkauswertung (bei 3D

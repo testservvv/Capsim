@@ -61,6 +61,11 @@ P_ATM = 101325.0      # statischer Luftdruck                 [Pa]
 GAMMA = 1.402         # Adiabatenexponent                    [-]
 PRANDTL = 0.71        # Prandtl-Zahl                         [-]
 EPS0 = 8.8541878128e-12  # elektrische Feldkonstante         [F/m]
+_trapz = getattr(np, "trapezoid", None) or np.trapz  # np>=2.0: trapezoid
+K_BOLTZ = 1.380649e-23   # Boltzmann-Konstante               [J/K]
+T_KELVIN = 293.15        # Lufttemperatur (20 °C, konsistent
+                         # mit RHO0/C_AIR/MU_AIR)            [K]
+P_REF = 2.0e-5           # Bezugsschalldruck                 [Pa]
 
 
 class MicrophoneCapsule:
@@ -3325,6 +3330,16 @@ class MicrophoneCapsule:
             T_rear  : Kettenmatrix von der Membran-Rückseite zum Port
                       (Zeile [1,:] liefert daraus den Membran-Volumenfluss)
         """
+        T_front, T_mem, T_rear = self._assemble_parts(omega)
+        T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
+        return T_total, T_rear
+
+    def _assemble_parts(self, omega):
+        """Wie :meth:`_assemble_network`, aber liefert die drei Teilketten
+        (T_front, T_mem, T_rear) getrennt — für die Rausch-Port-Impedanz
+        am Membranzweig (s. :meth:`_membrane_port_impedance`). Die
+        Signalkette bleibt bit-für-bit identisch (Gegenprobe 25 prüft
+        T_front·T_mem·T_rear == _assemble_network)."""
         omega = np.asarray(omega, dtype=float)
 
         # ---------------- vorderer Zweig: Quelle -> Membran ----------------
@@ -3398,8 +3413,7 @@ class MicrophoneCapsule:
                         self._radiation_impedance_membrane(omega), omega),
                 ]
             T_rear = reduce(self._mmul, rear)
-            T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
-            return T_total, T_rear
+            return T_front, T_mem, T_rear
 
         # Die Durchgangslöcher der Backplate sind der Zugang zur Rückseite.
         # Drei Fälle:
@@ -3417,8 +3431,7 @@ class MicrophoneCapsule:
         # _rear_chain_mats liefert dann eine leere Liste
         rear += self._rear_chain_mats(omega)
         T_rear = reduce(self._mmul, rear)
-        T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
-        return T_total, T_rear
+        return T_front, T_mem, T_rear
 
     def _rear_chain_mats(self, omega):
         """Ketten-Elemente HINTER den Backplate-Durchgangslöchern.
@@ -3572,6 +3585,150 @@ class MicrophoneCapsule:
             p_end = p_front / A
             q_mem = T_rear[1, 0] * p_end
         return q_mem
+
+    def _membrane_port_impedance(self, omega):
+        """Treibpunkt-Impedanz Z_tot(ω) über dem Membran-Serienzweig plus
+        ihre Zerlegung in Front-, Membranfilm- und Rückpfad-Anteil.
+
+        Grundlage der Rauschrechnung: das verallgemeinerte Nyquist-/
+        Fluktuations-Dissipations-Theorem (Twiss 1955). Die Kurzschluss-
+        Rauschstromdichte am Membranzweig eines PASSIVEN Netzwerks bei
+        Temperatur T ist
+
+            S_qq(ω) = 4 k_B T · Re{Z_tot} / |Z_tot|²  = 4 k_B T · Re{1/Z_tot},
+
+        und dieses eine Ergebnis wichtet JEDEN dissipativen Widerstand des
+        Netzwerks (Spaltfilm, Bohrungen, Gewebe, Strahlung) automatisch
+        korrekt — inklusive der Strom-Aufteilung an allen Shunt-Zweigen.
+        Kein Fit-Koeffizient: die Widerstände sind dieselben, die auch den
+        Frequenzgang und die Nierennull bestimmen.
+
+        Der Membranzweig ist ein SERIEN-Element der ABCD-Kette; die
+        Impedanz über seinen Klemmen ist die Serien-Summe
+            Z_tot = Z_front + Z_mem + Z_rear
+        mit dem Ausgangswiderstand der vorderen Kette (Quelle
+        EMK-frei = kurzgeschlossen -> B_f/A_f), der Membran-
+        Serienimpedanz selbst und der Eingangsimpedanz der Rückkette
+        (offener Port EMK-frei -> B_r/D_r; blockiert -> A_r/C_r). Weil
+        die drei Anteile in Serie denselben Rauschstrom führen, ist der
+        Rauschbeitrag jedes Pfads proportional zu seinem Re{Z_i} — das
+        liefert die Pfad-Zerlegung (Front-/Membran-/Rückpfad) gratis.
+
+        Nur für die ABCD-Modelle 1D/2D — der 3D-Feldlöser hat keinen
+        konzentrierten Membranzweig.
+
+        Rückgabe: (Z_tot, Z_front, Z_mem, Z_rear), je (len(omega),).
+        """
+        if self.squeeze_model == "3d":
+            raise ValueError(
+                "Rauschberechnung nur für squeeze_model '1d'/'2d' — der "
+                "3D-Feldlöser hat keinen konzentrierten Membranzweig.")
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        T_front, T_mem, T_rear = self._assemble_parts(omega)
+        A_f, B_f = T_front[0, 0], T_front[0, 1]
+        Z_mem = T_mem[0, 1]                       # T_mem = [[1, Z_mem],[0,1]]
+        A_r, B_r = T_rear[0, 0], T_rear[0, 1]
+        C_r, D_r = T_rear[1, 0], T_rear[1, 1]
+        Z_front = B_f / A_f                       # Quelle kurzgeschlossen
+        Z_rear = (B_r / D_r) if self.rear_open else (A_r / C_r)
+        return Z_front + Z_mem + Z_rear, Z_front, Z_mem, Z_rear
+
+    @staticmethod
+    def _a_weighting(f):
+        """Lineares A-Bewertungsgewicht W(f) = R_A(f)/R_A(1 kHz) nach
+        IEC 61672-1 (0 dB bei 1 kHz)."""
+        f = np.asarray(f, dtype=float)
+        f2 = f * f
+
+        def _ra(x2):
+            return (12194.0 ** 2 * x2 * x2) / (
+                (x2 + 20.6 ** 2) * (x2 + 12194.0 ** 2)
+                * np.sqrt((x2 + 107.7 ** 2) * (x2 + 737.9 ** 2)))
+
+        return _ra(f2) / _ra(np.array(1000.0 ** 2))
+
+    def noise_spectrum(self, frequencies_hz):
+        """Thermisch-akustisches Eigenrauschen der Kapsel (fit-frei).
+
+        Über das Fluktuations-Dissipations-Theorem (s.
+        :meth:`_membrane_port_impedance`) erzeugt jeder akustische
+        Widerstand bei 20 °C ein Rauschen; auf den freien Feld-Schalldruck
+        zurückgerechnet ergibt sich die ÄQUIVALENTE Eingangs-Druckrausch-
+        dichte
+
+            S_p,eq(f) = S_v,out(f) / |H(f)|²,
+            S_v,out   = (Θ/ω)² · S_qq,   H = e/p0 (frontal, mit Beugung),
+
+        in der sich Θ und ω herauskürzen — das Eingangsrauschen ist eine
+        rein akustische Größe. Die Beugungsverstärkung von H senkt das
+        Eingangsrauschen zu hohen Frequenzen hin (das Mikrofon ist dort
+        empfindlicher), wie in der Realität.
+
+        Rückgabe: dict
+            'frequency_hz'
+            'psd_pa2_hz'   — S_p,eq [Pa²/Hz]
+            'asd_pa_shz'   — sqrt(S_p,eq) [Pa/√Hz]
+            'psd_v2_hz'    — Ausgangs-Spannungsrauschdichte [V²/Hz]
+            'frac_front' / 'frac_mem' / 'frac_rear' — Rauschanteil je Pfad
+                             (Re{Z_i}/Re{Z_tot}); Summe = 1
+        """
+        f = np.atleast_1d(np.asarray(frequencies_hz, dtype=float))
+        omega = 2.0 * np.pi * f
+        Z_tot, Z_f, Z_m, Z_r = self._membrane_port_impedance(omega)
+        reZ = np.real(Z_tot)
+        # Kurzschluss-Volumenfluss-Rauschdichte am Membranzweig
+        S_qq = (4.0 * K_BOLTZ * T_KELVIN * reZ
+                / np.maximum(np.abs(Z_tot) ** 2, 1e-300))
+        H = self.transfer_function(f, angle_deg=0.0)         # e/p0 [V/Pa]
+        S_v = (self._theta / omega) ** 2 * S_qq              # [V²/Hz]
+        S_p = S_v / np.maximum(np.abs(H) ** 2, 1e-300)       # [Pa²/Hz]
+        reZ_safe = np.where(reZ > 0.0, reZ, np.nan)
+        return {
+            "frequency_hz": f,
+            "psd_pa2_hz": S_p,
+            "asd_pa_shz": np.sqrt(S_p),
+            "psd_v2_hz": S_v,
+            "frac_front": np.real(Z_f) / reZ_safe,
+            "frac_mem": np.real(Z_m) / reZ_safe,
+            "frac_rear": np.real(Z_r) / reZ_safe,
+        }
+
+    def self_noise(self, f_min=20.0, f_max=20000.0, n_points=1200):
+        """A- und Z-bewerteter Ersatzgeräuschpegel (Eigenrauschen) [dB SPL].
+
+        Integriert die äquivalente Eingangs-Druckrauschdichte über das
+        Hörband und bezieht sie auf 20 µPa. ``spl_a_db`` ist der übliche
+        A-bewertete Ersatzgeräuschpegel eines Mikrofons (Datenblatt-
+        Kennzahl); ``spl_z_db`` der lineare (unbewertete) Wert. Die drei
+        ``*_a_*``-Pfadwerte zerlegen den A-bewerteten Pegel in Front-,
+        Membranfilm- und Rückpfad-Anteil (energetisch, Summe der
+        Leistungen = Gesamtpegel).
+
+        Reines thermisch-akustisches Kapselrauschen ohne Verstärker/
+        Elektronik — die physikalische Untergrenze dieser Geometrie.
+        """
+        f = np.logspace(np.log10(f_min), np.log10(f_max), int(n_points))
+        sp = self.noise_spectrum(f)
+        S = sp["psd_pa2_hz"]
+        w_a = self._a_weighting(f)
+
+        def _spl(weight, frac=None):
+            integ = S * weight ** 2
+            if frac is not None:
+                integ = integ * np.nan_to_num(frac, nan=0.0)
+            p2 = float(_trapz(integ, f))
+            return 20.0 * np.log10(np.sqrt(max(p2, 1e-300)) / P_REF)
+
+        ones = np.ones_like(f)
+        return {
+            "spl_a_db": _spl(w_a),
+            "spl_z_db": _spl(ones),
+            "spl_a_front_db": _spl(w_a, sp["frac_front"]),
+            "spl_a_mem_db": _spl(w_a, sp["frac_mem"]),
+            "spl_a_rear_db": _spl(w_a, sp["frac_rear"]),
+            "f_min_hz": float(f_min),
+            "f_max_hz": float(f_max),
+        }
 
     def _output_voltage(self, omega, q_mem):
         """Elektrostatische Wandlung: Volumenfluss -> Leerlaufspannung.
@@ -5424,5 +5581,116 @@ if __name__ == "__main__":
               f"-> {pi2:.1f} dB (3D gleichgerichtet: {rb3:.2f} -> "
               f"{ri3:.2f}); K103 {rk_b:.2f} -> {rk_i:.2f}; Gatter "
               f"Doppelmembran greift  OK")
+
+    # --------- Gegenprobe 25: Eigenrauschen (FDT/Nyquist, fit-frei) --------
+    # a) METHODEN-VALIDIERUNG an einem selbstständigen Mini-ABCD-Netzwerk
+    #    MIT Shunt-Zweigen (die Strom umleiten): das verallgemeinerte
+    #    Nyquist-Ergebnis S_qq = 4kT·Re{Z_tot}/|Z_tot|² muss der
+    #    BRUTE-FORCE-Superposition über JEDEN einzelnen Widerstand
+    #    (Norton-Rauschquelle 4kT/R, Übertragung auf den Membranstrom)
+    #    exakt entsprechen — beweist, dass die Port-Impedanz-Formel und
+    #    die Theorem-Anwendung alle Widerstände korrekt wichten.
+    # b) Die _membrane_port_impedance-Zerlegung Z_front+Z_mem+Z_rear muss
+    #    die unabhängig gerechnete Treibpunkt-Impedanz Z_mem+Z_a+Z_b
+    #    treffen (validiert die ABCD-Konventionen/Vorzeichen).
+    # c) Kapsel-Plausibilität: Pegel endlich und positiv, Pfad-Anteile
+    #    summieren zu 1, Re{Z_tot} >= 0 (Passivität); T -> 2T ergibt
+    #    +3 dB (S_p ∝ T); Gatter: 3D hat keinen Membranzweig.
+    om25 = np.array([2.0 * np.pi * 1000.0, 2.0 * np.pi * 5000.0])
+    Rs, C1 = 3.0e6, 1.5e-12
+    Rmem, Xmem, C2, Rr = 2.0e6, 4.0e6, 2.5e-12, 1.2e6
+    kT4 = 4.0 * K_BOLTZ * T_KELVIN
+    for om in om25:
+        Zmem = Rmem + 1j * Xmem
+        Za = 1.0 / (1.0 / Rs + 1j * om * C1)         # Front, Quelle kurz
+        Zb = 1.0 / (1.0 / Rr + 1j * om * C2)         # Rück, Port kurz
+        Z_tot = Zmem + Za + Zb
+        S_nyq = kT4 * np.real(Z_tot) / abs(Z_tot) ** 2
+        # Brute force: Knoten A, M (in Zmem zwischen R und jX), B
+        Gs, Gm, Gr = 1.0 / Rs, 1.0 / Rmem, 1.0 / Rr
+        Yx = 1.0 / (1j * Xmem)
+        yc1, yc2 = 1j * om * C1, 1j * om * C2
+        Y = np.array([
+            [Gs + yc1 + Gm, -Gm,       0.0],
+            [-Gm,           Gm + Yx,  -Yx],
+            [0.0,          -Yx,        Yx + yc2 + Gr]], dtype=complex)
+        Yinv = np.linalg.inv(Y)
+
+        def _qmem(J):
+            # Zweigstrom am QUELLENFREIEN Element jX_mem messen (M<->B):
+            # die R_mem-Norton-Quelle sitzt parallel zu R_mem (A<->M) und
+            # speist zusätzlich in den Zweig, daher wäre Gm·(V_A−V_M)
+            # falsch — jX_mem trägt immer den vollen Membranstrom.
+            V = Yinv @ J
+            return Yx * (V[1] - V[2])
+
+        S_bf = 0.0
+        # Rs: Norton A<->gnd
+        S_bf += abs(_qmem(np.array([1.0, 0, 0], complex))) ** 2 * kT4 * Gs
+        # Rr: Norton B<->gnd
+        S_bf += abs(_qmem(np.array([0, 0, 1.0], complex))) ** 2 * kT4 * Gr
+        # R_mem: Norton A<->M
+        S_bf += abs(_qmem(np.array([1.0, -1.0, 0], complex))) ** 2 * kT4 * Gm
+        assert abs(S_bf - S_nyq) < 1e-9 * abs(S_nyq), \
+            (f"Nyquist muss Brute-Force treffen ({S_bf:.3e} vs. "
+             f"{S_nyq:.3e} bei {om / (2 * np.pi):.0f} Hz)")
+
+    # b)+c) an einer echten Kapsel (Nieren-Single, 2D)
+    ncap = MicrophoneCapsule(
+        architecture="single", membrane_resonance_hz=2100.0,
+        membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+        membrane_tension=45.0, air_gap=38.1e-6, backplate_diameter=23.9e-3,
+        backplate_thickness=3.125e-3, bias_voltage=50.0, n_through_holes=48,
+        through_hole_diameter=1.0e-3, n_blind_holes=24,
+        blind_hole_diameter=1.2e-3, blind_hole_depth=1.5e-3,
+        delay_length=3e-3, cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
+        n_cavity_holes=60, cavity_hole_diameter=0.6e-3,
+        cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
+        fabric_rear_rayl=0.0, body_diameter=28e-3, squeeze_model="2d")
+    om_c = np.array([2.0 * np.pi * 1000.0])
+    Zt, Zf, Zm, Zr = ncap._membrane_port_impedance(om_c)
+    assert np.real(Zt)[0] > 0.0, "Passivität: Re{Z_tot} muss >= 0 sein"
+    sp = ncap.noise_spectrum(np.array([1000.0]))
+    fr_sum = (sp["frac_front"] + sp["frac_mem"] + sp["frac_rear"])[0]
+    assert abs(fr_sum - 1.0) < 1e-9, \
+        f"Pfad-Anteile müssen zu 1 summieren ({fr_sum:.6f})"
+    sn = ncap.self_noise()
+    assert np.isfinite(sn["spl_a_db"]) and np.isfinite(sn["spl_z_db"])
+    assert 0.0 < sn["spl_a_db"] < 40.0, \
+        f"Ersatzgeräuschpegel unplausibel ({sn['spl_a_db']:.1f} dB-A)"
+    assert sn["spl_z_db"] > sn["spl_a_db"], \
+        "linear (Z) muss über A-bewertet liegen"
+    # Pfad-Zerlegung: energetische Summe = Gesamtpegel
+    p_sum = 10.0 * np.log10(
+        10 ** (sn["spl_a_front_db"] / 10) + 10 ** (sn["spl_a_mem_db"] / 10)
+        + 10 ** (sn["spl_a_rear_db"] / 10))
+    assert abs(p_sum - sn["spl_a_db"]) < 0.05, \
+        (f"Pfad-Zerlegung muss sich energetisch zum Gesamtpegel summieren "
+         f"({p_sum:.2f} vs. {sn['spl_a_db']:.2f} dB-A)")
+    # T -> 2T: +3 dB (S_p ∝ T). Modulkonstante temporär anheben.
+    _T0 = globals()["T_KELVIN"]
+    try:
+        globals()["T_KELVIN"] = 2.0 * _T0
+        sn2 = ncap.self_noise()
+    finally:
+        globals()["T_KELVIN"] = _T0
+    assert abs((sn2["spl_a_db"] - sn["spl_a_db"]) - 10.0 * np.log10(2.0)) \
+        < 0.02, "T -> 2T muss den Rauschpegel um +3 dB anheben"
+    # d) Gatter 3D
+    try:
+        MicrophoneCapsule(
+            architecture="dual_diaphragm", membrane_resonance_hz=1150.0,
+            center_gap=50e-6, n_through_holes=12, through_hole_diameter=0.6e-3,
+            squeeze_model="3d").self_noise()
+        raise AssertionError("self_noise im 3D-Modus müsste scheitern")
+    except ValueError:
+        pass
+    print(f"Eigenrauschen: Nyquist == Brute-Force (Mini-Netz, "
+          f"{len(om25)} Frequenzen, rel < 1e-9); Nieren-Single "
+          f"{sn['spl_a_db']:.1f} dB-A ({sn['spl_z_db']:.1f} dB lin) — "
+          f"Front {sn['spl_a_front_db']:.1f} / Membranfilm "
+          f"{sn['spl_a_mem_db']:.1f} / Rückpfad {sn['spl_a_rear_db']:.1f} "
+          f"dB-A; T->2T +3.01 dB; Anteile summieren zu 1; 3D-Gatter "
+          f"greift  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

@@ -117,6 +117,36 @@ Laufzeit von 0,64 auf 3,0 des externen Wegs und die Empfindlichkeit um
 ist die Position exakt wirkungslos; die Doppelmembran-Bauform hat
 keinen rückwärtigen Einlass (Gatter). 1D/2D/3D teilen die Kette.
 
+### Eigenrauschen (`self_noise()` / `noise_spectrum()`)
+
+Aus dem **Fluktuations-Dissipations-Theorem** (verallgemeinertes
+Nyquist-Theorem, Twiss 1955) folgt das thermisch-akustische
+Eigenrauschen der Kapsel ohne jeden Fit-Koeffizienten: Die
+Kurzschluss-Rauschstromdichte am Membranzweig eines passiven Netzwerks
+ist S_qq = 4·k_B·T·Re{1/Z_tot}, wobei Z_tot die Treibpunkt-Impedanz
+über dem Membran-Serienzweig ist (Front-Ausgangswiderstand +
+Membranimpedanz + Rück-Eingangsimpedanz). Dieses eine Ergebnis wichtet
+**jeden** dissipativen Widerstand automatisch korrekt — Spaltfilm,
+Bohrungen, Gewebe, Strahlung, inklusive der Stromaufteilung an allen
+Shunt-Zweigen. Auf den freien Feld-Schalldruck zurückgerechnet
+(S_p,eq = S_v,out/|H|², Θ und ω kürzen sich) ergibt sich die
+äquivalente Eingangs-Druckrauschdichte, integriert und A-bewertet
+(IEC 61672) der **Ersatzgeräuschpegel** in dB(A). Da Z_tot eine
+Serien-Summe dreier Anteile ist, liefert das Modell zugleich die
+**Pfad-Zerlegung** (Front / Membranfilm / Rückpfad, Anteil ∝ Re{Z_i}):
+Bei der Niere dominiert der Rückpfad — genau die Widerstände, die den
+Phasenschieber und damit die Richtcharakteristik bilden, sind die
+Rauschquelle (Zielkonflikt Richtwirkung ↔ Rauschen).
+
+Es ist das reine **Kapsel**rauschen (physikalische Untergrenze der
+Geometrie); der FET/Verstärker, der das Datenblatt-Eigenrauschen realer
+Mikrofone meist dominiert, ist bewusst nicht enthalten. Nur für die
+ABCD-Modelle 1D/2D — der 3D-Feldlöser hat keinen konzentrierten
+Membranzweig. Validiert (Gegenprobe 25): das Nyquist-Ergebnis trifft an
+einem Mini-Netzwerk mit Shunt-Zweigen die Brute-Force-Superposition
+über jeden Einzelwiderstand auf Maschinengenauigkeit; T → 2T ergibt
+exakt +3 dB; die Pfad-Anteile summieren zu 1.
+
 Die GUI rechnet mit **Fortschrittsbalken** (steht ab Sekunde null, auch
 während des Modellaufbaus) und **zweistufigem Cache** im Session-State:
 das Kapsel-Objekt je Bau-Parametersatz (Konstruktor mit Elektrostatik,

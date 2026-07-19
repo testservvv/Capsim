@@ -929,6 +929,97 @@ TR = {
               "oberhalb des Übertragungsbands.",
     },
 
+    # ------------------------- Eigenrauschen ----------------------------
+    "met_noise_a": {
+        "en": "Self-noise (A)",
+        "de": "Eigenrauschen (A)",
+    },
+    "help_noise_a": {
+        "en": "Thermal-acoustic equivalent input noise of the CAPSULE "
+              "alone (A-weighted, IEC 61672), referred to the free-field "
+              "sound pressure — the physical noise floor of this geometry "
+              "from the fluctuation-dissipation theorem (every acoustic "
+              "resistance: gap film, holes, fabric, radiation). Excludes "
+              "the FET/amplifier, which usually dominates a real "
+              "microphone's data-sheet self-noise.",
+        "de": "Thermisch-akustisches Ersatzrauschen der KAPSEL allein "
+              "(A-bewertet, IEC 61672), bezogen auf den freien "
+              "Feld-Schalldruck — die physikalische Rauschuntergrenze "
+              "dieser Geometrie aus dem Fluktuations-Dissipations-Theorem "
+              "(jeder akustische Widerstand: Spaltfilm, Bohrungen, "
+              "Gewebe, Strahlung). OHNE FET/Verstärker, der das "
+              "Datenblatt-Eigenrauschen eines realen Mikrofons meist "
+              "dominiert.",
+    },
+    "met_noise_z": {
+        "en": "Self-noise (lin.)",
+        "de": "Eigenrauschen (lin.)",
+    },
+    "help_noise_z": {
+        "en": "Unweighted (linear/Z) equivalent input noise level, "
+              "integrated 20 Hz – 20 kHz. Always higher than the "
+              "A-weighted value.",
+        "de": "Unbewerteter (linearer/Z) Ersatzgeräuschpegel, integriert "
+              "20 Hz – 20 kHz. Liegt stets über dem A-bewerteten Wert.",
+    },
+    "met_snr": {
+        "en": "S/N @ 94 dB SPL",
+        "de": "Störabstand @ 94 dB SPL",
+    },
+    "help_snr": {
+        "en": "Signal-to-noise ratio at 1 Pa (94 dB SPL) = 94 dB − "
+              "self-noise(A). Capsule-only reference; a real microphone's "
+              "S/N is lower because of the electronics.",
+        "de": "Störabstand bei 1 Pa (94 dB SPL) = 94 dB − "
+              "Eigenrauschen(A). Nur die Kapsel; der Störabstand eines "
+              "realen Mikrofons ist wegen der Elektronik geringer.",
+    },
+    "met_noise_dom": {
+        "en": "Dominant noise path",
+        "de": "Dominanter Rauschpfad",
+    },
+    "help_noise_dom": {
+        "en": "The path contributing most of the A-weighted noise power. "
+              "Contributions: front {f:.1f} / membrane film {m:.1f} / rear "
+              "path {r:.1f} dB(A). The rear path is the cardioid "
+              "phase-shifter network (gaps, holes, delay line, cavity) — "
+              "the very resistances that form the polar pattern are the "
+              "noise source.",
+        "de": "Der Pfad mit dem größten Anteil an der A-bewerteten "
+              "Rauschleistung. Anteile: Front {f:.1f} / Membranfilm "
+              "{m:.1f} / Rückpfad {r:.1f} dB(A). Der Rückpfad ist das "
+              "Nieren-Phasenschieber-Netzwerk (Spalte, Bohrungen, "
+              "Laufzeitglied, Hohlraum) — genau die Widerstände, die die "
+              "Richtcharakteristik bilden, sind die Rauschquelle.",
+    },
+    "noise_path_front": {"en": "Front", "de": "Front"},
+    "noise_path_mem": {"en": "Membrane film", "de": "Membranfilm"},
+    "noise_path_rear": {"en": "Rear path", "de": "Rückpfad"},
+    "fig_noise_title": {
+        "en": "Equivalent input noise density (self-noise)",
+        "de": "Äquivalente Eingangs-Rauschdichte (Eigenrauschen)",
+    },
+    "noise_asd_name": {
+        "en": "input noise density",
+        "de": "Eingangs-Rauschdichte",
+    },
+    "noise_asd_axis": {
+        "en": "Noise density [dB re 20 µPa/√Hz]",
+        "de": "Rauschdichte [dB re 20 µPa/√Hz]",
+    },
+    "noise_asd_aline": {
+        "en": "A-weighted total {v:.1f} dB(A)",
+        "de": "A-bewerteter Gesamtpegel {v:.1f} dB(A)",
+    },
+    "noise_no_3d": {
+        "en": "Self-noise is available in the 1D/2D models — the 3D field "
+              "solver has no lumped membrane branch for the "
+              "fluctuation-dissipation evaluation.",
+        "de": "Das Eigenrauschen steht im 1D-/2D-Modell zur Verfügung — "
+              "der 3D-Feldlöser hat keinen konzentrierten Membranzweig "
+              "für die Fluktuations-Dissipations-Auswertung.",
+    },
+
     # ------------------------- Hauptbereich -----------------------------
     "info_no_dr": {
         "en": "Rear side closed (pressure transducer) — there is no "
