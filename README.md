@@ -324,6 +324,34 @@ der Kugel-Standard quantitativ begründet, und abweichende Aufbauten
 Kosten: ~1–2 s je Frequenzpunkt (~200 Elemente), Ergebnisse werden
 gecacht.
 
+**BEM-Frontfaktor (Gegenprobe 26):** Im BEM-Modus kommt auch der
+**Antrieb der Frontmembran** aus demselben Lösungsgang: das exakte
+Flächenmittel des Drucks auf der realen **flachen Stirnfläche** ersetzt
+die Kugelkalotten-Näherung der Morse-Reihe. Physikalischer Kern: an der
+flachen Stirnfläche steht die Membran senkrecht zur einlaufenden Welle
+— der Druckstau erreicht die Verdopplung (+6 dB, mit
+Randbeugungs-Überschwingen bis ~+8 dB) schon bei ka ≈ 2…3, während die
+bei der K67 um ±50° gekrümmte Kugelkalotte dort erst +3…4 dB liefert.
+Diese systematische **3–4-dB-Unterschätzung des frontalen Druckstaus
+war die künstliche Vertiefung der ~7-kHz-Senke** des Kalottenmodells.
+Dass das exakte Physik und kein Fit ist, sichern vier Anker ab:
+(1) auf einer **Kugelkontur** reproduziert das BEM-Frontmittel das
+Kalottenmittel der Morse-Reihe (< 2·10⁻⁴); (2) am **oblaten Sphäroid**
+(flacher Ersatzkörper) trifft es die *absolute* Flammer-Reihe
+p(η) = 2i/(c(ξ₀²+1)) Σ (−i)ⁿ Sₙ(cos θ)Sₙ(η)/(Nₙ R³′ₙ), deren
+Vorfaktor aus der ebenen-Wellen-Expansion folgt (Identität numerisch
+auf Maschinengenauigkeit geprüft) — Abweichung < 10⁻⁴; (3) Grenzfall
+ka → 0 ⇒ F → 1; (4) der Frontfaktor geht exakt multiplikativ in die
+Übertragung ein (H ∝ F·(a + b·G), Netzwerk unberührt, Konsistenz auf
+Maschinengenauigkeit). Ehrlicher Befund der Validierung: im BEM-Modus
+hängt die Mittenband-Form nun sichtbar von der **Montagegeometrie**
+ab — der starr montierte Körper bildet unter dem Kopf einen
+ungedämpften **Ringspalt-Resonator** (Welligkeit ~4–6 kHz, in der
+Realität durch die elastische Halterung bedämpft), der freie Kopf
+(`bem_body_diameter=0`) liefert die glatte Referenz mit dem längeren
+Randumweg der freien Scheibe. Beides ist die exakte Lösung seiner
+Geometrie; geglättet wird nichts.
+
 ### Nierenform der dünnen Doppelmembran-Scheibe
 
 Front- und Rückmembran der K67 sitzen auf den zwei Flächen einer nur

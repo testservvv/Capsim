@@ -2098,9 +2098,24 @@ class MicrophoneCapsule:
                              front=front, rear=rear)
         return self._bem_geo
 
-    def _bem_axial_transfer(self, omega, theta):
-        """Front-Rück-Transfer G(θ) = ⟨p⟩_Rückmembran / ⟨p⟩_Frontmembran
-        aus dem m=0-BEM auf der Kontur Kopf + Mikrofonkörper."""
+    def _bem_axial_fields(self, omega, theta):
+        """Absoluter Frontfaktor F(ω,θ) UND Front-Rück-Transfer G(ω,θ)
+        aus EINEM m=0-BEM-Lösungsgang auf der Kontur Kopf + Körper:
+
+            F = ⟨p⟩_Frontmembran / p0,
+            G = ⟨p⟩_Rückmembran / ⟨p⟩_Frontmembran,
+
+        p0 = ungestörter Freifelddruck im Kapselzentrum (Ursprung).
+        F ist damit der Beugungs-/Druckstaufaktor der REALEN FLACHEN
+        Stirnfläche inkl. Apertur-Mittelung über die Membranfläche
+        (das m=0-Flächenmittel ist auch bei Schrägeinfall exakt).
+        Kein freier Parameter — reine Geometrie im Helmholtz-
+        Randintegral. Wesentlich gegenüber der Kugelkalotten-Näherung
+        (_diffraction_factors): am flachen Kopf steht die Membran
+        SENKRECHT zur Einfallsrichtung — der Druckstau erreicht die
+        Verdopplung (+6 dB) schon bei ka ≈ 2..4, während die um bis
+        ±50° gekrümmte Kugelkalotte dort erst +3..4 dB liefert
+        (validiert: Gegenprobe 26)."""
         from scipy.special import j0 as _bessel_j0
         omega = np.atleast_1d(np.asarray(omega, dtype=float))
         theta = np.atleast_1d(np.asarray(theta, dtype=float))
@@ -2118,6 +2133,7 @@ class MicrophoneCapsule:
             return (_bessel_j0(np.outer(st * k, r))
                     * np.exp(-1j * np.outer(ct * k, z))).T   # (Npunkte, Nθ)
 
+        F = np.empty((omega.size, theta.size), dtype=complex)
         G = np.empty((omega.size, theta.size), dtype=complex)
         wsum = np.zeros(N)
         for i, om in enumerate(omega):
@@ -2145,10 +2161,15 @@ class MicrophoneCapsule:
             u, *_ = np.linalg.lstsq(A, b, rcond=None)
             p_f = (w_area[front] @ u[front]) / np.sum(w_area[front])
             p_r = (w_area[rear] @ u[rear]) / np.sum(w_area[rear])
+            F[i] = np.conj(p_f)
             G[i] = np.conj(p_r / p_f)
         # Diagnose: Residuum der Raumwinkel-Identität (Gitterqualität)
         self._bem_solid_angle_residual = float(np.max(wsum))
-        return G
+        return F, G
+
+    def _bem_axial_transfer(self, omega, theta):
+        """Nur der Front-Rück-Transfer G(θ) (s. :meth:`_bem_axial_fields`)."""
+        return self._bem_axial_fields(omega, theta)[1]
 
     def _axial_body_transfer(self, omega, theta):
         """Front-Rück-Transfer G(θ) = p_rück/p_front der Doppelmembran-Scheibe.
@@ -2875,23 +2896,34 @@ class MicrophoneCapsule:
         theta = np.atleast_1d(np.asarray(theta, dtype=float))
         k = omega / C_AIR
         if self.include_diffraction and _HAS_SCIPY:
-            F_f, F_r = self._diffraction_factors(omega, theta)
             if self.architecture == "dual_diaphragm":
-                # DÜNNE-SCHEIBE-BAUFORM (K67): die R_body-Kugel liefert die
+                # DÜNNE-SCHEIBE-BAUFORM (K67): Druckstau/Bündelung (F_f)
+                # und Front-Rück-Gradient (G_ax) getrennt, beides aus
+                # exakten Streulösungen ohne Fit-Koeffizient.
+                if self.axial_body_model == "bem":
+                    # BEM: EIN Lösungsgang liefert den absoluten
+                    # Frontfaktor der realen FLACHEN Stirnfläche UND den
+                    # Transfer. Die Kugelkalotte (±50° Krümmung bei der
+                    # K67) unterschätzt den frontalen Druckstau der
+                    # flachen Stirnfläche im Band ka ≈ 2..5 um ~3 dB —
+                    # die Ursache der künstlichen 7-kHz-Senke des
+                    # Kalottenmodells (s. Gegenprobe 26).
+                    F_bem, G_ax = self._bem_axial_fields(omega, theta)
+                    return F_bem, F_bem * G_ax
+                # Kugel-/Sphäroidmodus: die R_body-Kugel liefert die
                 # GEMEINSAME Bündelung/Druckstau (Kopf-/Bodyskala, HF-
                 # Richtwirkung); der Front-Rück-Gradient kommt aus dem
                 # Pol-zu-Pol-Transfer der Kugel mit der korrekten AXIALEN
-                # Ausdehnung d_ext (s. _axial_body_transfer): geometrische
-                # Laufzeit + Beugungsumweg + Amplituden-Asymmetrie, alles
-                # aus der exakten Streureihe, ohne Fit-Koeffizient.
+                # Ausdehnung d_ext (s. _axial_body_transfer) bzw. dem
+                # Sphäroid: geometrische Laufzeit + Beugungsumweg +
+                # Amplituden-Asymmetrie aus der exakten Streureihe.
+                F_f, _ = self._diffraction_factors(omega, theta)
                 if self.axial_body_model == "spheroid":
                     G_ax = self._axial_spheroid_transfer(omega, theta)
-                elif self.axial_body_model == "bem":
-                    G_ax = self._bem_axial_transfer(omega, theta)
                 else:
                     G_ax = self._axial_body_transfer(omega, theta)
                 return F_f, F_f * G_ax
-            return F_f, F_r
+            return self._diffraction_factors(omega, theta)
         p_front = np.ones((omega.size, theta.size), dtype=complex)
         p_rear = np.exp(-1j * np.outer(k * self.d_ext, np.cos(theta)))
         return p_front, p_rear
@@ -5692,5 +5724,152 @@ if __name__ == "__main__":
           f"{sn['spl_a_mem_db']:.1f} / Rückpfad {sn['spl_a_rear_db']:.1f} "
           f"dB-A; T->2T +3.01 dB; Anteile summieren zu 1; 3D-Gatter "
           f"greift  OK")
+
+    # --------- Gegenprobe 26: BEM-Frontfaktor (exakter Druckstau der -------
+    # FLACHEN Stirnfläche ersetzt die Kugelkalotten-Näherung im BEM-Modus).
+    # Der BEM-Modus treibt die Frontmembran jetzt mit dem ABSOLUTEN
+    # Flächenmittel ⟨p⟩ der realen flachen Stirnfläche (aus demselben
+    # Lösungsgang wie der Front-Rück-Transfer) statt mit der Morse-
+    # Kugelkalotte (bei der K67 um ±50° gekrümmt). Kein freier Parameter:
+    # a) KUGELKONTUR-GRENZFALL: BEM-Frontmittel über die ±50°-Kalotte
+    #    einer Kugelkontur == Kalottenmittel der Morse-Reihe (identische
+    #    Geometrie, zwei unabhängige exakte Methoden).
+    # b) FLACHKÖRPER-ABSOLUTREFERENZ: am oblaten Sphäroid (17 x 6.1 mm)
+    #    muss das BEM-Frontmittel den ANALYTISCHEN Absolutdruck der
+    #    Flammer-Reihe treffen:
+    #        p(eta) = 2i/(c(xi0²+1)) Σ (−i)^n S_n(cosθ) S_n(eta)/(N_n R3'_n)
+    #    — Vorfaktor aus der ebenen-Wellen-Expansion (Identität numerisch
+    #    auf Maschinengenauigkeit geprüft) plus Wronski-Identität; eine
+    #    unabhängige exakte Referenz für einen FLACHEN Körper.
+    # c) PHYSIK DER FLACHEN STIRNFLÄCHE: ka→0 ⇒ F→1; im Band 5–9 kHz
+    #    (ka ≈ 2..3) staut die SENKRECHT zur Welle stehende flache
+    #    Stirnfläche +6.5..+8 dB (nahe Druckverdopplung samt Randbeugungs-
+    #    Überschwingen), die ±50°-Kalotte nur +3.3..+4.1 dB — diese
+    #    3–4-dB-Unterschätzung war die künstliche Vertiefung der
+    #    7-kHz-Senke des Kalottenmodells (Kalotte bleibt für die
+    #    Kugel-/Sphäroidmodi in Kraft, dort ist sie die konsistente
+    #    Geometrie).
+    # d) KONSISTENZ: H_neu = H_alt · F_bem/F_cap exakt — der Frontfaktor
+    #    geht multiplikativ ein (H ∝ F·(a + b·G)), das Netzwerk bleibt
+    #    unberührt.
+    if _HAS_SCIPY:
+        par26 = dict(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=34e-3,
+            squeeze_model="2d", axial_body_model="bem",
+            bem_body_diameter=0.0)
+        k67f26 = MicrophoneCapsule(**par26)
+        # a) Kugelkontur: Kalottenrand fällt exakt auf eine Gitterlinie
+        R26 = k67f26.R_body
+        psi_c = float(np.arcsin(k67f26.a_mem / R26))
+        psi26 = np.concatenate([np.linspace(0.0, psi_c, 41),
+                                np.linspace(psi_c, np.pi, 121)[1:]])
+        el26 = MicrophoneCapsule._bem_elems(
+            np.stack([R26 * np.sin(psi26), R26 * np.cos(psi26)], 1))
+        ps_m = np.arctan2(el26["mid_r"], el26["mid_z"])
+        k67f26._bem_geo = dict(
+            elems=el26, chief=[(0.0, 0.0)],
+            w_area=2.0 * np.pi * el26["mid_r"] * el26["L"],
+            front=ps_m < psi_c, rear=ps_m > np.pi - psi_c)
+        th26 = np.deg2rad(np.array([0.0, 60.0, 120.0]))
+        worst_f26 = 0.0
+        for f26 in (1000.0, 7000.0):
+            om26 = np.array([2.0 * np.pi * f26])
+            F_b26 = k67f26._bem_axial_fields(om26, th26)[0]
+            F_ref26, _ = k67f26._diffraction_factors(om26, th26)
+            worst_f26 = max(worst_f26, float(np.max(
+                np.abs(F_b26 - F_ref26) / np.abs(F_ref26))))
+        assert worst_f26 < 2e-3, \
+            f"BEM-Frontmittel muss die Morse-Kalotte treffen ({worst_f26:.1e})"
+        # b) Sphäroid: BEM-Frontmittel vs. Flammer-Absolutreihe
+        a26, b26 = 17e-3, 6.1e-3
+        foc26 = np.sqrt(a26**2 - b26**2)
+        xi26 = b26 / foc26
+        psi_s = np.linspace(0.0, np.pi, 181)
+        el_s = MicrophoneCapsule._bem_elems(
+            np.stack([a26 * np.sin(psi_s), b26 * np.cos(psi_s)], 1))
+        mrs, mzs = el_s["mid_r"], el_s["mid_z"]
+        fr_s = (mzs > 0) & (mrs <= 13e-3)
+        k67f26._bem_geo = dict(
+            elems=el_s, chief=[(0.0, 0.0)],
+            w_area=2.0 * np.pi * mrs * el_s["L"],
+            front=fr_s, rear=(mzs < 0) & (mrs <= 13e-3))
+        w_s = (2.0 * np.pi * mrs * el_s["L"])[fr_s]
+        A_s = (mrs**2 + mzs**2) / foc26**2 - 1.0
+        xi_s = np.sqrt(0.5 * (A_s + np.sqrt(A_s**2
+                                            + 4.0 * mzs**2 / foc26**2)))
+        eta_s = np.clip(mzs / (foc26 * xi_s), -1.0, 1.0)[fr_s]
+        worst_s26 = 0.0
+        for f26, thd26 in ((7000.0, 0.0), (7000.0, 60.0)):
+            k26 = 2.0 * np.pi * f26 / C_AIR
+            c26 = k26 * foc26
+            th_s = float(np.deg2rad(thd26))
+            modes26 = MicrophoneCapsule._oblate_modes(
+                c26, int(np.ceil(c26)) + 12)
+            p26 = np.zeros(int(np.sum(fr_s)), dtype=complex)
+            for m26 in modes26:
+                _, dR3_26 = MicrophoneCapsule._oblate_R3(m26, c26, xi26)
+                S_th26 = MicrophoneCapsule._oblate_S(m26, np.cos(th_s))[0]
+                p26 += ((-1j) ** m26["n"] * S_th26
+                        * MicrophoneCapsule._oblate_S(m26, eta_s)
+                        / (m26["N"] * dR3_26))
+            p_ref26 = np.conj(2j / (c26 * (xi26**2 + 1.0))
+                              * (w_s @ p26) / np.sum(w_s))
+            F_b26 = k67f26._bem_axial_fields(
+                np.array([2.0 * np.pi * f26]), np.array([th_s]))[0][0, 0]
+            worst_s26 = max(worst_s26,
+                            float(abs(F_b26 - p_ref26) / abs(p_ref26)))
+        assert worst_s26 < 1e-3, \
+            (f"BEM muss die Flammer-Absolutreihe am Sphäroid treffen "
+             f"({worst_s26:.1e})")
+        # c) reale K67-Kopfgeometrie (frei): Grenzfälle und Band 5-9 kHz
+        k67f26._bem_geo = None
+        om_c26 = 2.0 * np.pi * np.array([100.0, 5000.0, 7000.0, 9000.0])
+        th0_26 = np.array([0.0])
+        F_flat26 = k67f26._bem_axial_fields(om_c26, th0_26)[0][:, 0]
+        F_cap26, _ = k67f26._diffraction_factors(om_c26, th0_26)
+        assert abs(abs(F_flat26[0]) - 1.0) < 5e-3, \
+            f"ka->0 muss F->1 liefern ({abs(F_flat26[0]):.4f})"
+        d_band26 = 20.0 * np.log10(np.abs(F_flat26[1:] / F_cap26[1:, 0]))
+        assert np.all((d_band26 > 2.5) & (d_band26 < 4.5)), \
+            (f"flache Stirnfläche muss die Kalotte um 3-4 dB übertreffen "
+             f"({np.round(d_band26, 2)})")
+        f_band26 = 20.0 * np.log10(np.abs(F_flat26[1:]))
+        assert np.all((f_band26 > 6.0) & (f_band26 < 8.5)), \
+            (f"Druckstau nahe Verdopplung (+6..+8 dB) erwartet "
+             f"({np.round(f_band26, 2)})")
+        # d) Multiplikativität über den vollen Signalpfad (Netzwerk unberührt)
+
+        class _KalottenFrontBem(MicrophoneCapsule):
+            """Alter BEM-Modus (Kalotten-F, BEM-G) — nur Konsistenzprobe."""
+
+            def _bem_axial_fields(self, omega, theta):
+                _, G_b = MicrophoneCapsule._bem_axial_fields(
+                    self, omega, theta)
+                return self._diffraction_factors(omega, theta)[0], G_b
+
+        f26h = [1000.0, 7000.0]
+        om26h = 2.0 * np.pi * np.asarray(f26h)
+        H_neu26 = k67f26.transfer_function(f26h)
+        H_alt26 = _KalottenFrontBem(**par26).transfer_function(f26h)
+        F_n26 = k67f26._bem_axial_fields(om26h, th0_26)[0][:, 0]
+        F_c26 = k67f26._diffraction_factors(om26h, th0_26)[0][:, 0]
+        ratio26 = float(np.max(np.abs(H_neu26 / H_alt26 - F_n26 / F_c26)
+                               / np.abs(F_n26 / F_c26)))
+        assert ratio26 < 1e-9, \
+            f"Frontfaktor muss exakt multiplikativ eingehen ({ratio26:.1e})"
+        print(f"BEM-Frontfaktor: Kugelkontur == Morse-Kalotte "
+              f"{worst_f26:.1e}; Sphäroid-Absolutreihe {worst_s26:.1e}; "
+              f"ka->0: |F| = {abs(F_flat26[0]):.4f}; flache Stirnfläche "
+              f"+{f_band26[1]:.1f} dB bei 7 kHz (Kalotte unterschätzt um "
+              f"{d_band26[1]:.1f} dB); multiplikativ {ratio26:.1e}  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

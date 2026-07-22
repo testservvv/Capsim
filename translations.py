@@ -597,7 +597,15 @@ TR = {
               "see Gegenprobe 20. BEM: mounting-faithful boundary-element "
               "method on the head + microphone-body contour (m=0, "
               "validated against BOTH the sphere and spheroid series) — "
-              "lies between the two reference bodies. CONSIDERABLY slower "
+              "lies between the two reference bodies. In BEM mode the "
+              "FRONT drive also comes from the same solve: the exact "
+              "pressure buildup of the real FLAT front face replaces the "
+              "spherical-cap approximation (which underestimates it by "
+              "3–4 dB around ka ≈ 2–3; Gegenprobe 26). Note: a rigidly "
+              "mounted body forms an undamped annular gap resonator "
+              "below the head (visible response ripple ~4–6 kHz); in "
+              "reality the elastic mount damps this — body Ø 0 (free "
+              "head) gives the smooth reference. CONSIDERABLY slower "
               "(~1–2 s per frequency point), results are cached.",
         "de": "Referenzkörper für den axialen Front-Rück-"
               "Transfer G(180°) der Doppelmembran-Bauform. "
@@ -615,9 +623,19 @@ TR = {
               "montagetreues Randelementverfahren auf der "
               "Kontur Kopf + Mikrofonkörper (m=0, gegen "
               "Kugel- UND Sphäroid-Reihe validiert) — "
-              "liegt zwischen beiden Referenzkörpern. "
-              "DEUTLICH langsamer (~1-2 s je Frequenz-"
-              "punkt), Ergebnisse werden gecacht.",
+              "liegt zwischen beiden Referenzkörpern. Im "
+              "BEM-Modus kommt auch der FRONT-Antrieb aus "
+              "demselben Lösungsgang: der exakte Druckstau "
+              "der realen FLACHEN Stirnfläche ersetzt die "
+              "Kugelkalotten-Näherung (die ihn um 3-4 dB "
+              "bei ka ≈ 2-3 unterschätzt; Gegenprobe 26). "
+              "Hinweis: ein STARR montierter Körper bildet "
+              "unter dem Kopf einen ungedämpften Ringspalt-"
+              "Resonator (sichtbare Welligkeit ~4-6 kHz); "
+              "real dämpft die elastische Halterung — "
+              "Körper-Ø 0 (freier Kopf) liefert die glatte "
+              "Referenz. DEUTLICH langsamer (~1-2 s je "
+              "Frequenzpunkt), Ergebnisse werden gecacht.",
     },
     "lbl_bem_dia": {
         "en": "BEM: body Ø [mm]",
