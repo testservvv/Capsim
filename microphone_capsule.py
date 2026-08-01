@@ -1616,23 +1616,60 @@ class MicrophoneCapsule:
         return Z + (1j * omega * RHO0 * delta / S + Z_step) / count
 
     def _radiation_impedance_membrane(self, omega):
-        """Strahlungsimpedanz der Membranvorderseite.
+        """Strahlungsimpedanz der Membranaußenseite — EXAKTER Kolben.
 
-        KOLBEN IN UNENDLICHER SCHALLWAND (Niederfrequenz-Näherung ka < 2):
-            Z_rad = rho0*c/S * [ (k a)^2 / 2  +  j * 8 k a / (3 pi) ]
-        Realteil = Strahlungswiderstand (auf rho0*c/S begrenzt),
-        Imaginärteil = mitschwingende Luftmasse M_rad = 8 rho0/(3 pi^2 a).
-        Die Annahme "unendliche Schallwand" überschätzt die Strahlungslast
-        einer frei stehenden Kapsel bei tiefen Frequenzen leicht — für das
-        Lumped-Modell ist der Einfluss vernachlässigbar klein.
+        KOLBEN IN UNENDLICHER SCHALLWAND, geschlossene Form (Beranek):
+
+            Z_rad = rho0*c/S * [ R1(2ka) + j*X1(2ka) ],
+            R1(x) = 1 - 2*J1(x)/x,      X1(x) = 2*H1(x)/x
+
+        mit der Besselfunktion J1 und der Struve-Funktion H1. Kein
+        Fit-Koeffizient: das ist die geschlossene Lösung des
+        Rayleigh-Integrals über die Kolbenfläche.
+
+        WARUM NICHT DIE ASYMPTOTE: Bis Version <= Gegenprobe 26 stand hier
+        die KLEINARGUMENT-Asymptote R ~ (ka)^2/2, X ~ 8ka/(3pi). Sie ist
+        für ka -> 0 exakt (Gegenprobe 27 prüft das), divergiert aber
+        oberhalb ka ~ 1 grob: die Reaktanz X1 hat ein MAXIMUM bei
+        2ka ~ 2 und fällt danach wie 4/(pi*2ka) ab, während die Asymptote
+        linear weiterwächst. Die mitschwingende Luftmasse
+        M = X*Z0/omega ist deshalb nicht konstant, sondern verschwindet
+        im Hochton:
+
+            f (26-mm-Membran)   1k    4k    8k   12k   16k
+            M_asymptote      25.0  25.0  25.0  25.0  25.0  kg/m^4
+            M_exakt          24.6  19.6   8.9   2.0   0.8  kg/m^4
+
+        Da M_A_mem der K67 nur 20.9 kg/m^4 beträgt, VERDOPPELTE die
+        Asymptote die bewegte Masse über das ganze Band und drückte den
+        Hochton künstlich (bei 16 kHz um ~7 dB). Die Strahlungslast ist
+        also keineswegs "vernachlässigbar klein": |Z_rad| liegt in der
+        Größenordnung von |Z_mem| selbst.
+
+        VERBLEIBENDE NÄHERUNG (bewusst, dokumentiert): die unendliche
+        Schallwand. Die reale Kapsel sitzt auf einer endlichen Scheibe;
+        exakt lieferte das der BEM über die Reziprozität von Streu- und
+        Strahlungsproblem. Der Unterschied ist zweiter Ordnung gegenüber
+        dem hier behobenen Asymptotenfehler.
         """
         omega = np.asarray(omega, dtype=float)
-        a = self.a_mem
-        S = self.S_mem
-        k = omega / C_AIR
-        R = (RHO0 * C_AIR / S) * np.minimum((k * a) ** 2 / 2.0, 1.0)
-        X = (RHO0 * C_AIR / S) * (8.0 * k * a) / (3.0 * np.pi)
-        return R + 1j * X
+        Z0 = RHO0 * C_AIR / self.S_mem
+        x = 2.0 * omega * self.a_mem / C_AIR              # x = 2ka
+        if not _HAS_SCIPY:
+            # Ohne SciPy bleibt nur die Asymptote (Gültigkeit ka < 1).
+            ka = 0.5 * x
+            return Z0 * (np.minimum(ka ** 2 / 2.0, 1.0)
+                         + 1j * (8.0 * ka) / (3.0 * np.pi))
+        from scipy.special import j1 as _bessel_j1, struve as _struve_h
+        xs = np.maximum(x, 1e-30)
+        R = 1.0 - 2.0 * _bessel_j1(xs) / xs
+        X = 2.0 * _struve_h(1, xs) / xs
+        # Kleinargument: 1 - 2*J1(x)/x löscht sich aus -> Reihe verwenden
+        small = x < 1.0e-3
+        if np.any(small):
+            R = np.where(small, x ** 2 / 8.0, R)
+            X = np.where(small, 4.0 * x / (3.0 * np.pi), X)
+        return Z0 * (R + 1j * X)
 
     def _membrane_impedance(self, omega):
         """Serienimpedanz der Membran: Z = R + j*omega*M + 1/(j*omega*C_eff).
@@ -2374,7 +2411,10 @@ class MicrophoneCapsule:
         arch = self.architecture
         if arch == "dual_diaphragm":
             n_films = 3 if self.h_center > 0.0 else 2
-            n_mem, n_nodes = 2, 0
+            # Zwei Sammelknoten VOR den Membranaußenseiten: sie tragen
+            # Strahlungsimpedanz und Gewebe (bis Gegenprobe 26 fehlten sie
+            # hier — Gewebe blieb im 3D-Modus wirkungslos, s. Gegenprobe 27)
+            n_mem, n_nodes = 2, 2
         elif arch == "dual":
             n_films, n_mem, n_nodes = 2, 1, 2
         else:                                        # single
@@ -2470,8 +2510,7 @@ class MicrophoneCapsule:
                 vals.append(-kappa * A_m[i])
         # Druckkopplung Membranzeilen (omega-unabhängig)
         if arch == "dual_diaphragm":
-            # Frontmembran: -p_film0; Rückmembran: +p_film1 (Quelle p_front/
-            # p_rear wirkt als rhs direkt auf die Membranaußenseiten)
+            # Frontmembran: -p_film0; Rückmembran: +p_film1
             for i in range(Nr):
                 for j in range(Np_):
                     rows.append(off_wf + i * Np_ + j)
@@ -2480,6 +2519,19 @@ class MicrophoneCapsule:
                     rows.append(off_wr + i * Np_ + j)
                     cols.append(NF + i * Np_ + j)
                     vals.append(+A_f[i])
+            # Außenseiten über die Sammelknoten (Strahlung + Gewebe) statt
+            # direkt aus der Quelle — Vorzeichen wie beim bisherigen
+            # Direktantrieb (rhs -A_m vorn / +A_m hinten). Grenzfall
+            # Z_außen -> 0: p_knoten = p_außen reproduziert den
+            # Direktantrieb exakt (Gegenprobe 27).
+            for i in range(Nr_m):
+                for j in range(Np_):
+                    rows.append(off_wf + i * Np_ + j)
+                    cols.append(off_n + 0)
+                    vals.append(+A_m[i])
+                    rows.append(off_wr + i * Np_ + j)
+                    cols.append(off_n + 1)
+                    vals.append(-A_m[i])
         elif arch == "dual":
             # Mittelmembran zwischen den Filmen, w positiv = nach VORN
             # (Film 0 liegt VOR der Membran und drückt sie nach hinten,
@@ -2821,6 +2873,25 @@ class MicrophoneCapsule:
                 for cr_, cc in zip(g["th_r"], g["th_cr"]):
                     _two_port_stamp(rows, cols, vals, cr_, NF, cc, 2 * NF,
                                     Y11, Y12, Y22)
+            if arch == "dual_diaphragm":
+                # ---- Außenknoten beider Membranen: Strahlung + Gewebe ----
+                # Baugleich zum 1D/2D-Pfad (_assemble_parts: vorn
+                # Z_rad + rayl_front/S_mem, hinten rayl_rear/S_mem + Z_rad).
+                # Flussbilanz: w ist global nach VORN positiv, die
+                # Frontmembran schiebt also IN den Frontknoten (-jw A),
+                # die Rückmembran vom Rückknoten WEG (+jw A).
+                Z_rad_m = self._radiation_impedance_membrane(om_a)[0]
+                Z_ext_f = Z_rad_m + self.rayl_front / self.S_mem
+                Z_ext_r = Z_rad_m + self.rayl_rear / self.S_mem
+                rows += [np.array([off_n + 0]), np.array([off_n + 1])]
+                cols += [np.array([off_n + 0]), np.array([off_n + 1])]
+                vals += [np.array([1.0 / Z_ext_f], dtype=complex),
+                         np.array([1.0 / Z_ext_r], dtype=complex)]
+                midx_n = off_w + np.arange(NM)
+                rows += [np.full(NM, off_n + 0), np.full(NM, off_n + 1)]
+                cols += [midx_n, midx_n + NM]
+                vals += [-1j * om * rhs_w.astype(complex),
+                         +1j * om * rhs_w.astype(complex)]
             # Sacklöcher: geschlossene Stubs an ihren Zellen
             if self.n_bh > 0:
                 ybh = 1.0 / self._closed_hole_stub(om_a, self.r_bh,
@@ -2851,8 +2922,8 @@ class MicrophoneCapsule:
             lu = splu(S)
             rhs = np.zeros((N_tot, 2), dtype=complex)
             if arch == "dual_diaphragm":
-                rhs[off_w:off_w + NM, 0] = -rhs_w    # p_front = 1
-                rhs[off_w + NM:off_n, 1] = +rhs_w    # p_rear  = 1
+                rhs[off_n + 0, 0] = 1.0 / Z_ext_f    # p_front am Frontknoten
+                rhs[off_n + 1, 1] = 1.0 / Z_ext_r    # p_rear am Rückknoten
             elif arch == "dual":
                 rhs[off_n + 0, 0] = 1.0 / Z_fr       # p_front am Frontknoten
                 rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
@@ -5871,5 +5942,139 @@ if __name__ == "__main__":
               f"ka->0: |F| = {abs(F_flat26[0]):.4f}; flache Stirnfläche "
               f"+{f_band26[1]:.1f} dB bei 7 kHz (Kalotte unterschätzt um "
               f"{d_band26[1]:.1f} dB); multiplikativ {ratio26:.1e}  OK")
+
+    # --------- Gegenprobe 27: Strahlungsimpedanz + 3D-Außenknoten ---------
+    # a) EXAKTE KOLBENSTRAHLUNG statt Kleinargument-Asymptote. Bis
+    #    Gegenprobe 26 stand im Frontzweig R ~ (ka)²/2, X ~ 8ka/(3pi) —
+    #    für ka -> 0 exakt, oberhalb ka ~ 1 aber grob falsch: die
+    #    Reaktanz X1 hat ein MAXIMUM und fällt danach ab, die Asymptote
+    #    wächst linear weiter. Folge war eine KONSTANTE Zusatzmasse von
+    #    25 kg/m^4 (die Membran selbst hat nur 20.9), die den Hochton um
+    #    ~7 dB bei 16 kHz niederhielt. Verankert an:
+    #      - Lehrbuch-Stützwert R1(2) = 1 - J1(2) = 0.4233,
+    #      - Kleinargument-Grenzfall == alte Asymptote (Stetigkeit),
+    #      - Hochton: mitschwingende Masse MUSS zusammenbrechen,
+    #      - omega = 0 bleibt endlich (keine 0/0-Auslöschung).
+    # b) 3D-AUSSENKNOTEN der Doppelmembran-Bauform. Der 3D-Löser trieb die
+    #    Membranaußenseiten direkt aus der Quelle — Strahlungsimpedanz und
+    #    Gewebe fehlten ERSATZLOS (fabric_* blieb im 3D-Modus exakt
+    #    wirkungslos, ein still falsches Ergebnis). Jetzt zwei Sammel-
+    #    knoten wie bei single/dual. Verankert an:
+    #      - GRENZFALL Z_außen -> 0 reproduziert den Direktantrieb, und
+    #        zwar mit ERSTER ORDNUNG (Z zehnfach kleiner -> Abstand zum
+    #        Grenzwert zehnfach kleiner) — beweist Vorzeichen und Struktur,
+    #      - Passivität: Gewebe dämpft monoton (nie Verstärkung),
+    #      - Topologie-Konsistenz: dieselbe Dämpfung wie im 1D/2D-Pfad,
+    #      - Reziprozität X_r = -B_f bleibt erhalten.
+    if _HAS_SCIPY:
+        from scipy.special import j1 as _j1_27, struve as _struve_27
+        cap27 = MicrophoneCapsule(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=40e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, squeeze_model="2d")
+        Z0_27 = RHO0 * C_AIR / cap27.S_mem
+        a27 = cap27.a_mem
+        # Lehrbuch-Stützwert bei 2ka = 2
+        f_x2 = C_AIR / (2.0 * np.pi * a27)            # -> ka = 1, x = 2
+        Z_x2 = cap27._radiation_impedance_membrane(
+            np.array([2.0 * np.pi * f_x2]))[0]
+        assert abs(Z_x2.real / Z0_27 - (1.0 - float(_j1_27(2.0)))) < 1e-9, \
+            f"R1(2) muss 1-J1(2) = 0.4233 sein ({Z_x2.real / Z0_27:.4f})"
+        assert abs(Z_x2.imag / Z0_27 - float(_struve_27(1, 2.0))) < 1e-9, \
+            "X1(2) muss 2*H1(2)/2 treffen"
+        # Kleinargument: exakte Form == alte Asymptote (stetiger Anschluss)
+        om_lf27 = np.array([2.0 * np.pi * 20.0])
+        Z_lf = cap27._radiation_impedance_membrane(om_lf27)[0]
+        ka_lf = om_lf27[0] * a27 / C_AIR
+        assert abs(Z_lf.imag / Z0_27 / (8.0 * ka_lf / (3.0 * np.pi)) - 1.0) \
+            < 1e-5, "ka -> 0 muss die alte Asymptote reproduzieren"
+        M_class = 8.0 * RHO0 / (3.0 * np.pi ** 2 * a27)
+        M_lf = Z_lf.imag / om_lf27[0]
+        assert abs(M_lf / M_class - 1.0) < 1e-4, \
+            (f"LF-Luftmasse muss 8*rho0/(3 pi^2 a) = {M_class:.1f} sein "
+             f"({M_lf:.1f} kg/m^4)")
+        # Hochton: die mitschwingende Masse MUSS zusammenbrechen
+        om_hf27 = 2.0 * np.pi * np.array([16000.0])
+        M_hf = (cap27._radiation_impedance_membrane(om_hf27)[0].imag
+                / om_hf27[0])
+        assert M_hf < 0.1 * M_lf, \
+            (f"Strahlungsmasse muss im Hochton verschwinden "
+             f"({M_hf:.2f} vs. {M_lf:.1f} kg/m^4)")
+        assert np.all(np.isfinite(cap27._radiation_impedance_membrane(
+            np.array([0.0])))), "omega = 0 muss endlich bleiben"
+
+        # ---- b) 3D-Außenknoten ----
+        par27 = dict(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=40e-6, n_through_holes=12,
+            through_hole_diameter=0.6e-3, n_blind_holes=24,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True)
+        om27 = 2.0 * np.pi * np.array([1000.0])
+        _rad_orig = MicrophoneCapsule._radiation_impedance_membrane
+
+        def _rad_eps(self, omega, _e=1.0):
+            om_ = np.asarray(omega, dtype=float)
+            return np.full(om_.shape, _e * RHO0 * C_AIR / self.S_mem,
+                           dtype=complex)
+
+        try:
+            X_lim = {}
+            for e27 in (1e-3, 1e-4, 1e-5):
+                MicrophoneCapsule._radiation_impedance_membrane = \
+                    (lambda s, o, _e=e27: _rad_eps(s, o, _e))
+                X_lim[e27] = MicrophoneCapsule(
+                    squeeze_model="3d", fabric_front_rayl=0.0,
+                    fabric_rear_rayl=0.0, **par27)._solve_3d(om27)[0][0]
+        finally:
+            MicrophoneCapsule._radiation_impedance_membrane = _rad_orig
+        d1 = abs(X_lim[1e-3] - X_lim[1e-5])
+        d2 = abs(X_lim[1e-4] - X_lim[1e-5])
+        assert d2 < 0.2 * d1, \
+            (f"Z -> 0 muss mit erster Ordnung konvergieren "
+             f"(zehnfach kleineres Z: {d2:.3e} vs. {d1:.3e})")
+        # Passivität + Topologie-Konsistenz gegen den 1D/2D-Pfad
+        att = {}
+        for mdl27 in ("2d", "3d"):
+            H0_27 = MicrophoneCapsule(
+                squeeze_model=mdl27, fabric_front_rayl=0.0,
+                fabric_rear_rayl=0.0, **par27).transfer_function([1000.0])
+            lv = []
+            for r27 in (1.0e3, 1.0e4, 1.0e5):
+                H_27 = MicrophoneCapsule(
+                    squeeze_model=mdl27, fabric_front_rayl=r27,
+                    fabric_rear_rayl=0.0, **par27).transfer_function([1000.0])
+                lv.append(float(20.0 * np.log10(np.abs(H_27[0])
+                                                / np.abs(H0_27[0]))))
+            att[mdl27] = lv
+            assert lv[0] < -1e-3, \
+                f"{mdl27}: Gewebe muss im 3D-Modus überhaupt wirken ({lv[0]})"
+            assert lv[0] > lv[1] > lv[2], \
+                f"{mdl27}: Gewebe muss monoton dämpfen (Passivität) {lv}"
+        assert abs(att["3d"][2] - att["2d"][2]) < 1.0, \
+            (f"3D-Außenknoten muss dieselbe Dämpfung liefern wie die "
+             f"1D/2D-Kette ({att['3d'][2]:.2f} vs. {att['2d'][2]:.2f} dB)")
+        # Reziprozität der Membranports bleibt erhalten
+        c27r = MicrophoneCapsule(squeeze_model="3d", fabric_front_rayl=0.0,
+                                 fabric_rear_rayl=0.0, **par27)
+        Xf27, Xr27, Bf27, Br27 = c27r._solve_3d(om27, want_rear=True)
+        assert abs(Xr27[0] / Bf27[0] + 1.0) < 5e-3, \
+            (f"Reziprozität X_r = -B_f muss erhalten bleiben "
+             f"({Xr27[0] / Bf27[0]:.4f})")
+        print(f"Strahlung/3D-Knoten: R1(2) = {Z_x2.real / Z0_27:.4f} "
+              f"(= 1-J1(2)); Luftmasse {M_lf:.1f} kg/m^4 (LF, klassisch) "
+              f"-> {M_hf:.2f} bei 16 kHz; 3D-Grenzfall Z->0 konvergiert "
+              f"1. Ordnung ({d2 / d1:.3f}); Gewebe wirkt jetzt im 3D "
+              f"({att['3d'][2]:.1f} dB vs. 2D {att['2d'][2]:.1f} dB); "
+              f"reziprok  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

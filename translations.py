@@ -728,7 +728,10 @@ TR = {
               "with center gap > 0 computes the TWO-PIECE electrode (K67 "
               "type): center gap as a third film, stepped bores as a "
               "two-port chain per hole, electrode halves rotated against "
-              "each other. Takes precedence over the 2D switch. "
+              "each other. Takes precedence over the 2D switch. Since "
+              "Gegenprobe 27 the membrane outsides also carry radiation "
+              "impedance and fabric via collector nodes (before that, "
+              "fabric had NO effect in 3D). "
               "CONSIDERABLY slower (~1–2 s, K67 type up to ~10 s per "
               "frequency point) — reduce frequency points!",
         "de": "Volles (r, φ)-Feldmodell: alle Spaltfilme UND "
@@ -746,9 +749,12 @@ TR = {
               "Zwischenspalt als dritter Film, Stufenbohrungen "
               "als Zweitor-Kette je Loch, Elektrodenhälften "
               "gegeneinander verdreht. Hat Vorrang vor dem "
-              "2D-Schalter. DEUTLICH langsamer (~1–2 s, K67-Typ "
-              "bis ~10 s je Frequenzpunkt) — Frequenzpunkte "
-              "reduzieren!",
+              "2D-Schalter. Seit Gegenprobe 27 tragen auch die "
+              "Membranaußenseiten Strahlungsimpedanz und Gewebe "
+              "über Sammelknoten (vorher blieb Gewebe im "
+              "3D-Modus wirkungslos). DEUTLICH langsamer "
+              "(~1–2 s, K67-Typ bis ~10 s je Frequenzpunkt) — "
+              "Frequenzpunkte reduzieren!",
     },
     "lbl_rot_auto": {
         "en": "Half rotation automatic (half hole pitch)",

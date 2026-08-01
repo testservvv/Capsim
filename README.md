@@ -235,10 +235,15 @@ die Membranen und definieren die ehrliche externe Distanz
 **2D-Feldmodell** (`squeeze_2d = true`) und dem vermessenen
 Kapselkopf-Durchmesser als Beugungskörper. Ergebnis mit den nominellen
 inneren Maßen: Ruhekapazität C₀ = 50,3 pF (trifft den nachgemessenen
-Wert), Niere **−6,4/−17,2/−25,7 dB @ 90/135/180° (1 kHz)** — praktisch
-die publizierten U87-Werte —, glatter Präsenzpeak +3,6 dB @ 11,4 kHz
-(roh; Korb und Elektronik — nicht modelliert — glätten auf die
-veröffentlichten ~+2..3 dB), Empfindlichkeit 20,9 mV/Pa. Das tiefste
+Wert), Niere **−6,4/−17,3/−26,2 dB @ 90/135/180° (1 kHz)** — praktisch
+die publizierten U87-Werte —, glatter Präsenzpeak +3,3 dB @ 13,5 kHz,
+Empfindlichkeit 21,0 mV/Pa. **Wichtig für Datenblatt-Vergleiche:** das
+Modell rechnet die **nackte Kapsel**. Die K67 ist bewusst hell ausgelegt
+(„Pre-Emphasis"), und die U87-Elektronik nimmt das über Gegenkopplung
+wieder heraus („De-Emphasis"); dazu kommt der nicht modellierte Korb.
+Ein Kapselmodell **muss** im Hochton also ÜBER der veröffentlichten
+Gesamtkurve liegen — Übereinstimmung mit dem Datenblatt oberhalb
+~10 kHz wäre ein Warnzeichen, kein Gütesiegel. Das tiefste
 Minimum liegt in den Mitten knapp vor 180° (~160°);
 `examples/cardiodtest.json` pinnt es mit Spacer 45 µm exakt auf 180°.
 Über „Projekt laden" importierbar.
@@ -367,6 +372,54 @@ Front-Rück-Gradient kommt aus dem Pol-zu-Pol-Transfer der Kugel mit der
 **korrekten axialen Ausdehnung** `d_ext` (s. `_axial_body_transfer`) —
 so bleibt die Nullstelle im Grundton-/Mittenbereich nahe 180°, und erst
 zu hohen Frequenzen bündelt die Niere (wie real).
+
+### Strahlungsimpedanz: exakter Kolben statt Asymptote (Gegenprobe 27)
+
+Die Membranaußenseite koppelt über ihre **Strahlungsimpedanz** ans
+Freifeld — im Ersatzschaltbild ein Serienglied zwischen dem (geblockten)
+Beugungsdruck und der Membran. Gerechnet wird jetzt die geschlossene
+Form des Kolbens in unendlicher Schallwand,
+
+    Z_rad = ρ₀c/S · [R₁(2ka) + j·X₁(2ka)],
+    R₁(x) = 1 − 2·J₁(x)/x,   X₁(x) = 2·H₁(x)/x
+
+mit Bessel J₁ und Struve H₁ — die geschlossene Lösung des
+Rayleigh-Integrals, ohne Fit. Vorher stand dort die
+**Kleinargument-Asymptote** R ≈ (ka)²/2, X ≈ 8ka/(3π). Sie ist für
+ka → 0 exakt, oberhalb ka ≈ 1 aber grob falsch: die echte Reaktanz X₁
+hat ein **Maximum** bei 2ka ≈ 2 und fällt danach wie 4/(π·2ka) ab,
+während die Asymptote linear weiterwächst. Die mitschwingende Luftmasse
+war deshalb **konstant 25 kg/m⁴** statt zusammenzubrechen:
+
+| f (26-mm-Membran) | 1 k | 4 k | 8 k | 12 k | 16 k |
+|---|---|---|---|---|---|
+| M Asymptote | 25,0 | 25,0 | 25,0 | 25,0 | 25,0 |
+| M exakt | 24,6 | 19,6 | 8,9 | 2,0 | **0,8** |
+
+Da die Membran selbst nur M_A = 20,9 kg/m⁴ hat, **verdoppelte** die
+Asymptote die bewegte Masse über das ganze Band und drückte den Hochton
+künstlich (bei 16 kHz um ~7 dB). Die Strahlungslast ist damit alles
+andere als vernachlässigbar — |Z_rad| liegt in der Größenordnung von
+|Z_mem| selbst. Die 1-kHz-Anker (Empfindlichkeit, Nierendämpfung, C₀)
+bleiben unberührt; es ändert sich der Hochton, wo die Asymptote nie
+gültig war. Verbleibende, bewusst dokumentierte Näherung: die
+**unendliche Schallwand** — exakt lieferte das der BEM über die
+Reziprozität von Streu- und Strahlungsproblem.
+
+### 3D: Außenknoten der Doppelmembran-Bauform (Gegenprobe 27)
+
+Der 3D-Löser trieb die Membranaußenseiten der K67-Bauform **direkt** aus
+der Quelle: Strahlungsimpedanz und Gewebe fehlten ersatzlos —
+`fabric_front_rayl`/`fabric_rear_rayl` blieben im 3D-Modus **exakt
+wirkungslos**, ohne Hinweis (`single`/`dual` hatten ihren Frontknoten
+bereits). Jetzt tragen zwei Sammelknoten vor den Membranaußenseiten
+dieselbe Kette wie der 1D/2D-Pfad (vorn Z_rad + rayl_front/S_mem, hinten
+rayl_rear/S_mem + Z_rad). Verankert (Gegenprobe 27): der Grenzfall
+Z_außen → 0 reproduziert den Direktantrieb mit **erster Ordnung**
+(zehnfach kleineres Z ⇒ zehnfach kleinerer Abstand — beweist Vorzeichen
+und Struktur), Gewebe dämpft **monoton** (Passivität), die Dämpfung
+stimmt mit der 1D/2D-Kette überein (−8,2 vs. −7,7 dB bei 10⁵ Rayl), und
+die Reziprozität X_r = −B_f bleibt erhalten.
 
 ## Verlustmechanismen (vollständig erfasst)
 
