@@ -272,6 +272,11 @@ class MicrophoneCapsule:
     # nur numerische Gutartigkeit ohne Spaltdämpfung sicher).
     _Q_MEMBRANE_INTERNAL = 100.0
 
+    # Nullstellen von J0 — die axialsymmetrischen (0,m)-Membranmoden.
+    # Konstanten, deshalb ohne SciPy hinterlegt.
+    _J0_ZEROS = (2.404825557695773, 5.520078110286311, 8.653727912911011,
+                 11.791534439014281, 14.930917708487787)
+
 
     def __init__(
         self,
@@ -281,6 +286,7 @@ class MicrophoneCapsule:
         membrane_diameter=22e-3,
         membrane_thickness=6e-6,
         membrane_tension=400.0,
+        membrane_modes=1,
         # --- Backplate-System ---------------------------------------------
         air_gap=40e-6,
         backplate_diameter=20e-3,
@@ -354,6 +360,12 @@ class MicrophoneCapsule:
         self.tension = float(membrane_tension)
         if self.a_mem <= 0 or self.t_mem <= 0 or self.tension <= 0:
             raise ValueError("Membrangeometrie und Vorspannung müssen > 0 sein.")
+        self.membrane_modes = int(membrane_modes)
+        if not 1 <= self.membrane_modes <= len(self._J0_ZEROS):
+            raise ValueError(
+                f"membrane_modes muss zwischen 1 und {len(self._J0_ZEROS)} "
+                "liegen (axialsymmetrische (0,m)-Moden)."
+            )
 
         # ---------------------- Backplate-System ---------------------------
         self.h_gap = float(air_gap)
@@ -1595,13 +1607,20 @@ class MicrophoneCapsule:
         omega = np.asarray(omega, dtype=float)
         S = np.pi * self.r_th**2
         if not self.stepped:
-            # Mündungsmassen explizit: filmseitig die einsame Flansch-
-            # Korrektur 0.85·r (Konvention wie bisher), portseitig mit
-            # Fok-Faktor der Array-Wechselwirkung (s. _derive_parameters).
+            # Mündungsmassen: NUR portseitig (mit Fok-Array-Faktor). Die
+            # filmseitige Mündung öffnet in den engen Spalt, nicht in
+            # einen Halbraum — dort gibt es kein halbkugeliges Nahfeld;
+            # die radiale Ausbreitungsmasse steckt bereits vollständig im
+            # Škvor-Term (verifiziert: R_Škvor·rho0·h²/12mu trifft die
+            # Baird/Zuckerwar-Spaltmasse exakt). Eine zusätzliche
+            # Freifeld-Flanschmasse 0.85·r wäre Doppelzählung — dieselbe
+            # Konvention führen das 2D-Feldmodell (dort deckt der
+            # Zell-Engstellenwiderstand die Ausbreitung ab) und der
+            # 3D-Feldlöser (dort das Filmfeld selbst).
             Z = self._hole_impedance(omega, self.r_th, self.t_bp, count,
                                      end_correction=False,
                                      radiates=radiates, visc_ends=1)
-            delta = 0.85 * self.r_th * (1.0 + self._fok_th)
+            delta = 0.85 * self.r_th * self._fok_th
             return Z + 1j * omega * RHO0 * delta / (S * count)
         Z = self._hole_impedance(omega, self.r_th, self.t_th_eff, count,
                                  end_correction=False, radiates=radiates,
@@ -1671,6 +1690,78 @@ class MicrophoneCapsule:
             X = np.where(small, 4.0 * x / (3.0 * np.pi), X)
         return Z0 * (R + 1j * X)
 
+    def _higher_mode_branches(self):
+        """Akustische (M_A, C_A) der HÖHEREN (0,m)-Membranmoden, m >= 2.
+
+        MODALES AUFBRECHEN DER MEMBRAN (Galerkin, fit-frei)
+        ---------------------------------------------------
+        Das Lumped-Modell führt die Membran als EINEN Freiheitsgrad
+        (Grundmode). Oberhalb weniger kHz schwingt eine reale Membran
+        aber längst nicht mehr kolbenförmig: sie bildet Knotenringe. Die
+        axialsymmetrischen Moden der unter Spannung stehenden
+        Kreismembran sind
+
+            psi_m(r) = J0(x_m r/a),   x_m = m-te Nullstelle von J0,
+            omega_m  = omega_1 · x_m/x_1.
+
+        Bei GLEICHFÖRMIGER Druckbelastung (die Annahme des Lumped-/
+        1D-Pfads) folgt aus der modalen Zerlegung w = Σ q_m psi_m
+
+            q_m (K_m − omega² M_m) = Δp · A_m,   A_m = ∫ psi_m dS,
+            U = j omega Σ q_m A_m
+            => Y_ak = Σ_m 1/Z_m  — die Moden liegen PARALLEL.
+
+        Mit M_m^mech = sigma·pi a²·J1(x_m)² und A_m = 2 pi a² J1(x_m)/x_m
+        wird die akustische Modenmasse
+
+            M_A,m = M_m^mech / A_m² = sigma·x_m²/(4 pi a²)
+                  = M_A,1 · (x_m/x_1)²,
+
+        die Nachgiebigkeit C_A,m = 1/(omega_m² M_A,m). Die GRUNDMODE
+        bleibt exakt die kalibrierte (M_A_mem, C_A_eff) — alle
+        bestehenden Anker (f_res, Empfindlichkeit, Pull-in) sind
+        unberührt; die höheren Moden kommen additiv hinzu.
+
+        Wirkung: im massegesteuerten Hochton trägt Mode m den Anteil
+        (x_1/x_m)² zur Volumenschnelle bei (Mode 2: 19 %, Mode 3: 7.7 %)
+        — die Membran wird akustisch "weicher", die scharfe
+        Einmoden-Auslöschung verschmiert.
+
+        BEWUSSTE NÄHERUNGEN (dokumentiert, nicht angepasst):
+        * omega_1 ist hier die UNGESOFTETE Spannungsresonanz
+          1/sqrt(M_A_mem·C_A_mem) — die elektrostatische Feder-
+          Erweichung ist auf die Grundmode kalibriert und wird auf die
+          höheren Moden NICHT übertragen (sie wirkt dort schwächer).
+        * Die Filmdämpfung R wird für alle Moden gleich angesetzt. Höhere
+          Moden verschieben die Spaltluft über kürzere Strecken, ihr
+          echter Widerstand ist kleiner — die Näherung DÄMPFT sie also
+          eher zu stark (konservativ).
+        Wer die Moden voll gekoppelt will, nimmt den 3D-Feldlöser: der
+        führt die Membranen ohnehin als Felder ohne Modenabschneidung.
+        """
+        if self.membrane_modes <= 1:
+            return []
+        x = self._J0_ZEROS
+        w1 = 1.0 / np.sqrt(self.M_A_mem * self.C_A_mem)
+        out = []
+        for m in range(1, self.membrane_modes):
+            rat = x[m] / x[0]
+            M_m = self.M_A_mem * rat**2
+            C_m = 1.0 / ((w1 * rat) ** 2 * M_m)
+            out.append((M_m, C_m))
+        return out
+
+    def _modal_parallel(self, omega, Z1, R):
+        """Grundmode Z1 mit den höheren Moden PARALLEL schalten."""
+        branches = self._higher_mode_branches()
+        if not branches:
+            return Z1
+        Y = 1.0 / Z1
+        for M_m, C_m in branches:
+            Y = Y + 1.0 / (R + 1j * omega * M_m
+                           + 1.0 / (1j * omega * C_m))
+        return 1.0 / Y
+
     def _membrane_impedance(self, omega):
         """Serienimpedanz der Membran: Z = R + j*omega*M + 1/(j*omega*C_eff).
 
@@ -1680,15 +1771,21 @@ class MicrophoneCapsule:
         Widerstand, zu hohen hin mit lateraler Filmträgheit). So bedämpft
         der Spaltfilm die Grundmode DIREKT. Ohne Spaltfilm (geschlossene
         Backplate) bleibt nur der numerische Boden R_A_mem.
+
+        Mit ``membrane_modes > 1`` treten die höheren (0,m)-Bessel-Moden
+        PARALLEL hinzu (s. :meth:`_higher_mode_branches`); für
+        ``membrane_modes = 1`` (Voreinstellung) bleibt das Ergebnis
+        bit-für-bit das bisherige.
         """
         omega = np.asarray(omega, dtype=float)
         R = self._membrane_film_damping(omega, self.h_gap_front,
                                         self.R_A_gap_front)
-        return (
+        Z1 = (
             R
             + 1j * omega * self.M_A_mem
             + 1.0 / (1j * omega * self.C_A_eff)
         )
+        return self._modal_parallel(omega, Z1, R)
 
     def _membrane_film_damping(self, omega, h_film, R_A_gap):
         """Spaltfilm-Dämpfungsimpedanz der Membran-Piston-Mode.
@@ -1716,10 +1813,11 @@ class MicrophoneCapsule:
         """
         omega = np.asarray(omega, dtype=float)
         R = self._membrane_film_damping(omega, self.h_gap, self.R_A_gap)
-        return (
+        Z1 = (
             R + 1j * omega * self.M_A_mem
             + 1.0 / (1j * omega * self.C_A_mem)
         )
+        return self._modal_parallel(omega, Z1, R)
 
     # ======================================================================
     # Beugung / Druckstau am Kapselkörper
@@ -3403,9 +3501,11 @@ class MicrophoneCapsule:
             # Nachgiebigkeit), bevor der enge Kern (Z_holes) folgt.
             # Grenzfall Senkung -> 0 reproduziert die normale Bohrung.
             S_cb = np.pi * self.r_bh**2
-            mats.append(self._abcd_series(
-                1j * omega * RHO0 * (0.85 * self.r_bh)
-                / (S_cb * self.n_th), omega))
+            # KEINE spaltseitige Flanschmasse an der Senkungsmündung: sie
+            # öffnet in den engen Spalt, dessen Ausbreitungsmasse der
+            # Škvor-Term bereits trägt (Konvention wie 2D/3D, s.
+            # _through_hole_impedance). Das Senkungsrohr folgt direkt.
+            _ = S_cb
             if _HAS_SCIPY:
                 g_cb, Zc_cb = self._narrow_duct_propagation(omega, self.r_bh)
                 gl = g_cb * self.d_bh
@@ -6076,5 +6176,157 @@ if __name__ == "__main__":
               f"1. Ordnung ({d2 / d1:.3f}); Gewebe wirkt jetzt im 3D "
               f"({att['3d'][2]:.1f} dB vs. 2D {att['2d'][2]:.1f} dB); "
               f"reziprok  OK")
+
+    # --------- Gegenprobe 28: Spaltmündung + Mehrmoden-Membran ------------
+    # a) KEINE DOPPELZÄHLUNG DER LATERALEN SPALTMASSE. Der Škvor-Term
+    #    trägt die Massenwirkung der radial zu den Löchern gequetschten
+    #    Spaltluft bereits vollständig — nachgewiesen als IDENTITÄT mit
+    #    der Baird/Zuckerwar-Spaltmasse:
+    #        M_gap = rho0*B(q)/(n*pi*h)  ==  R_Škvor * rho0*h²/(12 mu),
+    #    und die Frequenzkorrektur Φ(ω) realisiert diese Masse auch
+    #    wirklich: im Tiefton ist Im(R·Φ)/ω = (6/5)·M_gap — der Faktor
+    #    6/5 ist der kinetische Profilfaktor der Poiseuille-Verteilung,
+    #    den die reine Lumped-Masse nicht kennt. Eine ZUSÄTZLICHE
+    #    Freifeld-Flanschmasse 0.85·r auf der SPALTSEITE wäre daher
+    #    Doppelzählung; sie entfällt jetzt auch im 1D-Pfad (2D- und
+    #    3D-Pfad führen sie ohnehin nicht).
+    # b) MEHRMODEN-MEMBRAN (Galerkin, membrane_modes > 1). Die höheren
+    #    axialsymmetrischen (0,m)-Moden liegen PARALLEL zur Grundmode.
+    #    Verankert an: membrane_modes = 1 bit-für-bit wie bisher;
+    #    Modenfrequenzen und -massen exakt im Bessel-Verhältnis;
+    #    massegesteuerter Hochton-Grenzwert der Parallelschaltung;
+    #    Passivität; Konvergenz; Gatter.
+    cap28 = MicrophoneCapsule(
+        membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+        membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+        backplate_diameter=25e-3, backplate_thickness=4e-3,
+        bias_voltage=60.0, architecture="dual_diaphragm",
+        center_gap=40e-6, n_through_holes=60,
+        through_hole_diameter=0.6e-3, n_blind_holes=120,
+        blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+        through_holes_stepped=True, fabric_front_rayl=0.0,
+        fabric_rear_rayl=0.0, squeeze_model="2d")
+    # a) Identität Škvor <-> Baird/Zuckerwar
+    h28 = cap28.h_gap
+    n_dr28 = cap28.n_th + cap28.n_bh
+    q28 = cap28._q_drain
+    B_q28 = (0.5 * np.log(1.0 / np.sqrt(q28)) - 3.0 / 8.0
+             + q28 / 2.0 - q28**2 / 8.0)
+    M_baird28 = RHO0 * B_q28 / (n_dr28 * np.pi * h28)
+    M_skvor28 = cap28._skvor_R(h28) * RHO0 * h28**2 / (12.0 * MU_AIR)
+    assert abs(M_skvor28 / M_baird28 - 1.0) < 1e-12, \
+        (f"Škvor muss die Baird/Zuckerwar-Spaltmasse exakt enthalten "
+         f"({M_skvor28:.4f} vs. {M_baird28:.4f} kg/m^4)")
+    om28 = np.array([2.0 * np.pi * 100.0])
+    Z_film28 = cap28._skvor_R(h28) * cap28._film_R_dynamic(om28, h28)[0]
+    assert abs((Z_film28.imag / om28[0]) / M_baird28 - 6.0 / 5.0) < 2e-3, \
+        (f"Φ(ω) muss im Tiefton (6/5)·M_gap realisieren "
+         f"({(Z_film28.imag / om28[0]) / M_baird28:.4f})")
+    # Spaltseitige Flanschmasse ist raus: die ungestufte Durchgangsloch-
+    # Impedanz trägt NUR noch den portseitigen Fok-Term.
+    cap28p = MicrophoneCapsule(
+        architecture="single", membrane_resonance_hz=2100.0,
+        membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+        membrane_tension=45.0, air_gap=38.1e-6,
+        backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+        bias_voltage=50.0, n_through_holes=48,
+        through_hole_diameter=1.0e-3, n_blind_holes=24,
+        blind_hole_diameter=1.2e-3, blind_hole_depth=1.5e-3,
+        fabric_front_rayl=0.0, fabric_rear_rayl=0.0, squeeze_model="1d")
+    om28b = 2.0 * np.pi * np.array([1000.0, 9000.0])
+    S28 = np.pi * cap28p.r_th**2
+    Z_ref28 = (cap28p._hole_impedance(om28b, cap28p.r_th, cap28p.t_bp,
+                                      cap28p.n_th, end_correction=False,
+                                      visc_ends=1)
+               + 1j * om28b * RHO0 * (0.85 * cap28p.r_th * cap28p._fok_th)
+               / (S28 * cap28p.n_th))
+    Z_got28 = cap28p._through_hole_impedance(om28b, cap28p.n_th)
+    assert np.max(np.abs(Z_got28 - Z_ref28) / np.abs(Z_ref28)) < 1e-12, \
+        "Durchgangsloch darf nur noch die PORTSEITIGE Mündungsmasse tragen"
+    # b) Mehrmoden-Membran
+    mk28 = dict(
+        membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+        membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+        backplate_diameter=25e-3, backplate_thickness=4e-3,
+        bias_voltage=60.0, architecture="dual_diaphragm",
+        center_gap=40e-6, n_through_holes=60,
+        through_hole_diameter=0.6e-3, n_blind_holes=120,
+        blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+        through_holes_stepped=True, fabric_front_rayl=0.0,
+        fabric_rear_rayl=0.0, squeeze_model="2d")
+    c28_1 = MicrophoneCapsule(membrane_modes=1, **mk28)
+    assert c28_1._higher_mode_branches() == [], \
+        "membrane_modes = 1 darf keine Zusatzzweige erzeugen"
+    om28c = 2.0 * np.pi * np.logspace(2, 4.3, 40)
+    Z1_28 = c28_1._membrane_impedance(om28c)
+    R28 = c28_1._membrane_film_damping(om28c, c28_1.h_gap_front,
+                                       c28_1.R_A_gap_front)
+    Z1_ref = (R28 + 1j * om28c * c28_1.M_A_mem
+              + 1.0 / (1j * om28c * c28_1.C_A_eff))
+    assert np.max(np.abs(Z1_28 - Z1_ref)) == 0.0, \
+        "membrane_modes = 1 muss bit-für-bit die Einmoden-Impedanz sein"
+    c28_3 = MicrophoneCapsule(membrane_modes=3, **mk28)
+    br28 = c28_3._higher_mode_branches()
+    x28 = MicrophoneCapsule._J0_ZEROS
+    f1_28 = 1.0 / (2.0 * np.pi * np.sqrt(c28_3.M_A_mem * c28_3.C_A_mem))
+    for i28, (M_m, C_m) in enumerate(br28):
+        rat28 = x28[i28 + 1] / x28[0]
+        assert abs(M_m / c28_3.M_A_mem - rat28**2) < 1e-12, \
+            f"Modenmasse muss (x_m/x_1)² folgen (Mode {i28 + 2})"
+        f_m = 1.0 / (2.0 * np.pi * np.sqrt(M_m * C_m))
+        assert abs(f_m / f1_28 - rat28) < 1e-9, \
+            (f"Modenfrequenz muss x_m/x_1 folgen: {f_m:.1f} statt "
+             f"{f1_28 * rat28:.1f} Hz")
+    # Massegesteuerter Grenzwert der Parallelschaltung: die wirksame
+    # Masse sinkt auf 1/Σ(1/M_m). Ohne Dämpfung (R = 0) isoliert das die
+    # Modenalgebra von der Filmdämpfung — die Reihe konvergiert sauber
+    # (50 kHz: 0.9989, 1 MHz: 0.999997). Die drei Moden zusammen machen
+    # die Membran akustisch um den Faktor 0.789 leichter.
+    M_eff28 = 1.0 / sum(1.0 / M for M in
+                        [c28_3.M_A_mem] + [b[0] for b in br28])
+    om_hf28 = np.array([2.0 * np.pi * 2.0e5])
+    Z1_hf28 = (1j * om_hf28 * c28_3.M_A_mem
+               + 1.0 / (1j * om_hf28 * c28_3.C_A_eff))
+    Z_hf28 = c28_3._modal_parallel(om_hf28, Z1_hf28, 0.0)[0]
+    assert abs(Z_hf28.imag / om_hf28[0] / M_eff28 - 1.0) < 1e-3, \
+        (f"Massegrenzwert muss 1/Σ(1/M_m) treffen "
+         f"({Z_hf28.imag / om_hf28[0]:.3f} vs. {M_eff28:.3f})")
+    assert np.all(np.real(c28_3._membrane_impedance(om28c)) > 0.0), \
+        "Passivität: Re{Z_mem} > 0 über das Band"
+    # Konvergenz + Wirkung im Hochton (Grundmode-Anker unberührt)
+    F28 = [1000.0, 7000.0, 16000.0]
+    lev28 = {}
+    for m28 in (1, 3, 5):
+        H28 = MicrophoneCapsule(membrane_modes=m28,
+                                **mk28).transfer_function(F28)
+        lev28[m28] = 20.0 * np.log10(np.abs(H28) / np.abs(H28[0]))
+        if m28 > 1:
+            assert abs(abs(H28[0]) / abs(
+                MicrophoneCapsule(membrane_modes=1,
+                                  **mk28).transfer_function(F28)[0])
+                - 1.0) < 1e-3, \
+                "Empfindlichkeit bei 1 kHz muss unberührt bleiben"
+    d13 = abs(lev28[3][2] - lev28[1][2])
+    d35 = abs(lev28[5][2] - lev28[3][2])
+    assert d35 < 0.5 * d13, \
+        f"Modenreihe muss konvergieren ({d35:.2f} vs. {d13:.2f} dB)"
+    assert lev28[3][2] > lev28[1][2] + 1.0, \
+        "höhere Moden müssen den Hochton anheben (weichere Membran)"
+    # Der 7-kHz-Sattel ist NICHT modal: er bleibt praktisch unverändert
+    assert abs(lev28[3][1] - lev28[1][1]) < 0.5, \
+        (f"7-kHz-Sattel ist kein Modeneffekt "
+         f"({lev28[1][1]:.1f} -> {lev28[3][1]:.1f} dB)")
+    try:
+        MicrophoneCapsule(membrane_modes=0, **mk28)
+        raise AssertionError("membrane_modes = 0 muss scheitern")
+    except ValueError:
+        pass
+    print(f"Spaltmündung/Moden: Škvor == Baird-Spaltmasse "
+          f"({M_skvor28:.2f} kg/m^4, Φ realisiert 6/5 davon) -> keine "
+          f"Doppelzählung, Freifeld-Flansch spaltseitig raus; Moden "
+          f"{f1_28:.0f}/{f1_28 * x28[1] / x28[0]:.0f}/"
+          f"{f1_28 * x28[2] / x28[0]:.0f} Hz, modes=1 bit-identisch, "
+          f"16 kHz {lev28[1][2]:+.1f} -> {lev28[3][2]:+.1f} dB "
+          f"(konvergent), 7 kHz unverändert  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

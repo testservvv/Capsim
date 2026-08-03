@@ -421,6 +421,60 @@ und Struktur), Gewebe dämpft **monoton** (Passivität), die Dämpfung
 stimmt mit der 1D/2D-Kette überein (−8,2 vs. −7,7 dB bei 10⁵ Rayl), und
 die Reziprozität X_r = −B_f bleibt erhalten.
 
+### Spaltmündung ohne Doppelzählung (Gegenprobe 28)
+
+Eine Bohrung, die in den **engen Spalt** mündet, strahlt nicht in einen
+Halbraum — es gibt dort kein halbkugeliges Nahfeld, die Strömung wird
+sofort radial gequetscht. Diese laterale Ausbreitungsmasse steckt
+bereits **vollständig** im Škvor-Term; nachgewiesen als Identität mit
+der Baird/Zuckerwar-Spaltmasse:
+
+    M_gap = ρ₀·B(q)/(n·π·h)  ≡  R_Škvor·ρ₀h²/(12μ)   (auf 10⁻¹⁵)
+
+und die Frequenzkorrektur Φ(ω) realisiert sie auch wirklich: im Tiefton
+ist Im(R·Φ)/ω = **(6/5)·M_gap** — der Faktor 6/5 ist der kinetische
+Profilfaktor der Poiseuille-Verteilung, den eine reine Lumped-Masse gar
+nicht kennt. Eine **zusätzliche** Freifeld-Flanschmasse 0,85·r auf der
+Spaltseite wäre daher Doppelzählung. Das 2D-Feldmodell (Zell-Engstelle)
+und der 3D-Feldlöser (Filmfeld) führten sie ohnehin nie; der **1D-Pfad**
+tat es noch und ist jetzt auf dieselbe Konvention gebracht. Wirkung nur
+im 1D-Pfad: bei ungestuften Bohrungen bis ~1 dB im Hochton, bei der
+gestuften K67 ~0,1 dB; Voreinstellung (2D) und 3D bleiben unberührt.
+
+### Mehrmoden-Membran (`membrane_modes`, Gegenprobe 28)
+
+Das Lumped-Modell führt die Membran als EINEN Freiheitsgrad
+(Grundmode). Oberhalb weniger kHz schwingt eine reale Membran aber
+längst nicht mehr kolbenförmig, sondern bildet Knotenringe. Mit
+`membrane_modes > 1` treten die höheren axialsymmetrischen
+(0,m)-Bessel-Moden ψ_m = J₀(x_m·r/a) hinzu. Bei gleichförmiger
+Drucklast folgt aus der Modalzerlegung, dass die Moden **parallel**
+liegen:
+
+    Y_ak = Σ_m 1/Z_m,   M_A,m = M_A,1·(x_m/x₁)²,   ω_m = ω₁·x_m/x₁
+
+Die **Grundmode bleibt exakt die kalibrierte** (M_A_mem, C_A_eff) — alle
+bestehenden Anker (f_res, Empfindlichkeit, Pull-in, Nierendämpfung) sind
+unberührt, `membrane_modes = 1` (Voreinstellung) ist bit-für-bit der
+bisherige Stand. Die drei ersten Moden machen die Membran akustisch um
+den Faktor 0,789 leichter; im Hochton hebt das den Pegel:
+
+| K67 (2D) | 7 kHz | 12 kHz | 16 kHz |
+|---|---|---|---|
+| `membrane_modes=1` | −3,6 | +4,1 | +1,3 |
+| `membrane_modes=3` | −3,6 | +3,1 | +3,7 |
+| `membrane_modes=5` | −3,9 | +2,8 | +4,2 |
+
+**Wichtiges Negativergebnis:** Der ~7-kHz-Sattel ist **kein** Modeneffekt
+— er bleibt unverändert. Das deckt sich mit dem 3D-Löser, der die
+Membranen ohnehin als Felder ohne Modenabschneidung führt und bei
+ausgerichteten Löchern sogar −7,7 dB zeigt. Ursache des Sattels bleibt
+die interne Antiresonanz, die die reale K67 über die **Verdrehung der
+Lochbilder** bedämpft (3D, 3°: −1,2 dB). Bewusste Näherungen: die
+elektrostatische Feder-Erweichung wird nicht auf die höheren Moden
+übertragen, und deren Filmdämpfung wird gleich der Grundmode gesetzt
+(konservativ — real ist sie kleiner).
+
 ## Verlustmechanismen (vollständig erfasst)
 
 Neben Zwikker–Kosten-Rohrreibung und Škvor-Spaltfilm rechnet das
