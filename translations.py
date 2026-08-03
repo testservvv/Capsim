@@ -713,6 +713,62 @@ TR = {
         "de": "Länge des Körperzylinders (endlich, "
               "verrundet gekappt).",
     },
+    "lbl_ring_vent": {
+        "en": "Edge vent width [µm]",
+        "de": "Randspalt-Breite [µm]",
+    },
+    "help_ring_vent": {
+        "en": "CONTINUOUS ring gap around the backplate (B&K-style "
+              "measurement capsules): a circumferential channel of this "
+              "radial width connects the air gap AT THE RIM to the rear "
+              "volume. 0 = rim sealed (previous behaviour: air could only "
+              "leave through the holes). This is NOT what the clearance "
+              "ring does — that one is a groove IN the electrode face "
+              "(a relief or a dead-end stub) and never opens a path to "
+              "the rear. Modelled as a thermoviscous SLIT LINE (exact "
+              "low-frequency limits R = 12μL/(b·w³), M = (6/5)ρ₀L/(b·w), "
+              "isothermal compliance V/P_atm), and the film's rim "
+              "boundary becomes a port instead of a no-flux wall. A "
+              "plate WITHOUT holes then gets the analytic edge "
+              "resistance R = 3μ/(2πh³) — much larger than a perforated "
+              "plate, since the air must travel all the way out. Gates: "
+              "single/dual only, not combined with spacer/rear plate "
+              "(K103), and in the 1D path only without through holes; "
+              "3D is not yet released for this.",
+        "de": "DURCHGEHENDER Ringspalt um die Backplate "
+              "(B&K-artige Messkapseln): ein umlaufender "
+              "Kanal dieser radialen Breite verbindet den "
+              "Luftspalt AM RAND mit dem Rückvolumen. "
+              "0 = Rand dicht (bisheriges Verhalten: die "
+              "Luft konnte den Spalt nur durch die "
+              "Bohrungen verlassen). Das kann der "
+              "Clearance-Ring NICHT leisten — der ist eine "
+              "Nut IN der Elektrodenfläche (Freistich bzw. "
+              "Sack-Stub) und öffnet nie einen Weg nach "
+              "hinten. Modelliert als thermoviskose "
+              "SCHLITZLEITUNG (exakte Tieftongrenzwerte "
+              "R = 12μL/(b·w³), M = (6/5)ρ₀L/(b·w), "
+              "isotherme Nachgiebigkeit V/P_atm); der "
+              "Filmrand wird vom dichten Neumann-Rand zum "
+              "Port. Eine Platte OHNE Bohrungen bekommt "
+              "dann den analytischen Randwiderstand "
+              "R = 3μ/(2πh³) — viel größer als bei "
+              "gelochter Platte, weil die Luft den ganzen "
+              "Weg nach außen muss. Gatter: nur "
+              "single/dual, nicht mit Spacer/Rückplatte "
+              "(K103), im 1D-Pfad nur ohne Durchgangs"
+              "löcher; für 3D noch nicht freigegeben.",
+    },
+    "lbl_ring_vent_len": {
+        "en": "Edge vent channel length [mm]",
+        "de": "Randspalt-Kanallänge [mm]",
+    },
+    "help_ring_vent_len": {
+        "en": "Axial length of the ring channel; 0 = use the backplate "
+              "thickness.",
+        "de": "Axiale Länge des Ringkanals; 0 = "
+              "Backplate-Dicke verwenden.",
+    },
     "cap_bem": {
         "en": "⏳ BEM solves a boundary-element system (~200 elements) "
               "per frequency point. Recommendation: frequency points "

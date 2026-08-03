@@ -170,6 +170,23 @@ class MicrophoneCapsule:
             vertieft die 180°-Auslöschung dramatisch. Schmalere Ringe
             wirken als konzentrierter Schlitz-Stub (R–C) an ihrer Zelle.
             ``0`` = kein Ring. Wirkt nur im 2D-Feldmodell.
+        ring_vent_width, ring_vent_length : float
+            DURCHGEHENDER RANDSPALT um die Backplate (B&K-Bauform):
+            ringförmiger Kanal der radialen Breite ``ring_vent_width``
+            [m] am Plattenumfang, der den Luftspalt am Rand mit der
+            Rückseite verbindet (axiale Kanallänge ``ring_vent_length``;
+            ``None`` = Backplate-Dicke). Der Filmrand ist damit nicht
+            mehr dicht: die Randströmung läuft durch eine thermoviskose
+            SCHLITZLEITUNG (LRF, exakte Grenzfälle R = 12μL/(b·w³) und
+            M = (6/5)·ρ0·L/(b·w) mit b = 2π·a_bp) zum selben
+            rückwärtigen Port wie die Durchgangslöcher. ``0`` = kein
+            Randspalt (Filmrand dicht, Bestand). Gatter: nur
+            ``single``/``dual`` (bei ``dual_diaphragm`` versiegeln
+            Spacer/Klemmringe den Rand); nicht kombinierbar mit
+            Spacer/Rückplatte (K103); im 1D-Pfad nur OHNE
+            Durchgangslöcher (Löcher UND Randspalt brauchen die
+            Stromaufteilung des 2D-Feldmodells); im 3D-Modell noch NICHT
+            freigegeben (s. Gegenprobe 29).
 
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
@@ -311,6 +328,8 @@ class MicrophoneCapsule:
         clearance_ring_diameter=0.0,
         clearance_ring_width=0.0,
         clearance_ring_depth=0.0,
+        ring_vent_width=0.0,
+        ring_vent_length=None,
         # --- Akustische Netzwerke & Rückseite -------------------------------
         rear_network_enabled=True,
         rear_spacer_height=0.0,
@@ -524,6 +543,23 @@ class MicrophoneCapsule:
                 or self.clearance_ring_depth < 0):
             raise ValueError("Clearance-Ring-Maße dürfen nicht negativ sein.")
 
+        # Durchgehender Randspalt um die Backplate (B&K-Bauform)
+        self.ring_vent_w = float(ring_vent_width)
+        if self.ring_vent_w < 0.0:
+            raise ValueError("Randspalt-Breite darf nicht negativ sein.")
+        self.ring_vent_L = (self.t_bp if ring_vent_length is None
+                            else float(ring_vent_length))
+        if self.ring_vent_w > 0.0:
+            if self.ring_vent_L <= 0.0:
+                raise ValueError("Randspalt-Kanallänge muss > 0 sein.")
+            if arch == "dual_diaphragm":
+                raise ValueError(
+                    "Randspalt (ring_vent_width) gilt nur für die "
+                    "Bauformen 'single'/'dual' — bei der Doppelmembran-"
+                    "Bauform versiegeln Spacer/Klemmringe den "
+                    "Elektrodenrand."
+                )
+
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
 
@@ -631,6 +667,40 @@ class MicrophoneCapsule:
 
         # Die Feldmodelle (2D/3D) brauchen SciPy.
         self.squeeze_model = sm if (sm == "1d" or _HAS_SCIPY) else "1d"
+
+        # Randspalt-Gatter, die die endgültige Konfiguration brauchen:
+        # K103-Spacer/Rückplatte teilen sich den Plattenrand mit dem
+        # Randspalt (nicht modelliert), und im 1D-Pfad ist die Strom-
+        # aufteilung Löcher/Randspalt nicht lumped darstellbar.
+        if self.ring_vent_w > 0.0:
+            if self.h_sp > 0.0 or self.t_rp > 0.0:
+                raise ValueError(
+                    "Randspalt ist nicht mit Spacer/Rückplatte "
+                    "(K103-Bauform) kombinierbar — beide teilen sich den "
+                    "Backplate-Rand."
+                )
+            if self.squeeze_model == "1d" and self.n_th > 0:
+                raise ValueError(
+                    "Randspalt PLUS Durchgangslöcher erfordert das "
+                    "2D-Feldmodell (Stromaufteilung Rand/Löcher); der "
+                    "1D-Pfad rechnet nur den rein randbelüfteten Fall "
+                    "(n_through_holes = 0)."
+                )
+            if self.squeeze_model == "3d":
+                # BEWUSSTES GATTER statt still falscher Zahlen: der
+                # 3D-Löser bezieht die Membrandämpfung aus dem gelösten
+                # Feld, der 1D/2D-Pfad zusätzlich über R_A_gap. Bei
+                # gelochten Platten ist der Unterschied klein, bei einer
+                # REIN randbelüfteten Platte ist R_edge = 3μ/(2πh³) aber
+                # sehr groß (kein 1/n-Faktor) — beide Pfade lagen im Test
+                # 15 dB auseinander. Bis diese Kopplung eigens verankert
+                # ist, bleibt der Randspalt auf 1D/2D beschränkt.
+                raise ValueError(
+                    "Randspalt ist im 3D-Feldmodell noch nicht "
+                    "verifiziert (Membrandämpfung wird dort aus dem Feld "
+                    "bezogen, im 1D/2D-Pfad zusätzlich über R_A_gap) — "
+                    "bitte squeeze_model='2d' verwenden."
+                )
 
         # Axiales Körpermodell für den Front-Rück-Transfer der
         # Doppelmembran-Bauform: "sphere" (Kugel mit Durchmesser d_ext,
@@ -994,6 +1064,25 @@ class MicrophoneCapsule:
             # wirksamer Widerstand der polarisierten (Front-)Seite mit
             # statisch verkleinertem Spalt
             self.R_A_gap_front = self._skvor_R(self.h_gap_front)
+            if self.ring_vent_w > 0.0:
+                # Randspalt als ZUSÄTZLICHE Senke am Plattenrand: für die
+                # Membran-Grundmodendämpfung liegen beide Abflusswege
+                # parallel (Löcher-Škvor || Rand-Poiseuille).
+                self.R_A_gap = 1.0 / (1.0 / self.R_A_gap
+                                      + 1.0 / self._edge_R(self.h_gap))
+                self.R_A_gap_front = 1.0 / (
+                    1.0 / self.R_A_gap_front
+                    + 1.0 / self._edge_R(self.h_gap_front))
+        elif self.ring_vent_w > 0.0:
+            # REIN RANDBELÜFTETE Platte (B&K-Bauform ohne Bohrungen):
+            # die Spaltluft strömt radial zum offenen Plattenrand. Für
+            # gleichförmigen Kolbenantrieb (dieselbe Konvention wie
+            # Škvor) folgt aus der radialen Poiseuille-Strömung
+            #     dp/dr = -12·mu·Q(r)/(2·pi·r·h³),  Q(r) = Q·r²/a²
+            # das flächengemittelte Ergebnis R_edge = 3·mu/(2·pi·h³) —
+            # wie bei Škvor unabhängig vom Plattenradius.
+            self.R_A_gap = self._edge_R(self.h_gap)
+            self.R_A_gap_front = self._edge_R(self.h_gap_front)
         else:
             # Geschlossene Backplate: es existiert kein Strömungspfad zu
             # Löchern, also auch keine laterale Škvor-Strömung (die Formel
@@ -1122,8 +1211,8 @@ class MicrophoneCapsule:
                              and self._rear_tail_empty)
 
         # Ist die Rückseite akustisch offen (Gradientenempfänger)?
-        # Die Durchgangslöcher sind der einzige Weg durch die Backplate:
-        if self.n_th == 0:
+        # Durchgangslöcher UND Randspalt sind die Wege durch die Platte:
+        if self.n_th == 0 and self.ring_vent_w == 0.0:
             # Backplate geschlossen -> hermetisch dicht, unabhängig von
             # allem, was dahinter montiert ist.
             self.rear_open = False
@@ -1260,6 +1349,60 @@ class MicrophoneCapsule:
         q = self._q_drain
         B_q = q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0
         return 12.0 * MU_AIR / (n_drain * np.pi * h_film**3) * B_q
+
+    @staticmethod
+    def _edge_R(h_film):
+        """Squeeze-Film-Widerstand einer RANDBELÜFTETEN Platte.
+
+        Radiale Poiseuille-Strömung der Spaltluft zum offenen Rand bei
+        gleichförmigem Kolbenantrieb (gleiche Konvention wie Škvor):
+        R_edge = 3·mu/(2·pi·h³), unabhängig vom Plattenradius. Herleitung
+        s. Kommentar in :meth:`_derive_parameters`; Frequenzkorrektur
+        Φ(ω) wie beim Škvor-Widerstand (derselbe Schlitzfilm).
+        """
+        return 3.0 * MU_AIR / (2.0 * np.pi * h_film**3)
+
+    def _slit_line_abcd(self, omega, width, breadth, length):
+        """Kettenmatrix einer thermoviskosen SCHLITZLEITUNG (LRF).
+
+        Parallelplatten-Kanal der Spaltweite ``width`` (Wandabstand),
+        Breite ``breadth`` (hier: abgewickelter Umfang 2π·a_bp des
+        Randspalts, width << breadth) und Lauflänge ``length``. Die
+        Low-Reduced-Frequency-Lösung ist das Schlitz-Pendant der
+        Zwikker–Kosten-Rohrleitung und nutzt DIESELBEN verifizierten
+        Profilfunktionen wie der Spaltfilm:
+
+            Z' = jωρ0/(S·B_v),          B_v = 1 − tanh(α_v)/α_v,
+            Y' = jω·S/(n_p·P_atm),      n_p = γ/[1+(γ−1)·tanh(α_t)/α_t],
+            γ_p = sqrt(Z'·Y'),          Z_c = sqrt(Z'/Y'),   S = w·b.
+
+        Exakte Grenzfälle (Gegenprobe 29): ω→0 liefert den Poiseuille-
+        Schlitzwiderstand R = 12·mu·L/(b·w³), die laterale Masse
+        M = (6/5)·ρ0·L/(b·w) (kinetischer Profilfaktor 6/5 der
+        Schlitzströmung) und die ISOTHERME Nachgiebigkeit V/P_atm des
+        Kanalvolumens; hohe Frequenzen laufen gegen die verlustfreie
+        Leitung. Mündungskorrekturen an beiden Enden entfallen bewusst:
+        filmseitig löst der Film (bzw. R_edge) die Zuströmung auf,
+        portseitig ist die Schlitzmündungsmasse O(ρ0·w/S) gegenüber der
+        Leitungsimpedanz vernachlässigbar (w << L).
+        """
+        omega = np.asarray(omega, dtype=float)
+        S = width * breadth
+        a_v = 0.5 * width * np.sqrt(1j * omega * RHO0 / MU_AIR)
+        B_v = 1.0 - np.tanh(a_v) / a_v
+        a_t = a_v * np.sqrt(PRANDTL)
+        n_p = GAMMA / (1.0 + (GAMMA - 1.0) * np.tanh(a_t) / a_t)
+        Zs = 1j * omega * RHO0 / (S * B_v)              # Serie je Länge
+        Ys = 1j * omega * S / (n_p * P_ATM)             # Shunt je Länge
+        g_l = np.sqrt(Zs * Ys) * length
+        # Numerischer Isolator-Grenzfall: ab Re(γL) ~ 350 ist die Leitung
+        # praktisch undurchdringlich (Dämpfung e^350); Kappung verhindert
+        # cosh-Überlauf bei pathologisch schmalen Spalten (w -> 0).
+        g_l = np.where(np.real(g_l) > 350.0,
+                       350.0 + 1j * np.imag(g_l), g_l)
+        Zc = np.sqrt(Zs / Ys)
+        ch, sh = np.cosh(g_l), np.sinh(g_l)
+        return np.array([[ch, Zc * sh], [sh / Zc, ch]])
 
     @staticmethod
     def _film_R_dynamic(omega, h_film):
@@ -2894,7 +3037,7 @@ class MicrophoneCapsule:
                 # als Serie hinzu (im 1D-Pfad steckt sie je Loch in
                 # _through_hole_impedance).
                 mats = self._rear_chain_mats(om_a)
-                if vents_directly:
+                if vents_directly and self.n_th > 0:
                     S_holes = self.n_th * S_th
                     Z_rad_h = (RHO0 * C_AIR / S_holes) * min(
                         (om / C_AIR * self.r_th) ** 2 / 2.0, 1.0)
@@ -3343,6 +3486,8 @@ class MicrophoneCapsule:
         n_wells = self.n_th + self.n_bh
 
         def _cell_B(r_hole):
+            if n_wells <= 0:
+                return 0.0
             q_c = min(n_wells * r_hole**2 / self.a_bp**2, 1.0)
             if q_c >= 1.0:
                 return 0.0
@@ -3362,12 +3507,14 @@ class MicrophoneCapsule:
         S_th = np.pi * self.r_th**2
         r_well_th = self.r_bh if self.stepped else self.r_th
         # Portseite: Mündungsmasse (mit Fok-Array-Wechselwirkung) +
-        # viskoser Mündungswiderstand (Sampson)
+        # viskoser Mündungswiderstand (Sampson). Ohne Durchgangslöcher
+        # (rein randbelüftete Platte) entfällt der Lochleitwert.
         Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
                                       end_correction=False, visc_ends=1)
                  + 1j * omega * RHO0 * (0.85 * self.r_th * self._fok_th)
                  / S_th
-                 + _cell_B(r_well_th) / (np.pi * K_entry_th))
+                 + _cell_B(r_well_th) / (np.pi * K_entry_th)
+                 ) if self.n_th > 0 else None
         if self.stepped:
             # weites Senkungssegment in Serie + Karal-Stufenmündung
             # (Masse und viskoser Anteil; die filmseitige Ausbreitung
@@ -3381,7 +3528,8 @@ class MicrophoneCapsule:
                          omega, self.r_th,
                          (3.0 * np.pi / 16.0) * self.r_th, 1,
                          end_correction=False).real * karal)
-        g_tot = self.n_th / Z_th1                         # Gesamtleitwert (Nf,)
+        g_tot = (self.n_th / Z_th1 if self.n_th > 0
+                 else np.zeros(Nf, dtype=complex))        # Gesamtleitwert (Nf,)
         # Sackloch-/Senkungs-Shunts als geschlossene thermoviskose Stubs
         # (verteilte Reibung, isotherm→adiabatisch, s. _closed_hole_stub)
         Z_stub1 = (self._closed_hole_stub(omega, self.r_bh, self.d_bh)
@@ -3398,28 +3546,59 @@ class MicrophoneCapsule:
         else:
             y_cb = np.zeros(Nf, dtype=complex)
 
+        # RANDSPALT (B&K): der Filmrand bei r = a_bp ist nicht mehr dicht.
+        # Eine ZUSÄTZLICHE Unbekannte p_rand (Randdruck am Plattenumfang)
+        # hängt tridiagonal an der äußersten Zelle: Randflächen-Leitwert
+        #     G_rand = K_rand · (2π·a_bp)/(dr/2) = 4π·N·K_rand
+        # (Umfang durch halbe Zellbreite), und von dort führt die
+        # Schlitzleitung des Ringkanals zum SELBEN rückwärtigen Port wie
+        # die Durchgangslöcher (Y-Parameter der Leitung, det T = 1). Die
+        # Bandstruktur (1,1) bleibt erhalten.
+        ring_open = self.ring_vent_w > 0.0
+        if ring_open:
+            T_line = self._slit_line_abcd(
+                omega, self.ring_vent_w, 2.0 * np.pi * self.a_bp,
+                self.ring_vent_L)
+            A_l, B_l = T_line[0, 0], T_line[0, 1]
+            D_l = T_line[1, 1]
         src_a = phi * A / Sphi                            # Membran treibt (U=1)
         T = np.empty((2, 2, Nf), dtype=complex)
-        ab = np.zeros((3, N), dtype=complex)
+        M_sys = N + 1 if ring_open else N
+        ab = np.zeros((3, M_sys), dtype=complex)
         gg = self._fld_gface_geom
         for f in range(Nf):
             Gface = gg * K_face[f]                        # (N+1,) komplex
-            ab[0, 1:] = -Gface[1:N]                       # Superdiagonale
-            ab[2, :-1] = -Gface[1:N]                      # Subdiagonale
+            ab[0, 1:N] = -Gface[1:N]                      # Superdiagonale
+            ab[2, :N - 1] = -Gface[1:N]                   # Subdiagonale
             g_h = g_tot[f] * dens_th                      # (N,) verteilt
             y_bh = y_tot[f] * dens_bh + y_cb[f] * dens_th
             Y = 1j * omega[f] * c_cell[f] + y_bh + g_h
             if self._clr_stub_cell is not None:
                 Y[self._clr_stub_cell] += (y_ring[f]
                                            / A[self._clr_stub_cell])
-            ab[1, :] = Gface[:N] + Gface[1:N + 1] + Y * A
-            rhs = np.column_stack((src_a, g_h * A))       # (N, 2)
+            ab[1, :N] = Gface[:N] + Gface[1:N + 1] + Y * A
+            rhs = np.zeros((M_sys, 2), dtype=complex)
+            rhs[:N, 0] = src_a
+            rhs[:N, 1] = g_h * A
+            if ring_open:
+                G_edge = 4.0 * np.pi * N * K_face[f, N]
+                ab[1, N - 1] += G_edge
+                ab[0, N] = -G_edge                        # Zelle N-1 <-> Rand
+                ab[2, N - 1] = -G_edge
+                # Randknoten: Filmzustrom + Leitungs-Y11 (= D/B)
+                ab[1, N] = G_edge + D_l[f] / B_l[f]
+                # Rückport treibt (Fall b): -Y12·p_rück = +1/B
+                rhs[N, 1] = 1.0 / B_l[f]
             sol = _solve_banded((1, 1), ab, rhs)
-            p_a, p_b = sol[:, 0], sol[:, 1]
+            p_a, p_b = sol[:N, 0], sol[:N, 1]
             alpha = np.sum(p_a * phi * A) / Sphi
             beta = np.sum(p_b * phi * A) / Sphi
             gamma = np.sum(g_h * A * p_a)
             delta = np.sum(g_h * A * (p_b - 1.0))
+            if ring_open:
+                # Ringfluss zum Rückport: q = p_rand/B − (A/B)·p_rück
+                gamma = gamma + sol[N, 0] / B_l[f]
+                delta = delta + sol[N, 1] / B_l[f] - A_l[f] / B_l[f]
             T[0, 0, f] = beta - alpha * delta / gamma
             T[0, 1, f] = alpha / gamma
             T[1, 0, f] = -delta / gamma
@@ -3450,15 +3629,16 @@ class MicrophoneCapsule:
         h_eff = self.h_gap_front if polarized else self.h_gap
 
         # 2D-Feldmodell: das komplette Spalt-/Lochnetzwerk kommt aus der
-        # Reynolds-Feldlösung (nur sinnvoll, wenn Durchgangslöcher da
-        # sind). Die polarisierte Seite übergibt Basis-Spalt + statische
-        # Mittendurchbiegung — das Feld sieht das ÖRTLICHE Profil
-        # h(r) = h − w0·φ(r) statt des Flächenmittels h_gap_front.
-        if self.squeeze_model == "2d" and self.n_th > 0:
+        # Reynolds-Feldlösung (sinnvoll, sobald es einen Durchflussweg
+        # gibt: Löcher oder Randspalt). Die polarisierte Seite übergibt
+        # Basis-Spalt + statische Mittendurchbiegung — das Feld sieht das
+        # ÖRTLICHE Profil h(r) = h − w0·φ(r) statt des Flächenmittels.
+        if self.squeeze_model == "2d" and (self.n_th > 0
+                                           or self.ring_vent_w > 0.0):
             T = self._gap_field_2port(
                 omega, h_film=self.h_gap,
                 sag_w0=(self.w0_static if polarized else 0.0))
-            if holes_radiate:
+            if holes_radiate and self.n_th > 0:
                 k = np.asarray(omega, float) / C_AIR
                 S_holes = self.n_th * np.pi * self.r_th**2
                 Z_rad = (RHO0 * C_AIR / S_holes) * np.minimum(
@@ -3472,6 +3652,26 @@ class MicrophoneCapsule:
 
         Y_gap = self._film_compliance_Y(omega, h_eff, self.S_bp)
         mats = []  # Reihenfolge: Membranseite -> Außenseite
+        if self.n_th == 0 and self.ring_vent_w > 0.0:
+            # REIN RANDBELÜFTETE Platte (1D, B&K-Bauform): Blindloch-
+            # Shunts an der Membran, Rand-Poiseuille R_edge·Φ(ω) als
+            # Serienweg zum Rand, Spaltvolumen-Shunt, dann die
+            # Schlitzleitung des Randspalts zum rückwärtigen Port.
+            # (Löcher UND Randspalt zugleich gatet der Konstruktor auf
+            # das 2D-/3D-Feldmodell.)
+            if self.n_bh > 0:
+                mats.append(self._abcd_shunt(
+                    1.0 / self._blind_hole_impedance(omega), omega))
+            mats.append(self._abcd_series(
+                self._edge_R(h_eff) * self._film_R_dynamic(omega, h_eff),
+                omega))
+            mats.append(self._abcd_shunt(Y_gap, omega))
+            mats.append(self._slit_line_abcd(
+                omega, self.ring_vent_w, 2.0 * np.pi * self.a_bp,
+                self.ring_vent_L))
+            if outside_to_membrane:
+                mats = mats[::-1]
+            return reduce(self._mmul, mats)
         if self.n_th == 0:
             if self.n_bh > 0:
                 mats.append(self._abcd_shunt(
@@ -3624,7 +3824,8 @@ class MicrophoneCapsule:
         #   keine rückwärtige Baugruppe -> Löcher münden (durchs Gewebe)
         #                                direkt ins rückwärtige Schallfeld
         #   Baugruppe vorhanden       -> Gewebe -> Laufzeitglied -> Hohlraum
-        vents_directly = self.n_th > 0 and not self.rear_network_enabled
+        vents_directly = ((self.n_th > 0 or self.ring_vent_w > 0.0)
+                          and not self.rear_network_enabled)
         # Einzel-Backplate: der (einzige) Spalt gehört zur polarisierten
         # Membran -> statisch verkleinerter effektiver Spalt
         rear = [self._backplate_gap_abcd(omega, outside_to_membrane=False,
@@ -3655,7 +3856,7 @@ class MicrophoneCapsule:
         # LOCHFLÄCHE des jeweiligen Ports, und der Widerstand liegt
         # hinter den Shunt-Volumina (s. Konstruktor-Kommentar).
         at_inlet = self.fabric_rear_position == "inlet"
-        if self.n_th == 0:
+        if self.n_th == 0 and self.ring_vent_w == 0.0:
             # geschlossene Backplate: Gewebe/Laufzeitglied/Hohlraum sind
             # akustisch unerreichbar
             return mats
@@ -3663,9 +3864,10 @@ class MicrophoneCapsule:
         if not self.rear_network_enabled:
             # kein Laufzeitglied/Hohlraum: Gewebe liegt über den Öffnungen,
             # Port = rückwärtiges Schallfeld. "inlet": das Tuch sitzt AUF
-            # den Durchgangsloch-Mündungen (nur die Lochfläche zählt).
-            S_f = (self.n_th * np.pi * self.r_th**2 if at_inlet
-                   else self.S_bp)
+            # den Öffnungs-Mündungen (Lochfläche + Randspalt-Ringfläche).
+            S_f = (self.n_th * np.pi * self.r_th**2
+                   + 2.0 * np.pi * self.a_bp * self.ring_vent_w
+                   if at_inlet else self.S_bp)
             mats.append(self._abcd_series(self.rayl_rear / S_f, omega))
             return mats
 
@@ -6328,5 +6530,171 @@ if __name__ == "__main__":
           f"{f1_28 * x28[2] / x28[0]:.0f} Hz, modes=1 bit-identisch, "
           f"16 kHz {lev28[1][2]:+.1f} -> {lev28[3][2]:+.1f} dB "
           f"(konvergent), 7 kHz unverändert  OK")
+
+    # --------- Gegenprobe 29: durchgehender Randspalt (B&K-Bauform) -------
+    # Der Luftspalt vieler Messmikrofon-Kapseln ist am Plattenumfang NICHT
+    # dicht: ein umlaufender Ringkanal verbindet ihn mit der Rückkammer.
+    # Bisher war der Filmrand hermetisch (Neumann, kein Fluss) — die Luft
+    # konnte den Spalt nur durch Bohrungen verlassen. Der Clearance-Ring
+    # kann das NICHT ersetzen (er ist eine Nut IM Film bzw. ein Sack-Stub).
+    # Verankert, alles fit-frei:
+    # a) SCHLITZLEITUNG: die thermoviskose LRF-Leitung des Ringkanals muss
+    #    im Tiefton exakt die Poiseuille-Grenzwerte treffen —
+    #    R = 12μL/(b·w³), M = (6/5)·ρ0·L/(b·w) (kinetischer Profilfaktor
+    #    der Schlitzströmung, derselbe 6/5 wie in Gegenprobe 28) und die
+    #    ISOTHERME Nachgiebigkeit V/P_atm — und reziprok sein (det T = 1).
+    # b) RANDWIDERSTAND: die randbelüftete Platte hat den analytisch
+    #    herleitbaren Squeeze-Film-Widerstand R_edge = 3μ/(2πh³)
+    #    (radiale Poiseuille-Strömung zum offenen Rand, flächengemittelt,
+    #    wie bei Škvor unabhängig vom Plattenradius).
+    # c) DICHT-GRENZFALL: w -> 0 muss die versiegelte Platte reproduzieren
+    #    (Filmrand wieder dicht) — Konvergenz von oben.
+    # d) MONOTONIE/PASSIVITÄT: breiterer Randspalt -> mehr Rückkopplung,
+    #    monoton, mit Sättigung sobald nicht mehr der Kanal, sondern der
+    #    Film selbst begrenzt.
+    # e) FELDPFAD: das 2D-Zweitor bleibt mit Randknoten reziprok
+    #    (det T = 1), auch mit Löchern UND Randspalt gleichzeitig.
+    # f) GATTER: Doppelmembran, K103-Spacer, 1D+Löcher, 3D.
+    if _HAS_SCIPY:
+        BK29 = dict(
+            architecture="single", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            membrane_tension=45.0, air_gap=38.1e-6,
+            backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+            bias_voltage=50.0, n_blind_holes=0,
+            rear_network_enabled=True, delay_length=0.0,
+            cavity_length=8.0e-3, cavity_wall_thickness=1.5e-3,
+            n_cavity_holes=0, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=28e-3)
+        c29 = MicrophoneCapsule(squeeze_model="2d", n_through_holes=0,
+                                ring_vent_width=50e-6, **BK29)
+        # a) Schlitzleitungs-Grenzfälle
+        w29, L29 = 50e-6, c29.ring_vent_L
+        b29 = 2.0 * np.pi * c29.a_bp
+        om29 = np.array([2.0 * np.pi * 1.0])
+        T29 = c29._slit_line_abcd(om29, w29, b29, L29)
+        R29 = float(T29[0, 1][0].real)
+        M29 = float(T29[0, 1][0].imag) / om29[0]
+        C29 = float((T29[1, 0][0] / (1j * om29[0])).real)
+        assert abs(R29 / (12.0 * MU_AIR * L29 / (b29 * w29**3)) - 1.0) \
+            < 1e-4, f"Schlitz-Poiseuille R = 12μL/(b w³) ({R29:.3e})"
+        assert abs(C29 / (w29 * b29 * L29 / P_ATM) - 1.0) < 1e-4, \
+            f"isotherme Kanal-Nachgiebigkeit V/P_atm ({C29:.3e})"
+        # Die Masse trägt bei LANGER Leitung bereits die Korrektur der
+        # verteilten Leitung (O((γL)²)) — der reine Massegrenzwert wird
+        # unten an der kurzen Leitung geprüft.
+        assert M29 > 0.0, "Schlitzleitung muss induktiv sein"
+        det29 = complex(T29[0, 0][0] * T29[1, 1][0]
+                        - T29[0, 1][0] * T29[1, 0][0])
+        assert abs(det29 - 1.0) < 1e-12, \
+            f"Schlitzleitung muss reziprok sein (det = {det29})"
+        # kurze Leitung -> reine Masse (ohne verteilten R'C-Anteil)
+        T29s = c29._slit_line_abcd(om29, w29, b29, 0.1e-3)
+        M29s = float(T29s[0, 1][0].imag) / om29[0]
+        assert abs(M29s / (1.2 * RHO0 * 0.1e-3 / (b29 * w29)) - 1.0) \
+            < 1e-3, "kurze Schlitzleitung muss exakt (6/5)ρ0L/(bw) sein"
+        # b) Randwiderstand der randbelüfteten Platte
+        assert abs(c29.R_A_gap / (3.0 * MU_AIR
+                                  / (2.0 * np.pi * c29.h_gap**3)) - 1.0) \
+            < 1e-12, "R_edge = 3μ/(2πh³) der randbelüfteten Platte"
+        # Die B&K-Bauform bleibt ein DRUCKempfänger: der Randspalt
+        # entlüftet den Spalt in die geschlossene Rückkammer, nicht ins
+        # Freifeld. Erst Hohlraum-Einlässe machen daraus einen
+        # Gradientenempfänger.
+        assert not c29.rear_open, \
+            "geschlossene Rückkammer -> Druckempfänger trotz Randspalt"
+        assert MicrophoneCapsule(squeeze_model="2d", n_through_holes=0,
+                                 ring_vent_width=50e-6,
+                                 **{**BK29, "n_cavity_holes": 40,
+                                    "cavity_hole_diameter": 0.5e-3}
+                                 ).rear_open, \
+            "mit Hohlraum-Einlässen muss der Randspalt nach hinten öffnen"
+        # c) DICHT-GRENZFALL auf der ZWEITOR-Ebene. Physikalisch
+        #    eindeutig ist die ENTKOPPLUNG: ein dichter Rand trennt
+        #    Membran und Rückport, der Membranfluss bei kurzgeschlossenem
+        #    Port (= 1/T22) muss verschwinden — und zwar wie der
+        #    Kanalleitwert, also MINDESTENS wie w³ (Poiseuille); sehr
+        #    schmale Spalte dämpfen sogar exponentiell, weil die Leitung
+        #    dann vom Lumped- ins Wellenleiter-Regime wechselt (γL ~ 36
+        #    bei w = 0.1 µm). Geprüft wird monotone, mindestens kubische
+        #    Entkopplung. (Ein Vergleich der EINGANGSimpedanz taugt hier
+        #    nicht: sie behält auch bei dichtem Rand die thermische
+        #    Relaxationsdämpfung der Spaltluft, die zur versiegelten
+        #    Platte gehört.)
+        om_c29 = 2.0 * np.pi * np.array([200.0])
+        cpl29 = []
+        for w_t in (1.0e-5, 1.0e-6, 1.0e-7):
+            Tx29 = MicrophoneCapsule(
+                squeeze_model="2d", n_through_holes=0,
+                ring_vent_width=w_t, **BK29)._gap_field_2port(om_c29)
+            cpl29.append(float(np.abs(1.0 / Tx29[1, 1][0])))
+        for k29 in range(len(cpl29) - 1):
+            ratio29 = cpl29[k29] / cpl29[k29 + 1]
+            assert ratio29 > 900.0, \
+                (f"dichter Rand muss mindestens wie w³ entkoppeln "
+                 f"(Verhältnis {ratio29:.0f} je Dekade)")
+        e_prev = cpl29[-1] / cpl29[0]
+        # d) Monotonie + Sättigung
+        lv29 = []
+        for w_t in (10e-6, 25e-6, 50e-6, 200e-6):
+            H_t = MicrophoneCapsule(
+                squeeze_model="2d", n_through_holes=0,
+                ring_vent_width=w_t, **BK29).transfer_function([200.0])
+            lv29.append(float(20.0 * np.log10(np.abs(H_t[0]))))
+        assert lv29[0] < lv29[1] < lv29[2] <= lv29[3] + 1e-9, \
+            f"breiterer Randspalt muss monoton mehr entlasten ({lv29})"
+        assert abs(lv29[3] - lv29[2]) < abs(lv29[1] - lv29[0]), \
+            "die Wirkung muss sättigen (Film wird begrenzend, nicht Kanal)"
+        # e) Reziprozität des Feld-Zweitors, auch Löcher + Randspalt
+        for n29, w_t in ((0, 50e-6), (48, 50e-6)):
+            cx = MicrophoneCapsule(squeeze_model="2d", n_through_holes=n29,
+                                   through_hole_diameter=1.0e-3,
+                                   ring_vent_width=w_t, **BK29)
+            Tx = cx._gap_field_2port(2.0 * np.pi
+                                     * np.array([200.0, 4000.0, 16000.0]))
+            dx = Tx[0, 0] * Tx[1, 1] - Tx[0, 1] * Tx[1, 0]
+            assert np.max(np.abs(dx - 1.0)) < 1e-9, \
+                (f"2D-Zweitor mit Randknoten muss reziprok bleiben "
+                 f"(n_th = {n29}, max |det-1| = "
+                 f"{np.max(np.abs(dx - 1.0)):.2e})")
+        # 1D == 2D im rein randbelüfteten Tiefton (beide: Film -> Rand)
+        H1d = MicrophoneCapsule(squeeze_model="1d", n_through_holes=0,
+                                ring_vent_width=50e-6,
+                                **BK29).transfer_function([200.0])
+        H2d = MicrophoneCapsule(squeeze_model="2d", n_through_holes=0,
+                                ring_vent_width=50e-6,
+                                **BK29).transfer_function([200.0])
+        d12 = float(abs(20.0 * np.log10(np.abs(H1d[0] / H2d[0]))))
+        assert d12 < 2.0, \
+            f"1D und 2D müssen im Tiefton zusammenliegen ({d12:.2f} dB)"
+        # f) Gatter
+        for kw29, why29 in (
+                (dict(architecture="dual_diaphragm",
+                      membrane_resonance_hz=1150.0, center_gap=40e-6,
+                      n_through_holes=12, through_hole_diameter=0.6e-3,
+                      ring_vent_width=50e-6), "Doppelmembran"),
+                (dict(architecture="single", membrane_resonance_hz=8000.0,
+                      n_through_holes=0, ring_vent_width=50e-6,
+                      rear_spacer_height=100e-6), "K103-Spacer"),
+                (dict(architecture="single", membrane_resonance_hz=8000.0,
+                      n_through_holes=12, through_hole_diameter=0.6e-3,
+                      ring_vent_width=50e-6, squeeze_model="1d"),
+                 "1D + Löcher"),
+                (dict(architecture="single", membrane_resonance_hz=8000.0,
+                      n_through_holes=12, through_hole_diameter=0.6e-3,
+                      ring_vent_width=50e-6, squeeze_model="3d"), "3D")):
+            try:
+                MicrophoneCapsule(**kw29)
+                raise AssertionError(f"Randspalt-Gatter {why29} fehlt")
+            except ValueError:
+                pass
+        print(f"Randspalt: Schlitzleitung R/C exakt (Poiseuille, isotherm), "
+              f"kurze Leitung == (6/5)ρ0L/(bw), reziprok "
+              f"{abs(det29 - 1.0):.0e}; R_edge = 3μ/(2πh³); w->0 "
+              f"entkoppelt wie w³ ({e_prev:.1e} über 2 Dekaden); "
+              f"Breite 10->200 µm "
+              f"{lv29[3] - lv29[0]:+.1f} dB (monoton, sättigt); "
+              f"Feld-Zweitor reziprok mit/ohne Löcher; 1D/2D {d12:.2f} dB; "
+              f"Gatter greifen  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

@@ -190,6 +190,8 @@ DEFAULTS = {
     "clr_dia_mm": 0.0,
     "clr_width_mm": 0.0,
     "clr_depth_mm": 0.0,
+    "ring_vent_um": 0.0,
+    "ring_vent_len_mm": 0.0,
     # Rückseite / akustische Netzwerke (bei K67-Bauform inaktiv)
     "rear_enabled": True,
     # Spacer + massive gelochte Rückplatte (K103-Bauform); 0 = nicht vorhanden
@@ -404,6 +406,7 @@ _ZERO_STATE = {
     "d_through_mm": 0.05, "th_stepped": False, "d_blind_mm": 0.05,
     "blind_depth_mm": 0.05, "clamp_ring_mm": 0.0, "clamp_width_mm": 0.0,
     "clr_dia_mm": 0.0, "clr_width_mm": 0.0, "clr_depth_mm": 0.0,
+    "ring_vent_um": 0.0, "ring_vent_len_mm": 0.0,
     "rear_enabled": False, "spacer_um": 0.0, "rearplate_mm": 0.0,
     "n_rearplate": 0, "d_rearplate_mm": 0.05, "delay_mm": 0.0,
     "cavity_length_mm": 0.0, "cavity_wall_mm": 0.0, "n_cavity": 0,
@@ -519,6 +522,10 @@ def build_capsule(p):
         clearance_ring_diameter=p["clr_dia_mm"] * 1e-3,
         clearance_ring_width=p["clr_width_mm"] * 1e-3,
         clearance_ring_depth=p["clr_depth_mm"] * 1e-3,
+        ring_vent_width=p.get("ring_vent_um", 0.0) * 1e-6,
+        ring_vent_length=(p.get("ring_vent_len_mm", 0.0) * 1e-3
+                          if p.get("ring_vent_len_mm", 0.0) > 0.0
+                          else None),
         # Rückseite deaktiviert -> keine rückwärtige Baugruppe: die
         # Durchgangslöcher der Backplate münden (durch das rückwärtige
         # Gewebe) direkt ins Schallfeld. Hermetisch dicht ist die Kapsel
@@ -1083,6 +1090,15 @@ with st.sidebar:
         st.number_input(tr("lbl_clr_d"), 0.0, 5.0, step=0.01,
                         format="%.3f", key="p_clr_depth_mm",
                         help=tr("help_clr_d"))
+
+        # Durchgehender Randspalt (B&K) — nicht bei der K67-Bauform
+        if st.session_state["p_architecture"] != K67_LABEL:
+            st.number_input(tr("lbl_ring_vent"), 0.0, 500.0, step=5.0,
+                            key="p_ring_vent_um",
+                            help=tr("help_ring_vent"))
+            st.number_input(tr("lbl_ring_vent_len"), 0.0, 20.0, step=0.1,
+                            format="%.2f", key="p_ring_vent_len_mm",
+                            help=tr("help_ring_vent_len"))
 
         # Klemmringe vor den Membranen — nur bei K67-Bauform relevant
         if st.session_state["p_architecture"] == K67_LABEL:

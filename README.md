@@ -475,6 +475,53 @@ elektrostatische Feder-Erweichung wird nicht auf die höheren Moden
 übertragen, und deren Filmdämpfung wird gleich der Grundmode gesetzt
 (konservativ — real ist sie kleiner).
 
+### Durchgehender Randspalt (`ring_vent_width`, Gegenprobe 29)
+
+Bei vielen Messmikrofon-Kapseln (B&K-Bauart) ist der Luftspalt am
+Plattenumfang **nicht dicht**: ein umlaufender Ringkanal verbindet ihn
+mit der Rückkammer. Bis dahin war der Filmrand im Modell hermetisch
+(Neumann, kein Fluss) — die Luft konnte den Spalt ausschließlich durch
+Bohrungen verlassen. **Der Clearance-Ring kann das nicht ersetzen:** der
+ist eine Nut *in* der Elektrodenfläche (Freistich bzw. Sack-Stub) und
+öffnet nie einen Weg nach hinten.
+
+Jetzt wird der Filmrand bei r = a_bp zum **Port**, und die Randströmung
+läuft durch eine thermoviskose **Schlitzleitung** (LRF, Schlitz-Pendant
+der Zwikker–Kosten-Rohrleitung, abgewickelte Breite b = 2π·a_bp) zum
+selben rückwärtigen Port wie die Bohrungen. Eine Platte **ohne**
+Bohrungen bekommt den analytisch herleitbaren Randwiderstand
+
+    R_edge = 3μ/(2πh³)
+
+aus der radialen Poiseuille-Strömung zum offenen Rand bei gleichförmigem
+Kolbenantrieb (flächengemittelt; wie bei Škvor unabhängig vom
+Plattenradius, aber **ohne** den 1/n-Faktor der Lochplatte — deshalb
+deutlich größer: die Luft muss den ganzen Weg nach außen).
+
+Verankert (Gegenprobe 29), alles fit-frei: die Schlitzleitung trifft im
+Tiefton exakt R = 12μL/(b·w³), die kurze Leitung exakt die Masse
+(6/5)·ρ₀L/(b·w) — derselbe kinetische Profilfaktor 6/5 wie oben — und
+die isotherme Nachgiebigkeit V/P_atm, bei det T = 1 auf 10⁻¹⁶; ein
+dichter Rand **entkoppelt** Membran und Rückport mindestens wie w³
+(sehr schmale Spalte sogar exponentiell, weil die Leitung dann ins
+Wellenleiter-Regime wechselt); die Wirkung ist monoton und sättigt,
+sobald nicht mehr der Kanal, sondern der Film selbst begrenzt
+(10 → 200 µm: +15,8 dB); das 2D-Zweitor bleibt mit Randknoten reziprok,
+auch mit Bohrungen **und** Randspalt gleichzeitig; 1D und 2D liegen im
+Tiefton 1,9 dB auseinander.
+
+**Ehrliche Grenzen (Gatter statt stiller Zahlen):** nur `single`/`dual`
+(bei der K67-Bauform versiegeln Spacer und Klemmringe den Rand); nicht
+mit Spacer/Rückplatte (K103) kombinierbar, die sich denselben Rand
+teilen; im 1D-Pfad nur *ohne* Bohrungen (Bohrungen **und** Randspalt
+brauchen die Stromaufteilung des Feldmodells); und im **3D-Modell noch
+nicht freigegeben** — dort bezieht der Löser die Membrandämpfung aus dem
+gelösten Feld, der 1D/2D-Pfad zusätzlich über `R_A_gap`. Bei gelochten
+Platten ist der Unterschied klein, bei einer rein randbelüfteten Platte
+ist `R_edge` aber sehr groß, und beide Pfade lagen im Test 15 dB
+auseinander. Bis diese Kopplung eigens verankert ist, meldet der 3D-Modus
+einen Fehler statt zu rechnen.
+
 ## Verlustmechanismen (vollständig erfasst)
 
 Neben Zwikker–Kosten-Rohrreibung und Škvor-Spaltfilm rechnet das
