@@ -122,6 +122,51 @@ TR = {
     "lbl_mem_dia": {"en": "Diameter [mm]", "de": "Durchmesser [mm]"},
     "lbl_mem_thick": {"en": "Thickness [µm]", "de": "Dicke [µm]"},
     "lbl_mem_tension": {"en": "Tension [N/m]", "de": "Vorspannung [N/m]"},
+    "lbl_mem_modes": {
+        "en": "Membrane modes (0,m)",
+        "de": "Membranmoden (0,m)",
+    },
+    "help_mem_modes": {
+        "en": "Number of axisymmetric Bessel modes J0(x_m·r/a) carried by "
+              "the membrane in the 1D/2D path. 1 = fundamental only "
+              "(default, the previous behaviour bit-for-bit). Above a few "
+              "kHz a real membrane no longer moves like a piston but forms "
+              "nodal rings; under uniform pressure load these modes sit in "
+              "PARALLEL, with M_A,m = M_A,1·(x_m/x_1)² and "
+              "f_m = f_1·x_m/x_1 — no fitted coefficient. The fundamental "
+              "stays exactly as calibrated, so sensitivity, f_res, pull-in "
+              "and the cardioid rejection are unchanged; the higher modes "
+              "make the membrane acoustically lighter (three modes: factor "
+              "0.789) and lift the TOP OCTAVE (K67: 16 kHz +1.3 → +3.7 dB, "
+              "converging). NOTE: the ~7 kHz saddle is NOT a modal effect "
+              "— it does not move (Gegenprobe 28); its cause is the "
+              "internal antiresonance, which the real K67 damps via the "
+              "rotation of the hole patterns (3D mode). The 3D solver "
+              "carries the membranes as full fields anyway and ignores "
+              "this setting.",
+        "de": "Anzahl der axialsymmetrischen Bessel-Moden "
+              "J0(x_m·r/a), die die Membran im 1D/2D-Pfad "
+              "führt. 1 = nur Grundmode (Voreinstellung, "
+              "bit-für-bit der bisherige Stand). Oberhalb "
+              "weniger kHz schwingt eine reale Membran nicht "
+              "mehr kolbenförmig, sondern bildet Knotenringe; "
+              "bei gleichförmiger Drucklast liegen diese Moden "
+              "PARALLEL, mit M_A,m = M_A,1·(x_m/x_1)² und "
+              "f_m = f_1·x_m/x_1 — ohne Fit-Koeffizient. Die "
+              "Grundmode bleibt exakt die kalibrierte, also "
+              "ändern sich Empfindlichkeit, f_res, Pull-in und "
+              "Nierendämpfung nicht; die höheren Moden machen "
+              "die Membran akustisch leichter (drei Moden: "
+              "Faktor 0,789) und heben die OBERSTE OKTAVE "
+              "(K67: 16 kHz +1,3 → +3,7 dB, konvergent). "
+              "HINWEIS: der ~7-kHz-Sattel ist KEIN Modeneffekt "
+              "— er bewegt sich nicht (Gegenprobe 28); seine "
+              "Ursache ist die interne Antiresonanz, die die "
+              "reale K67 über die Verdrehung der Lochbilder "
+              "bedämpft (3D-Modus). Der 3D-Löser führt die "
+              "Membranen ohnehin als volle Felder und "
+              "ignoriert diese Einstellung.",
+    },
 
     # ------------------------- Backplate --------------------------------
     "exp_backplate": {"en": "Backplate", "de": "Backplate"},
