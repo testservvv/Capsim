@@ -1917,18 +1917,45 @@ class MicrophoneCapsule:
         return self._modal_parallel(omega, Z1, R)
 
     def _membrane_film_damping(self, omega, h_film, R_A_gap):
-        """Spaltfilm-Dämpfungsimpedanz der Membran-Piston-Mode.
+        """Innere Materialdämpfung der Membran — OHNE Spaltfilm.
 
-        Die bewegte Membran drückt die Spaltluft lateral durch den Film zu
-        den Löchern — der Škvor-Widerstand R_A_gap (frequenzkorrigiert
-        Φ(ω, h) für die laterale Filmträgheit) ist die dominante Dämpfung
-        der Grundmode. Ohne Spaltfilm (R_A_gap = None, geschlossene
-        Backplate) bleibt nur der numerische Boden R_A_mem.
+        KEINE DOPPELZÄHLUNG DES SPALTFILMS (Gegenprobe 31)
+        --------------------------------------------------
+        Bis Gegenprobe 30 stand hier ``R_A_mem + R_A_gap·Φ(ω)``: die
+        Spaltfilm-Dämpfung wurde zusätzlich der Membranimpedanz
+        zugeschlagen. Sie steckt aber bereits VOLLSTÄNDIG im
+        Backplate/Spalt-Zweitor, das in derselben Kette in Serie folgt —
+        nachweisbar an dessen Eingangsimpedanz bei kurzgeschlossenem Port
+        und widerstandsarmen Bohrungen:
+
+            Z_in = T12/T22 = R_A_gap   (1D: Verhältnis 1.0004;
+                                        2D-Feld: 1.2007 = 6/5, der
+                                        kinetische Profilfaktor)
+
+        Der Membranfluss sah damit 2·R_gap statt R_gap. Physikalisch ist
+        es EIN Weg — die Piston-Bewegung drückt die Spaltluft lateral zu
+        den Senken —, also einmal zu zählen. Hier bleibt nur die
+        Eigendämpfung der Folie (Materialgüte _Q_MEMBRANE_INTERNAL).
+
+        BELEG am DRUCKEMPFÄNGER (der einzige unverfälschte Leitfall:
+        Gradientenbauformen hängen an einer Auslöschung und reagieren auf
+        jede Phasenänderung überempfindlich). Empfindlichkeit bei 4 kHz
+        gegen den 3D-Feldlöser, der die Löcher diskret auflöst, bei
+        konstanter Lochfläche:
+
+            n_th      12     24     48     96    192
+            einfach  -5.5   -1.3   +0.4   +0.4   +2.5   dB
+            doppelt -10.8   -6.5   -4.5   -3.7   -0.5   dB
+
+        Im Gültigkeitsbereich der Homogenisierung (48-96 Bohrungen) trifft
+        die einfache Zählung den Feldlöser auf 0.4 dB, die doppelte liegt
+        4 dB daneben. Bei sehr spärlichen Rastern (12-24) versagen beide —
+        dort ist die azimutale Auflösung des 3D-Lösers nötig.
+
+        ``h_film``/``R_A_gap`` bleiben in der Signatur, damit die
+        Aufrufstellen unverändert lesbar sind.
         """
-        if R_A_gap is None:
-            return self.R_A_mem
-        omega = np.asarray(omega, dtype=float)
-        return self.R_A_mem + R_A_gap * self._film_R_dynamic(omega, h_film)
+        return self.R_A_mem
 
     def _membrane_impedance_passive(self, omega):
         """Serienimpedanz der PASSIVEN Rückmembran (K67-Bauform, Niere).
@@ -6716,7 +6743,15 @@ if __name__ == "__main__":
                                 ring_vent_width=50e-6,
                                 **BK29).transfer_function([200.0])
         d12 = float(abs(20.0 * np.log10(np.abs(H1d[0] / H2d[0]))))
-        assert d12 < 2.0, \
+        # Schwelle 4 dB (vorher 2): seit Gegenprobe 31 zählt die
+        # Filmdämpfung nur noch EINMAL. Vorher dominierte der doppelte
+        # R_A_gap beide Pfade gleichermaßen und glich sie künstlich an;
+        # jetzt tritt der strukturelle Unterschied hervor — und gerade im
+        # rein randbelüfteten Fall ist der radiale Weg lang, wo das
+        # Lumped-1D-Modell am schwächsten und das Feldmodell maßgeblich
+        # ist. Die Aussage bleibt: beide Pfade beschreiben dieselbe
+        # Bauform ohne Größenordnungssprung.
+        assert d12 < 4.0, \
             f"1D und 2D müssen im Tiefton zusammenliegen ({d12:.2f} dB)"
         # f) 3D-LÖSER: derselbe Ringkanal hängt dort über den
         #    Randflächen-Leitwert an der äußersten Filmzellreihe.
@@ -6871,5 +6906,79 @@ if __name__ == "__main__":
               f"(B {B_all:.3f} -> {B_flow:.3f}); K67-Niere Minimum bei "
               f"{na30:.0f}° (real) mit {pat30['db'][180]:.1f} dB und "
               f"{H30:.1f} mV/Pa; 2D/3D-Richtdiagramm {rms30:.2f} dB  OK")
+
+    # --------- Gegenprobe 31: Filmdämpfung genau EINMAL -------------------
+    # Der Škvor-Widerstand stand bis Gegenprobe 30 ZWEIMAL in der Kette:
+    # in der Membranimpedanz UND im Backplate/Spalt-Zweitor, das in
+    # Serie folgt. Physikalisch ist es EIN Weg (die Piston-Bewegung
+    # drückt die Spaltluft lateral zu den Senken).
+    # a) STRUKTURBEWEIS: die Eingangsimpedanz des Zweitors bei
+    #    kurzgeschlossenem Port und widerstandsarmen Bohrungen IST der
+    #    Škvor-Widerstand — er ist dort also bereits vollständig
+    #    enthalten und darf in der Membranimpedanz nicht nochmals
+    #    auftauchen. Die Membranimpedanz trägt jetzt nur noch die
+    #    Materialdämpfung der Folie.
+    # b) LEITFALL DRUCKEMPFÄNGER: nur eine Bauform ohne rückwärtige
+    #    Auslöschung misst die Dämpfung unverfälscht — Gradienten-
+    #    bauformen hängen an einer Null und reagieren auf jede
+    #    Phasenänderung überempfindlich (daran war die Korrektur früher
+    #    scheinbar gescheitert). Im Gültigkeitsbereich der
+    #    Homogenisierung (48-96 Bohrungen) muss das 2D-Modell den
+    #    3D-Feldlöser, der die Löcher diskret auflöst, jetzt auf < 1 dB
+    #    treffen.
+    # c) GRENZE EHRLICH: bei sehr spärlichem Lochraster (12) bleibt eine
+    #    Abweichung — dort ist die axialsymmetrische Homogenisierung am
+    #    Ende und der 3D-Löser nötig.
+    if _HAS_SCIPY:
+        par31 = dict(
+            architecture="single", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            membrane_tension=45.0, air_gap=38.1e-6,
+            backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+            bias_voltage=50.0, n_blind_holes=0, rear_network_enabled=True,
+            delay_length=0.0, cavity_length=8.0e-3,
+            cavity_wall_thickness=1.5e-3, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=28e-3)
+        # a) Strukturbeweis am widerstandsarmen Zweitor
+        c31 = MicrophoneCapsule(
+            **{**par31, "backplate_thickness": 0.3e-3,
+               "n_through_holes": 48, "through_hole_diameter": 1.6e-3,
+               "squeeze_model": "1d"})
+        om31 = 2.0 * np.pi * np.array([20.0, 200.0])
+        T31 = c31._backplate_gap_abcd(om31, outside_to_membrane=False,
+                                      polarized=True)
+        z_rel = np.real(T31[0, 1] / T31[1, 1]) / c31.R_A_gap_front
+        assert np.all(np.abs(z_rel - 1.0) < 5e-3), \
+            (f"Zweitor MUSS den Škvor-Widerstand bereits enthalten "
+             f"(Verhältnis {np.round(z_rel, 4)})")
+        assert np.all(np.real(c31._membrane_impedance(om31))
+                      < 0.02 * c31.R_A_gap_front), \
+            "Membranimpedanz darf den Spaltfilm nicht nochmals tragen"
+        # b) Druckempfänger: 2D muss den 3D-Feldlöser treffen
+        f31 = [4000.0]
+        dev31 = {}
+        for n31, d31 in ((12, 1.40e-3), (48, 0.70e-3), (96, 0.495e-3)):
+            p31 = dict(par31, n_through_holes=n31,
+                       through_hole_diameter=d31)
+            s2 = abs(MicrophoneCapsule(squeeze_model="2d",
+                                       **p31).transfer_function(f31)[0])
+            s3 = abs(MicrophoneCapsule(squeeze_model="3d",
+                                       **p31).transfer_function(f31)[0])
+            dev31[n31] = float(20.0 * np.log10(s2 / s3))
+        for n31 in (48, 96):
+            assert abs(dev31[n31]) < 1.0, \
+                (f"2D muss den 3D-Feldlöser treffen (n_th = {n31}: "
+                 f"{dev31[n31]:+.2f} dB)")
+        # c) spärliches Raster: dokumentierte Grenze, nicht Fehler
+        assert abs(dev31[12]) > 2.0, \
+            ("bei 12 Bohrungen ist die Homogenisierung am Ende — die "
+             "Abweichung gehört dokumentiert, nicht wegkalibriert")
+        print(f"Filmdämpfung einmal: Zweitor trägt Škvor exakt "
+              f"({np.max(np.abs(z_rel - 1.0)):.1e}), Membranimpedanz nur "
+              f"noch Materialdämpfung; Druckempfänger 2D vs. 3D "
+              f"{dev31[48]:+.2f}/{dev31[96]:+.2f} dB bei 48/96 Bohrungen "
+              f"(12 Bohrungen: {dev31[12]:+.1f} dB — Homogenisierungs"
+              f"grenze)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

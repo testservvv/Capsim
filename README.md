@@ -584,12 +584,38 @@ Selbstbestätigung der Simulation und widersprach der realen Kapsel. Die
 gepinnt, aber flacher) ist unverändert gültig — die K67 wechselt nur die
 Kategorie.
 
-**Offen bleibt** die getrennt nachgewiesene Doppelzählung des
-Škvor-Widerstands (er steht sowohl in `_membrane_impedance` als auch im
-Backplate-Zweitor, Verhältnis Z_in/R_A_gap = 1,0004). Ihre Entfernung
-verschlechtert das Modell derzeit — sie kompensiert einen weiteren, noch
-unbekannten Term. Für spärlich gelochte oder randbelüftete Bauformen ist
-deshalb der 3D-Löser die belastbarere Wahl.
+### Filmdämpfung genau einmal (Gegenprobe 31)
+
+Der Škvor-Widerstand stand **zweimal** in derselben Kette: in
+`_membrane_impedance` *und* im Backplate/Spalt-Zweitor, das in Serie
+folgt. Physikalisch ist es ein Weg — die Piston-Bewegung drückt die
+Spaltluft lateral zu den Senken —, also einmal zu zählen. Der
+Strukturbeweis ist die Eingangsimpedanz des Zweitors bei
+kurzgeschlossenem Port und widerstandsarmen Bohrungen: Z_in = R_A_gap
+(Verhältnis 1,0004). Die Membranimpedanz trägt jetzt nur noch die
+Materialdämpfung der Folie.
+
+**Warum das lange unentdeckt blieb:** Der Fehler ist an
+Gradientenbauformen nicht messbar. Deren Ausgangsgröße hängt an einer
+rückwärtigen Auslöschung und reagiert auf jede Phasenänderung
+überempfindlich — dort schien die Korrektur mehrfach zu *scheitern*. Nur
+der **Druckempfänger** misst die Dämpfung unverfälscht. Empfindlichkeit
+bei 4 kHz gegen den 3D-Feldlöser (der die Löcher diskret auflöst), bei
+konstanter Lochfläche:
+
+| n_th | 12 | 24 | 48 | 96 | 192 |
+|---|---|---|---|---|---|
+| einmal gezählt | −5,5 | −1,3 | **+0,4** | **+0,4** | +2,5 |
+| doppelt (vorher) | −10,8 | −6,5 | −4,5 | −3,7 | −0,5 |
+
+Im Gültigkeitsbereich der Homogenisierung (48–96 Bohrungen) trifft das
+2D-Modell den Feldlöser jetzt auf **0,4 dB**; vorher lag es 4 dB daneben.
+Bei sehr spärlichem Raster (12 Bohrungen) bleibt eine Abweichung — dort
+ist die axialsymmetrische Homogenisierung am Ende und der 3D-Löser
+nötig. Das ist als Grenze dokumentiert, nicht wegkalibriert.
+
+Die K67 bleibt dabei auf ihren publizierten Werten: Minimum bei 180°,
+−6,0/−15,5/−27,9 dB bei 90/135/180°, 20,1 mV/Pa (publiziert ~20).
 
 ## Verlustmechanismen (vollständig erfasst)
 
