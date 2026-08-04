@@ -733,8 +733,13 @@ TR = {
               "resistance R = 3μ/(2πh³) — much larger than a perforated "
               "plate, since the air must travel all the way out. Gates: "
               "single/dual only, not combined with spacer/rear plate "
-              "(K103), and in the 1D path only without through holes; "
-              "3D is not yet released for this.",
+              "(K103), and in the 1D path only without through holes. "
+              "The 3D solver carries the same ring channel (verified "
+              "against 2D in the piston limit, 0.14 dB). NOTE: with a "
+              "SOFT membrane 3D reads several dB higher — a free "
+              "membrane evades the long edge path by working near the "
+              "rim, which the single-mode 2D model cannot represent. "
+              "For edge-vented designs 3D is the more reliable mode.",
         "de": "DURCHGEHENDER Ringspalt um die Backplate "
               "(B&K-artige Messkapseln): ein umlaufender "
               "Kanal dieser radialen Breite verbindet den "
@@ -757,7 +762,15 @@ TR = {
               "Weg nach außen muss. Gatter: nur "
               "single/dual, nicht mit Spacer/Rückplatte "
               "(K103), im 1D-Pfad nur ohne Durchgangs"
-              "löcher; für 3D noch nicht freigegeben.",
+              "löcher. Der 3D-Löser führt denselben "
+              "Ringkanal (gegen 2D im Kolben-Grenzfall "
+              "verifiziert, 0,14 dB). HINWEIS: bei WEICHER "
+              "Membran liegt 3D mehrere dB höher — eine "
+              "freie Membran umgeht den langen Randweg, "
+              "indem sie bevorzugt außen arbeitet; das kann "
+              "das Einmoden-2D-Modell nicht abbilden. Für "
+              "randbelüftete Bauformen ist 3D der "
+              "belastbarere Modus.",
     },
     "lbl_ring_vent_len": {
         "en": "Edge vent channel length [mm]",

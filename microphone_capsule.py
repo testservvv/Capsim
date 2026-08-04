@@ -185,8 +185,9 @@ class MicrophoneCapsule:
             Spacer/Klemmringe den Rand); nicht kombinierbar mit
             Spacer/Rückplatte (K103); im 1D-Pfad nur OHNE
             Durchgangslöcher (Löcher UND Randspalt brauchen die
-            Stromaufteilung des 2D-Feldmodells); im 3D-Modell noch NICHT
-            freigegeben (s. Gegenprobe 29).
+            Stromaufteilung eines Feldmodells). Im 3D-Löser hängt der
+            Ringkanal über den Randflächen-Leitwert an der äußersten
+            Filmzellreihe (s. Gegenprobe 29).
 
     Akustische Netzwerke & Rückseite
         rear_network_enabled : bool
@@ -653,9 +654,9 @@ class MicrophoneCapsule:
                                  "erfordert bei der Doppelmembran-Bauform "
                                  "center_gap > 0 (zwei Elektrodenhälften, "
                                  "K67-Typ).")
-            if self.n_th <= 0:
+            if self.n_th <= 0 and self.ring_vent_w <= 0.0:
                 raise ValueError("squeeze_model='3d' erfordert "
-                                 "Durchgangslöcher.")
+                                 "Durchgangslöcher oder einen Randspalt.")
         # Verdrehung der Elektrodenhälften gegeneinander (nur 3D-K67-
         # Modus): die realen Hälften sind so verdreht, dass die
         # Durchgangslöcher nicht zueinander zeigen. None = automatisch
@@ -682,24 +683,9 @@ class MicrophoneCapsule:
             if self.squeeze_model == "1d" and self.n_th > 0:
                 raise ValueError(
                     "Randspalt PLUS Durchgangslöcher erfordert das "
-                    "2D-Feldmodell (Stromaufteilung Rand/Löcher); der "
-                    "1D-Pfad rechnet nur den rein randbelüfteten Fall "
-                    "(n_through_holes = 0)."
-                )
-            if self.squeeze_model == "3d":
-                # BEWUSSTES GATTER statt still falscher Zahlen: der
-                # 3D-Löser bezieht die Membrandämpfung aus dem gelösten
-                # Feld, der 1D/2D-Pfad zusätzlich über R_A_gap. Bei
-                # gelochten Platten ist der Unterschied klein, bei einer
-                # REIN randbelüfteten Platte ist R_edge = 3μ/(2πh³) aber
-                # sehr groß (kein 1/n-Faktor) — beide Pfade lagen im Test
-                # 15 dB auseinander. Bis diese Kopplung eigens verankert
-                # ist, bleibt der Randspalt auf 1D/2D beschränkt.
-                raise ValueError(
-                    "Randspalt ist im 3D-Feldmodell noch nicht "
-                    "verifiziert (Membrandämpfung wird dort aus dem Feld "
-                    "bezogen, im 1D/2D-Pfad zusätzlich über R_A_gap) — "
-                    "bitte squeeze_model='2d' verwenden."
+                    "2D-/3D-Feldmodell (Stromaufteilung Rand/Löcher); "
+                    "der 1D-Pfad rechnet nur den rein randbelüfteten "
+                    "Fall (n_through_holes = 0)."
                 )
 
         # Axiales Körpermodell für den Front-Rück-Transfer der
@@ -2907,6 +2893,7 @@ class MicrophoneCapsule:
             rows = [srows]
             cols = [scols]
             vals = [svals]
+            K_edge_side = {}
             # Filmringe (Membranseiten ggf. mit Clearance-Relief; der
             # Zwischenspalt ist eben und hat weder Relief noch Membran)
             for side, h0, mem_off, sgn in sides:
@@ -2920,6 +2907,7 @@ class MicrophoneCapsule:
                     Kh, ch = _film_props(hh, om)
                     K[msk] = Kh
                     cg[msk] = ch
+                K_edge_side[side] = K[Nr - 1]
                 # radiale Faces
                 Kmid = 0.5 * (K[:-1] + K[1:])
                 Gr = (np.arange(1, Nr) * dphi) * Kmid
@@ -3017,6 +3005,22 @@ class MicrophoneCapsule:
                     for cr_ in g["th_r"]:
                         _two_port_stamp(rows, cols, vals, cr_, NF,
                                         node1, off_n + 1, Y11, Y12, Y22)
+                if self.ring_vent_w > 0.0:
+                    T_l3 = self._slit_line_abcd(
+                        om_a, self.ring_vent_w, 2.0 * np.pi * self.a_bp,
+                        self.ring_vent_L)
+                    A_l3 = complex(T_l3[0, 0][0]); B_l3 = complex(T_l3[0, 1][0])
+                    C_l3 = complex(T_l3[1, 0][0]); D_l3 = complex(T_l3[1, 1][0])
+                    edge_cells = (Nr - 1) * Np_ + np.arange(Np_)
+                    ring_sides = ([(0, off_n + 1)] if arch == "single"
+                                  else [(0, off_n + 0), (1, off_n + 1)])
+                    for side3, node_off3 in ring_sides:
+                        Z_e3 = 1.0 / (4.0 * np.pi * Nr * K_edge_side[side3])
+                        B_c3 = B_l3 + Z_e3 * D_l3
+                        _two_port_stamp(rows, cols, vals, edge_cells,
+                                        side3 * NF, node1, node_off3,
+                                        D_l3 / B_c3, -1.0 / B_c3,
+                                        (A_l3 + Z_e3 * C_l3) / B_c3)
                 # Frontknoten-Abschluss: single = Strahlung + Gewebe VOR
                 # der Membran (Grenzfall Z -> 0: p_node = p_front); dual =
                 # dieselbe Kette vor der vorderen Backplate.
@@ -6667,6 +6671,47 @@ if __name__ == "__main__":
         d12 = float(abs(20.0 * np.log10(np.abs(H1d[0] / H2d[0]))))
         assert d12 < 2.0, \
             f"1D und 2D müssen im Tiefton zusammenliegen ({d12:.2f} dB)"
+        # f) 3D-LÖSER: derselbe Ringkanal hängt dort über den
+        #    Randflächen-Leitwert an der äußersten Filmzellreihe.
+        #    Verankert am KOLBEN-GRENZFALL: nur wenn die Membran sich
+        #    NICHT verformen kann, beschreiben 1D/2D (Grundmode φ
+        #    erzwungen) und 3D (freies Membranfeld) dasselbe Problem.
+        #    Mit steifer Membran im quasistatischen Tiefton müssen beide
+        #    zusammenfallen — sie tun es auf 0.15 dB. Bei WEICHER Membran
+        #    liegt 3D systematisch höher (bis ~8 dB): die freie Membran
+        #    umgeht den hohen Randwiderstand, indem sie bevorzugt außen
+        #    arbeitet — dieselbe Einmoden-Grenze des homogenisierten
+        #    Modells wie beim K67-Sattel (Gegenprobe 28). Das ist ein
+        #    dokumentierter Modellunterschied, kein Fehler.
+        ST29 = dict(BK29, membrane_resonance_hz=50.0e3,
+                    membrane_tension=25600.0)
+        v2_29 = MicrophoneCapsule(
+            squeeze_model="2d", n_through_holes=0, ring_vent_width=50e-6,
+            **ST29).transfer_function([200.0])[0]
+        c3_29 = MicrophoneCapsule(squeeze_model="3d", n_through_holes=0,
+                                  ring_vent_width=50e-6, **ST29)
+        v3_29 = c3_29.transfer_function([200.0])[0]
+        d3_29 = float(abs(20.0 * np.log10(abs(v3_29 / v2_29))))
+        assert d3_29 < 1.0, \
+            (f"3D-Randspalt muss im Kolben-Grenzfall die 2D-Lösung "
+             f"treffen ({d3_29:.2f} dB)")
+        # Gitterunabhängigkeit: der Ringstempel darf nicht von der
+        # azimutalen Auflösung abhängen (axialsymmetrischer Kanal).
+        lv3_29 = []
+        for np_t in (96, 192):
+            cg29 = MicrophoneCapsule(squeeze_model="3d", n_through_holes=0,
+                                     ring_vent_width=50e-6, **ST29)
+            cg29._n_phi_3d = np_t
+            cg29._build_3d_geometry()
+            lv3_29.append(float(abs(cg29.transfer_function([200.0])[0])))
+        assert abs(lv3_29[1] / lv3_29[0] - 1.0) < 1e-6, \
+            f"3D-Ringstempel muss Np-unabhängig sein ({lv3_29})"
+        # Dicht-Grenzfall auch im 3D: schmaler Kanal entkoppelt
+        v3_tight = MicrophoneCapsule(
+            squeeze_model="3d", n_through_holes=0, ring_vent_width=0.5e-6,
+            **ST29).transfer_function([200.0])[0]
+        assert abs(v3_tight) < 0.35 * abs(v3_29), \
+            "3D: schmaler Randspalt muss die Rückseite abkoppeln"
         # f) Gatter
         for kw29, why29 in (
                 (dict(architecture="dual_diaphragm",
@@ -6681,8 +6726,9 @@ if __name__ == "__main__":
                       ring_vent_width=50e-6, squeeze_model="1d"),
                  "1D + Löcher"),
                 (dict(architecture="single", membrane_resonance_hz=8000.0,
-                      n_through_holes=12, through_hole_diameter=0.6e-3,
-                      ring_vent_width=50e-6, squeeze_model="3d"), "3D")):
+                      n_through_holes=0, ring_vent_width=50e-6,
+                      rear_plate_thickness=1.0e-3,
+                      n_rear_plate_holes=8), "K103-Rückplatte")):
             try:
                 MicrophoneCapsule(**kw29)
                 raise AssertionError(f"Randspalt-Gatter {why29} fehlt")
@@ -6695,6 +6741,7 @@ if __name__ == "__main__":
               f"Breite 10->200 µm "
               f"{lv29[3] - lv29[0]:+.1f} dB (monoton, sättigt); "
               f"Feld-Zweitor reziprok mit/ohne Löcher; 1D/2D {d12:.2f} dB; "
-              f"Gatter greifen  OK")
+              f"3D == 2D im Kolben-Grenzfall ({d3_29:.2f} dB), "
+              f"Np-unabhängig; Gatter greifen  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

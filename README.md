@@ -510,17 +510,36 @@ sobald nicht mehr der Kanal, sondern der Film selbst begrenzt
 auch mit Bohrungen **und** Randspalt gleichzeitig; 1D und 2D liegen im
 Tiefton 1,9 dB auseinander.
 
-**Ehrliche Grenzen (Gatter statt stiller Zahlen):** nur `single`/`dual`
-(bei der K67-Bauform versiegeln Spacer und Klemmringe den Rand); nicht
-mit Spacer/Rückplatte (K103) kombinierbar, die sich denselben Rand
-teilen; im 1D-Pfad nur *ohne* Bohrungen (Bohrungen **und** Randspalt
-brauchen die Stromaufteilung des Feldmodells); und im **3D-Modell noch
-nicht freigegeben** — dort bezieht der Löser die Membrandämpfung aus dem
-gelösten Feld, der 1D/2D-Pfad zusätzlich über `R_A_gap`. Bei gelochten
-Platten ist der Unterschied klein, bei einer rein randbelüfteten Platte
-ist `R_edge` aber sehr groß, und beide Pfade lagen im Test 15 dB
-auseinander. Bis diese Kopplung eigens verankert ist, meldet der 3D-Modus
-einen Fehler statt zu rechnen.
+**Auch im 3D-Löser** hängt derselbe Ringkanal über den Randflächen-
+Leitwert an der äußersten Filmzellreihe. Verankert am **Kolben-
+Grenzfall**: nur wenn die Membran sich *nicht* verformen kann,
+beschreiben 1D/2D (Grundmode φ erzwungen) und 3D (freies Membranfeld)
+dasselbe Problem — mit steifer Membran im quasistatischen Tiefton fallen
+beide auf **0,14 dB** zusammen, und das Ergebnis ist von der azimutalen
+Auflösung unabhängig (< 10⁻⁶ zwischen Np = 96 und 192).
+
+**Dokumentierter Modellunterschied, kein Fehler:** Bei *weicher* Membran
+liegt der 3D-Wert systematisch höher — bei der Referenzkapsel bis 8 dB.
+Grund ist die Einmoden-Grenze des homogenisierten Modells: Der
+Randwiderstand `R_edge` ist groß und der Strömungsweg lang, und eine
+*freie* Membran umgeht ihn, indem sie bevorzugt außen arbeitet, wo der
+Weg kurz ist. Das 2D-Modell zwingt sie dagegen in die Kolbenform. Der
+Effekt verschwindet sauber mit steigender Membransteifigkeit
+(f_res 2,1 → 8 → 20 → 50 kHz ergibt 8,0 → 0,4 → −0,2 → −0,3 dB) — es ist
+dieselbe Effektklasse wie beim K67-Sattel. Für randbelüftete Bauformen
+mit weicher Membran ist der **3D-Modus daher der belastbarere**.
+
+**Nebenbefund (nicht Teil dieses Features):** Der Kettenpfad führt den
+Škvor-Widerstand zweimal — einmal in `_membrane_impedance`, einmal im
+Backplate-Zweitor. Bei gelochten Platten macht das wenige dB (der
+3D-Wert liegt zwischen den beiden Varianten), bei randbelüfteten ~4 dB.
+Das ist eine bestehende Modellkonvention, die eigens zu klären wäre.
+
+**Gatter (statt stiller Zahlen):** nur `single`/`dual` (bei der
+K67-Bauform versiegeln Spacer und Klemmringe den Rand); nicht mit
+Spacer/Rückplatte (K103) kombinierbar, die sich denselben Rand teilen;
+im 1D-Pfad nur *ohne* Bohrungen (Bohrungen **und** Randspalt brauchen
+die Stromaufteilung eines Feldmodells).
 
 ## Verlustmechanismen (vollständig erfasst)
 
