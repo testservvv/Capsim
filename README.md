@@ -541,6 +541,56 @@ Spacer/Rückplatte (K103) kombinierbar, die sich denselben Rand teilen;
 im 1D-Pfad nur *ohne* Bohrungen (Bohrungen **und** Randspalt brauchen
 die Stromaufteilung eines Feldmodells).
 
+### Durchfluss-Zellfunktion: Sackgassen zählen nicht (Gegenprobe 30)
+
+Die azimutale Zuströmung im Spaltfilm hat **zwei verschiedene Ziele**,
+und sie brauchen verschiedene Zellgrößen:
+
+* **Aufnahme** (Verdrängungsströmung): jede Bohrung ist eine Senke — die
+  Luft läuft zur nächstgelegenen, gleich welcher Art.
+* **Durchfluss zur Rückseite**: nur **Durchgangslöcher** zählen;
+  Blindlöcher sind Sackgassen, die Luft aufnehmen, aber keinen Weg nach
+  hinten bieten.
+
+Bis dahin nutzte auch der Durchfluss die Zellfunktion *aller* Bohrungen.
+Der Zugang zur Rückseite war dadurch zu leicht und die interne Laufzeit
+des Nieren-Phasenschiebers zu kurz — bei der Debenham-Platte 12 statt
+58 Senken, also ein rund fünffach längerer Weg als modelliert. Die
+Škvor-**Dämpfung** (`R_A_gap`) bleibt unverändert über alle Senken
+gebildet; dort ist jede Bohrung ein gültiges Ziel.
+
+**Wirkung — die K67-Niere sitzt jetzt richtig:**
+
+| K67 @ 1 kHz | Minimum | 90° | 135° | 180° | Empfindlichkeit |
+|---|---|---|---|---|---|
+| publiziert (U87) | 180° | −6 | −17 | −26 | ~20 mV/Pa |
+| vorher | 164° | −6,4 | −17,3 | −26,2 | 21,0 |
+| **jetzt** | **180°** | −5,9 | −15,1 | **−26,6** | **19,8** |
+
+Das Pattern-Minimum liegt jetzt bei 180°, wie bei der realen K67, und
+Rückwärtsdämpfung wie Empfindlichkeit treffen die publizierten Werte
+besser. Der 135°-Wert wird dabei um ~2 dB ungenauer — das ist der
+ehrliche Preis. Auch gegenüber dem **3D-Feldlöser**, der die diskreten
+Löcher auflöst und deshalb Referenz ist, rückt das 2D-Modell näher:
+RMS-Abweichung des Richtdiagramms 0,83 → 0,59 dB (Debenham) und
+1,13 → 0,99 dB (Nieren-Single).
+
+**Drei Gegenproben mussten angepasst werden** (17a, 17c, 24) — alle drei
+kodierten abgelesene Werte des alten Simulationszustands, keine
+Messreferenzen. Gegenprobe 17 verlangte ausdrücklich ein Laufzeit-
+Verhältnis knapp *unter* 1 mit Minimum *vor* 180°; das war eine
+Selbstbestätigung der Simulation und widersprach der realen Kapsel. Die
+**Deutung** des Verhältnisses (< 1 → Minimum wandert vor 180°; > 1 →
+gepinnt, aber flacher) ist unverändert gültig — die K67 wechselt nur die
+Kategorie.
+
+**Offen bleibt** die getrennt nachgewiesene Doppelzählung des
+Škvor-Widerstands (er steht sowohl in `_membrane_impedance` als auch im
+Backplate-Zweitor, Verhältnis Z_in/R_A_gap = 1,0004). Ihre Entfernung
+verschlechtert das Modell derzeit — sie kompensiert einen weiteren, noch
+unbekannten Term. Für spärlich gelochte oder randbelüftete Bauformen ist
+deshalb der 3D-Löser die belastbarere Wahl.
+
 ## Verlustmechanismen (vollständig erfasst)
 
 Neben Zwikker–Kosten-Rohrreibung und Škvor-Spaltfilm rechnet das

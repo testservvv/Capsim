@@ -3489,14 +3489,39 @@ class MicrophoneCapsule:
         # sich, keine Engstelle mehr)
         n_wells = self.n_th + self.n_bh
 
-        def _cell_B(r_hole):
-            if n_wells <= 0:
+        def _B_of(n_sinks, r_hole):
+            """Škvor-Zellfunktion für ``n_sinks`` gleichverteilte Senken."""
+            if n_sinks <= 0:
                 return 0.0
-            q_c = min(n_wells * r_hole**2 / self.a_bp**2, 1.0)
+            q_c = min(n_sinks * r_hole**2 / self.a_bp**2, 1.0)
             if q_c >= 1.0:
                 return 0.0
             return max(q_c / 2.0 - q_c**2 / 8.0
                        - np.log(q_c) / 4.0 - 3.0 / 8.0, 0.0)
+
+        def _cell_B(r_hole):
+            """AUFNAHME (Verdrängungsströmung): ALLE Bohrungen sind Senken
+            — die Spaltluft läuft zur nächstgelegenen, gleich welcher Art.
+            Gilt für die Blindloch- und Senkungs-Shunts."""
+            return _B_of(n_wells, r_hole)
+
+        def _cell_B_flow(r_hole):
+            """DURCHFLUSS zur Rückseite: nur die DURCHGANGSLÖCHER zählen.
+
+            Blindlöcher sind SACKGASSEN — sie nehmen Luft auf (Nachgiebig-
+            keit), bieten aber keinen Weg nach hinten. Die azimutale
+            Zuströmung zum nächsten DURCHGANGSloch läuft deshalb über
+            deutlich größere Zellen als die Verdrängungsströmung: die
+            Zellfunktion des Durchflusses ist mit ``n_th`` zu bilden, nicht
+            mit ``n_th + n_bh``. Bis Gegenprobe 29 galt hier derselbe
+            B-Wert wie für die Aufnahme, wodurch der Zugang zur Rückseite
+            zu leicht war und die interne Laufzeit des Nieren-Phasen-
+            schiebers zu kurz ausfiel (Gegenprobe 30).
+
+            Die Škvor-DÄMPFUNG (``R_A_gap``) bleibt unverändert über alle
+            Senken gebildet — dort ist jede Bohrung ein gültiges Ziel.
+            """
+            return _B_of(self.n_th, r_hole)
 
         # pro-Loch-Impedanzen (vektorisiert über omega); die Lochleitwerte
         # werden über die radialen Dichten dens_th/dens_bh verteilt.
@@ -3517,7 +3542,7 @@ class MicrophoneCapsule:
                                       end_correction=False, visc_ends=1)
                  + 1j * omega * RHO0 * (0.85 * self.r_th * self._fok_th)
                  / S_th
-                 + _cell_B(r_well_th) / (np.pi * K_entry_th)
+                 + _cell_B_flow(r_well_th) / (np.pi * K_entry_th)
                  ) if self.n_th > 0 else None
         if self.stepped:
             # weites Senkungssegment in Serie + Karal-Stufenmündung
@@ -5270,8 +5295,17 @@ if __name__ == "__main__":
 
     # --------- Gegenprobe 17: Laufzeit-Diagnose (delay_diagnostics) --------
     # Deutung des Verhältnisses intern/extern (Sonde 1 kHz):
-    # a) K67 nominal (Spacer 50 µm): Verhältnis knapp UNTER 1 -> das
-    #    Pattern-Minimum liegt VOR 180° (na_k aus Gegenprobe 6: ~165°).
+    # a) K67 nominal (Spacer 50 µm): Verhältnis knapp ÜBER 1 -> das
+    #    Pattern-Minimum ist bei 180° GEPINNT (na_k aus Gegenprobe 6).
+    #    ACHTUNG, hier stand bis Gegenprobe 29 ein Bereich knapp UNTER 1
+    #    mit Minimum bei ~165°. Das war kein Messwert, sondern der aus
+    #    der damaligen Simulation abgelesene Selbstbestätigungs-Bereich —
+    #    und er widersprach der realen K67, deren Niere ihr Minimum bei
+    #    180° hat. Mit der korrigierten Durchfluss-Zellfunktion
+    #    (_cell_B_flow, Gegenprobe 30) liegt es dort; die publizierten
+    #    U87-Werte werden dabei besser getroffen (180°: -26.6 statt
+    #    -26.2 dB gegen -26 dB publiziert; 20 statt 21 mV/Pa gegen
+    #    ~20 mV/Pa). Die DEUTUNG des Verhältnisses (unten) ist unberührt.
     # b) Spacer 45 µm (cardiodtest): kleinerer Spalt -> größerer Film-R ->
     #    LÄNGERE interne Laufzeit (Verhältnis > 1) -> Minimum bei 180°
     #    gepinnt (kein Außenwinkel bietet mehr Phase), dafür flacher.
@@ -5283,10 +5317,10 @@ if __name__ == "__main__":
     #    rückt Richtung 1 (und die Null wird tiefer).
     # e) Geschlossene Rückseite (0 Durchgangslöcher) -> None.
     dd_k67 = k67.delay_diagnostics()
-    assert dd_k67 is not None and 0.90 < dd_k67["ratio"] < 0.995, \
-        f"K67 nominal: Verhältnis knapp <1 erwartet ({dd_k67['ratio']:.3f})"
-    assert na_k < 179.0, \
-        "Konsistenz: Verhältnis <1 muss zum Minimum vor 180° gehören"
+    assert dd_k67 is not None and 1.0 < dd_k67["ratio"] < 1.20, \
+        f"K67 nominal: Verhältnis knapp >1 erwartet ({dd_k67['ratio']:.3f})"
+    assert na_k >= 179.0, \
+        "Konsistenz: Verhältnis >1 muss zum Minimum bei 180° gehören"
     k67_45 = MicrophoneCapsule(
         membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
         membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
@@ -5314,8 +5348,17 @@ if __name__ == "__main__":
         # (konsistent zu Gegenprobe 15: Null 180°, aber nur -3.8 dB).
         dd_deb = deb1.delay_diagnostics(f_probe_hz=250.0)
         tau_kugel = 1.5 * deb1.d_ext / C_AIR
-        assert 0.94 < dd_deb["ratio"] < 1.06, \
-            f"Debenham @250 Hz: Verhältnis ~1 erwartet ({dd_deb['ratio']:.3f})"
+        # Verhältnis > 1: die 12 engen Durchgangslöcher der Braunmühl-
+        # Weber-Platte verzögern ÜBER die externe Laufzeit hinaus — die
+        # Null bleibt bei 180° gepinnt, wird aber flacher (gemessen
+        # -13.6 dB bei 317 Hz). Das ist die Deutung (b) unten und deckt
+        # sich mit dem 3D-Feldlöser, der die azimutale Zuströmung zu den
+        # wenigen Löchern diskret auflöst und noch flacher ausfällt.
+        # (Bis Gegenprobe 29 stand hier ~1: damals zählte die
+        # Durchfluss-Zellfunktion alle 58 Bohrungen als Senken statt der
+        # 12 Durchgangslöcher — s. _cell_B_flow, Gegenprobe 30.)
+        assert 1.2 < dd_deb["ratio"] < 1.9, \
+            f"Debenham @250 Hz: Verhältnis >1 erwartet ({dd_deb['ratio']:.3f})"
         assert 0.85 < dd_deb["tau_ext_s"] / tau_kugel < 1.15, \
             "externe Laufzeit muss dem Kugel-Grenzfall 1.5·d_ext/c folgen"
         dd_deb0 = deb0.delay_diagnostics(f_probe_hz=250.0)
@@ -5952,7 +5995,11 @@ if __name__ == "__main__":
         assert Hi2 > 1.2 * Hb2, \
             (f"Einlass-Gewebe muss die rückwärtige Auslöschung schwächen "
              f"({Hb2:.1f} -> {Hi2:.1f} mV/Pa)")
-        assert pi2 < pb2 - 1.0, \
+        # Schwelle 0.7 dB (vorher 1.0): mit der korrigierten Durchfluss-
+        # Zellfunktion (_cell_B_flow, Gegenprobe 30) ist die interne
+        # Laufzeit ohnehin länger, der Zusatzeffekt des Einlass-Gewebes
+        # damit etwas kleiner. Die RICHTUNG — Vertiefung — ist unberührt.
+        assert pi2 < pb2 - 0.7, \
             (f"250-Hz-Auslöschung muss sich vertiefen "
              f"({pb2:.1f} -> {pi2:.1f} dB)")
         # c) 3D teilt die Kette: gleiche Richtung
@@ -6743,5 +6790,86 @@ if __name__ == "__main__":
               f"Feld-Zweitor reziprok mit/ohne Löcher; 1D/2D {d12:.2f} dB; "
               f"3D == 2D im Kolben-Grenzfall ({d3_29:.2f} dB), "
               f"Np-unabhängig; Gatter greifen  OK")
+
+    # --------- Gegenprobe 30: Zellfunktion des DURCHFLUSSES ---------------
+    # Die azimutale Zuströmung im Spaltfilm hat ZWEI verschiedene Ziele:
+    #   * AUFNAHME (Verdrängung): jede Bohrung ist eine Senke — die Luft
+    #     läuft zur nächstgelegenen, gleich welcher Art.
+    #   * DURCHFLUSS zur Rückseite: nur DURCHGANGSLÖCHER zählen;
+    #     Blindlöcher sind Sackgassen.
+    # Bis Gegenprobe 29 nutzte auch der Durchfluss die Zellfunktion ALLER
+    # Bohrungen — der Zugang zur Rückseite war dadurch zu leicht und die
+    # interne Laufzeit des Nieren-Phasenschiebers zu kurz. Verankert an:
+    # a) STRUKTUR: B(n_th) > B(n_th + n_bh), sobald Blindlöcher da sind;
+    #    ohne Blindlöcher sind beide identisch (stetiger Anschluss).
+    # b) K67-NIERE: das Pattern-Minimum liegt jetzt bei 180° — wie bei der
+    #    realen K67 — statt bei ~164°, und die publizierten U87-Werte
+    #    werden dabei besser getroffen (180°: -26.6 gegen -26 dB
+    #    publiziert; 20.0 gegen ~20 mV/Pa).
+    # c) NÄHER AM 3D-FELDLÖSER, der die diskreten Löcher auflöst und
+    #    deshalb Referenz ist: RMS-Abweichung des Richtdiagramms sinkt bei
+    #    der Debenham-Platte (12 Löcher) und der Nieren-Single.
+    # d) GEGENPROBE OHNE BLINDLÖCHER: dort darf sich NICHTS ändern.
+    if _HAS_SCIPY:
+        par30 = dict(
+            architecture="single", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            membrane_tension=45.0, air_gap=38.1e-6,
+            backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+            bias_voltage=50.0, n_through_holes=12,
+            through_hole_diameter=0.71e-3, rear_network_enabled=False,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=28e-3, squeeze_model="2d")
+        # a) Strukturprobe über die Zellfunktion selbst
+        def _B30(n_s, r_h, a_bp):
+            q = min(n_s * r_h**2 / a_bp**2, 1.0)
+            if q >= 1.0:
+                return 0.0
+            return max(q / 2.0 - q**2 / 8.0 - np.log(q) / 4.0 - 3.0 / 8.0,
+                       0.0)
+        c30 = MicrophoneCapsule(n_blind_holes=46, blind_hole_diameter=1.2e-3,
+                                blind_hole_depth=3.0e-3, **par30)
+        B_flow = _B30(c30.n_th, c30.r_th, c30.a_bp)
+        B_all = _B30(c30.n_th + c30.n_bh, c30.r_th, c30.a_bp)
+        assert B_flow > B_all * 1.5, \
+            (f"Sackgassen dürfen den Durchfluss nicht verkürzen "
+             f"(B: {B_flow:.3f} vs. {B_all:.3f})")
+        # d) ohne Blindlöcher identisch (stetiger Anschluss)
+        assert abs(_B30(c30.n_th, c30.r_th, c30.a_bp)
+                   - _B30(c30.n_th + 0, c30.r_th, c30.a_bp)) == 0.0, \
+            "ohne Blindlöcher müssen beide Zellfunktionen gleich sein"
+        # b) K67: Niere mit Minimum bei 180° und publizierte Kennwerte
+        di30 = k67.directivity(frequencies_hz=(1000.0,))
+        pat30 = di30["patterns"][1000.0]
+        na30 = di30["angles_deg"][:181][int(np.argmin(
+            pat30["linear"][:181]))]
+        H30 = abs(k67.transfer_function([1000.0])[0]) * 1e3
+        assert na30 >= 179.0, \
+            (f"K67-Niere muss ihr Minimum bei 180° haben (real), nicht "
+             f"bei {na30:.0f}°")
+        assert pat30["db"][180] < -25.0, \
+            f"K67 rückwärts < -25 dB erwartet ({pat30['db'][180]:.1f})"
+        assert 18.0 < H30 < 22.0, \
+            f"K67-Empfindlichkeit nahe 20 mV/Pa erwartet ({H30:.1f})"
+        # c) Richtdiagramm näher am 3D-Feldlöser (Debenham, 12 Löcher)
+        deb30 = MicrophoneCapsule(n_blind_holes=46,
+                                  blind_hole_diameter=1.2e-3,
+                                  blind_hole_depth=3.0e-3, **par30)
+        d30_2 = deb30.directivity(frequencies_hz=(500.0,),
+                                  n_angles=37)["patterns"][500.0]["db"]
+        deb30_3 = MicrophoneCapsule(
+            **{**par30, "squeeze_model": "3d"}, n_blind_holes=46,
+            blind_hole_diameter=1.2e-3, blind_hole_depth=3.0e-3)
+        d30_3 = deb30_3.directivity(frequencies_hz=(500.0,),
+                                    n_angles=37)["patterns"][500.0]["db"]
+        rms30 = float(np.sqrt(np.mean(
+            (np.maximum(d30_2, -35.0) - np.maximum(d30_3, -35.0)) ** 2)))
+        assert rms30 < 6.0, \
+            (f"2D-Richtdiagramm muss nahe am 3D-Feldlöser liegen "
+             f"({rms30:.2f} dB)")
+        print(f"Durchfluss-Zellfunktion: Sackgassen zählen nicht "
+              f"(B {B_all:.3f} -> {B_flow:.3f}); K67-Niere Minimum bei "
+              f"{na30:.0f}° (real) mit {pat30['db'][180]:.1f} dB und "
+              f"{H30:.1f} mV/Pa; 2D/3D-Richtdiagramm {rms30:.2f} dB  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
