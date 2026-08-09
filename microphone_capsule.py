@@ -6981,4 +6981,82 @@ if __name__ == "__main__":
               f"(12 Bohrungen: {dev31[12]:+.1f} dB — Homogenisierungs"
               f"grenze)  OK")
 
+    # --------- Gegenprobe 32: EXTERNE Referenz (FEM, veröffentlicht) ------
+    # Erste Verankerung des Modells an einer fremden, in sich konsistenten
+    # Quelle: Šimonová/Honzík, J. Acoust. Soc. Am. 159(5), 4512–4523 (2026),
+    # doi:10.1121/10.0043902. Deren FEM-Referenz (COMSOL 6.3, 3D thermo-
+    # viskos, ~6·10⁶ Freiheitsgrade) liefert die mittlere Membranauslenkung
+    # über die Gesamtfläche für eine Kapsel, deren Parameter VOLLSTÄNDIG in
+    # derselben Arbeit stehen — anders als bei den üblichen Datenblättern,
+    # wo Geometrie und Kurve aus verschiedenen Quellen stammen.
+    #
+    # Der Prüfling ist bewusst exotisch (R = 18 mm, h_g = 230 µm, nur VIER
+    # Bohrungen, f_res = 1040 Hz) und stresst damit genau die Filmphysik:
+    # bei der Resonanz ist die viskose Grenzschicht 95 µm dick gegen 115 µm
+    # halben Spalt — der Film sitzt mitten im Übergang von Poiseuille zu
+    # Trägheit. Ein rein statisches Škvor-Modell müsste hier scheitern; die
+    # Frequenzkorrektur Φ(ω) (s. _film_R_dynamic) trifft die Güte.
+    #
+    # Verankert wird DREIERLEI, mit unterschiedlichem Anspruch:
+    # a) TIEFTON: bis 300 Hz < 1 dB — die quasistatische Nachgiebigkeit.
+    # b) GÜTE: die Resonanzüberhöhung ist die eigentliche Dämpfungsprobe
+    #    und wird auf < 1 dB getroffen. Das ist die Kernaussage.
+    # c) RESONANZLAGE: bekannter Restfehler, hier als OBERGRENZE
+    #    festgeschrieben, damit er nur besser werden kann. Das Modell liegt
+    #    13 % zu tief, weil der Lochzweig zu viel akustische Masse trägt
+    #    (gemessen an der Antiresonanz Lochmasse/Spaltnachgiebigkeit:
+    #    3203 Hz gegen 3500 Hz in der FEM, also Faktor 1.19 in der Masse).
+    #    Der Überschuss sitzt mutmaßlich in der Zell-Engstelle
+    #    ρ0·B(q)/(π·h), die 28…55 % der Zweigmasse ausmacht; ob es eine
+    #    Doppelzählung mit dem aufgelösten Feld ist oder ein h/r_h-Effekt
+    #    der Mündung, ist mit EINER Referenzgeometrie nicht entscheidbar
+    #    (hier h/r_h = 0.46, in unseren Kapseln 0.05…0.08). Deshalb steht
+    #    hier eine Schranke und keine Korrektur — ein angepasster Faktor
+    #    wäre ein Fit, kein Physikgewinn.
+    if _HAS_SCIPY:
+        # COMSOL-Referenz, auf 100 Hz normiert (Fig. 4 der Arbeit)
+        ref32 = ((100.0, 0.00), (200.0, 0.70), (300.0, 1.98), (500.0, 6.20),
+                 (550.0, 6.74), (1000.0, -7.36), (2000.0, -25.20))
+        f32 = np.array([p[0] for p in ref32])
+        a32_ref = np.array([p[1] for p in ref32])
+        c32 = MicrophoneCapsule(
+            membrane_material={"rho": 1944.0, "E": 4.0e9, "nu": 0.35},
+            membrane_resonance_hz=1040.0, membrane_diameter=36.0e-3,
+            membrane_thickness=25e-6, membrane_tension=116.27,
+            air_gap=230e-6, backplate_diameter=36.0e-3,
+            backplate_thickness=1.6e-3, bias_voltage=1.0,
+            architecture="single", n_through_holes=4,
+            through_hole_diameter=1.0e-3, through_hole_pcd=2 * 8.4853e-3,
+            n_blind_holes=0, rear_network_enabled=True,
+            cavity_length=7.6e-3, n_cavity_holes=0, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, include_diffraction=False,
+            squeeze_model="2d")
+        a32 = 20.0 * np.log10(np.abs(c32.transfer_function(f32)))
+        a32 = a32 - a32[0]
+        # a) Tiefton
+        assert np.max(np.abs((a32 - a32_ref)[:3])) < 1.0, \
+            (f"Tiefton muss die FEM treffen "
+             f"({np.max(np.abs((a32 - a32_ref)[:3])):.2f} dB)")
+        # b) Güte — die eigentliche Dämpfungsprobe
+        fs32 = np.geomspace(250.0, 900.0, 400)
+        A32 = 20.0 * np.log10(np.abs(c32.transfer_function(fs32)))
+        A32 = A32 - 20.0 * np.log10(
+            np.abs(c32.transfer_function(np.array([100.0]))[0]))
+        peak32, fpk32 = float(A32.max()), float(fs32[int(np.argmax(A32))])
+        assert abs(peak32 - 6.74) < 1.0, \
+            (f"Resonanzüberhöhung muss die FEM treffen — das ist die "
+             f"Dämpfungsprobe ({peak32:+.2f} statt +6.74 dB)")
+        # c) Resonanzlage: dokumentierter Restfehler als Schranke
+        det32 = fpk32 / 550.0
+        assert 0.82 < det32 < 1.02, \
+            (f"Resonanzlage {fpk32:.0f} Hz gegen 550 Hz (FEM) — "
+             f"Verstimmung {det32:.3f} außerhalb der dokumentierten "
+             f"Schranke; der Lochzweig trägt zu viel Masse")
+        print(f"Externe FEM-Referenz (Šimonová/Honzík 2026, COMSOL): "
+              f"Tiefton {np.max(np.abs((a32 - a32_ref)[:3])):.2f} dB, "
+              f"Resonanzüberhöhung {peak32:+.2f} gegen +6.74 dB "
+              f"(Güte getroffen); Lage {fpk32:.0f} gegen 550 Hz "
+              f"({100 * (det32 - 1):+.0f} % — Massenüberschuss im "
+              f"Lochzweig, dokumentiert)  OK")
+
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
