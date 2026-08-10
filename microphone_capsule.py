@@ -51,6 +51,25 @@ except ImportError:  # pragma: no cover — Fallback auf Näherungsformeln
     _HAS_SCIPY = False
 
 
+def _j0_mode(x):
+    """J0(x) auf 0 <= x <= j01, für das Membran-Modengewicht.
+
+    Mit SciPy exakt; ohne SciPy über die Potenzreihe, die auf diesem
+    kurzen Intervall (x <= 2.405) nach ~12 Gliedern auf Maschinen-
+    genauigkeit konvergiert — der Fallback ist hier also kein Kompromiss.
+    """
+    x = np.asarray(x, dtype=float)
+    if _HAS_SCIPY:
+        return _besselj(0, x)
+    t = -0.25 * x * x
+    term = np.ones_like(x)
+    out = np.ones_like(x)
+    for m in range(1, 16):
+        term = term * t / (m * m)
+        out = out + term
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Stoffwerte Luft bei 20 °C, 1013 hPa
 # ---------------------------------------------------------------------------
@@ -1978,6 +1997,54 @@ class MicrophoneCapsule:
     # ======================================================================
     # Beugung / Druckstau am Kapselkörper
     # ======================================================================
+    def _cap_mode_quad(self, n_nodes=48):
+        """Knoten u und NORMIERTE Modengewichte der Membrankalotte.
+
+        Der Antrieb einer Membranmode ist nicht der Flächenmittelwert des
+        Frontdrucks, sondern die Galerkin-Projektion <p_f · psi> / <psi>
+        (Šimonová/Honzík, JASA 159, 4512 (2026), Gl. 5; klassisch bereits
+        bei Lavergne et al.). Für die Grundmode ist das Gewicht die
+        Modenform selbst,
+
+            w(r) = J0(z01 · r / a_mem),
+
+        auf die Kalotte abgebildet über r = R_body · sin(psi), also
+        w(u) = J0(z01 · sqrt(1−u²) · R_body / a_mem) mit u = cos(psi).
+        Die Integration läuft über dA = 2π R² du, deshalb ist die
+        Gauss–Legendre-Quadratur direkt in u exakt richtig.
+
+        Rückgabe: (u, w) mit Σ w = 1, sodass <f>_Mode = Σ w_i f(u_i).
+        Für eine Punktmembran (u0 → 1) leere Arrays — dort ist C_n = 1.
+
+        Grenzfall w ≡ 1 wäre das bisherige flächengleiche Mittel; der
+        Unterschied ist im Freifeld A(u) = 2J1(u)/u gegen
+        D(u) = z01²J0(u)/(z01²−u²) und wird in Gegenprobe 33 geprüft.
+        """
+        u0 = self._cap_cos
+        if (1.0 - u0) < 1e-9:
+            return np.empty(0), np.empty(0)
+        x, w = np.polynomial.legendre.leggauss(int(n_nodes))
+        u = 0.5 * (1.0 + u0) + 0.5 * (1.0 - u0) * x        # -> [u0, 1]
+        wq = 0.5 * (1.0 - u0) * w
+        s = np.sqrt(np.clip(1.0 - u * u, 0.0, None))       # sin(psi)
+        arg = self._J0_ZEROS[0] * s * self.R_body / self.a_mem
+        wq = wq * _j0_mode(np.clip(arg, 0.0, self._J0_ZEROS[0]))
+        tot = float(np.sum(wq))
+        if not np.isfinite(tot) or abs(tot) < 1e-300:
+            return np.empty(0), np.empty(0)
+        return u, wq / tot
+
+    def _membrane_mode_weight(self, r):
+        """Modengewicht J0(z01·r/a_mem) der Grundmode, außerhalb 0.
+
+        Gewicht der Galerkin-Projektion des Frontdrucks auf die Membran-
+        grundmode (s. :meth:`_cap_mode_quad`); für Flächenstücke jenseits
+        des Membranrandes null, weil dort keine Mode sitzt.
+        """
+        r = np.asarray(r, dtype=float)
+        x = self._J0_ZEROS[0] * np.clip(r / self.a_mem, 0.0, 1.0)
+        return _j0_mode(x)
+
     def _diffraction_factors(self, omega, theta):
         """Druckfaktoren an Membran und Rückeinlässen inkl. Beugung.
 
@@ -2007,12 +2074,22 @@ class MicrophoneCapsule:
         APERTUREFFEKT DER MEMBRAN: die ausgedehnte Membran mittelt die
         Druckverteilung über ihre Fläche — bei schrägem Einfall löschen
         sich Beiträge hoher Frequenzen teilweise aus. Modelliert als
-        flächengemittelte Kugelkalotte am vorderen Pol; die azimutale
+        gemittelte Kugelkalotte am vorderen Pol; die azimutale
         Mittelung ist über das Legendre-Additionstheorem exakt:
             <P_n(cos psi)>_Ring    = P_n(cos alpha) * P_n(cos theta)
             <P_n(cos psi)>_Kalotte = C_n * P_n(cos theta)
-            C_n = [P_{n-1}(u0) - P_{n+1}(u0)] / ((2n+1)(1-u0)),
-            u0 = cos(Kalotten-Halbwinkel)
+
+        Die Kalottenmittelung ist MODENGEWICHTET, nicht flächengleich
+        (s. :meth:`_cap_mode_quad`): der Antrieb einer Membranmode ist die
+        Galerkin-Projektion <p_f · psi> und nicht der schlichte Flächen-
+        mittelwert. Für die Grundmode J0(z01·r/a) unterscheiden sich die
+        beiden im Freifeld-Grenzfall als
+            Flächenmittel  A(u) = 2·J1(u)/u
+            Projektion     D(u) = z01²·J0(u)/(z01² − u²),   u = k·a·sin θ
+        A(u) hat bei u = 3.83 eine Nullstelle, die die Grundmode gar nicht
+        hat — ihre erste liegt bei u = 5.52. Das flächengleiche Mittel
+        erzeugt dort also eine Auslöschung, die es physikalisch nicht
+        gibt (Gegenprobe 33).
 
         Rückgabe: (F_front, F_rear) komplex, Form (len(omega), len(theta)),
         konjugiert in die hier verwendete e^{+j omega t}-Konvention.
@@ -2034,18 +2111,18 @@ class MicrophoneCapsule:
             return tab
 
         P_t = _legendre_table(ct, n_max + 1)                # an cos(theta)
-        P_u0 = _legendre_table(np.array([self._cap_cos]), n_max + 2)
         P_ur = _legendre_table(np.array([self._ring_cos]), n_max + 2)
         u0 = self._cap_cos
+        u_q, w_q = self._cap_mode_quad()          # Knoten + Modengewichte
+        P_q = _legendre_table(u_q, n_max + 1) if u_q.size else None
 
         F_f = np.zeros((omega.size, theta.size), dtype=complex)
         F_r = np.zeros_like(F_f)
         for n in range(n_max + 1):
-            if n == 0 or (1.0 - u0) < 1e-9:   # Punktmembran -> C_n = P_n(1)
-                C_n = 1.0
+            if n == 0 or (1.0 - u0) < 1e-9 or P_q is None:
+                C_n = 1.0                     # Punktmembran -> C_n = P_n(1)
             else:
-                C_n = float(P_u0[n - 1][0] - P_u0[n + 1][0]) \
-                    / ((2 * n + 1) * (1.0 - u0))
+                C_n = float(np.dot(w_q, P_q[n]))
             h1p = (_sph_jn(n, ka, derivative=True)
                    + 1j * _sph_yn(n, ka, derivative=True))
             base = (2 * n + 1) * (-1j) ** n / h1p           # (N_omega,)
@@ -2450,8 +2527,15 @@ class MicrophoneCapsule:
             A = np.vstack([A, -K_c])
             b = np.vstack([b, _pinc(k, cr, cz)])
             u, *_ = np.linalg.lstsq(A, b, rcond=None)
-            p_f = (w_area[front] @ u[front]) / np.sum(w_area[front])
-            p_r = (w_area[rear] @ u[rear]) / np.sum(w_area[rear])
+            # BEIDE Membranmittel MODENGEWICHTET (Galerkin-Projektion auf
+            # die Grundmode, s. _cap_mode_quad). Front- und Rückpatch sind
+            # hier beide Membranscheiben (r <= a_mem) der Doppelmembran-
+            # Bauform — nur mit gleichem Gewicht bleibt der Transfer G
+            # das Verhältnis zweier gleichartig projizierter Antriebe.
+            wf = w_area[front] * self._membrane_mode_weight(mr[front])
+            wr = w_area[rear] * self._membrane_mode_weight(mr[rear])
+            p_f = (wf @ u[front]) / np.sum(wf)
+            p_r = (wr @ u[rear]) / np.sum(wr)
             F[i] = np.conj(p_f)
             G[i] = np.conj(p_r / p_f)
         # Diagnose: Residuum der Raumwinkel-Identität (Gitterqualität)
@@ -6253,7 +6337,11 @@ if __name__ == "__main__":
             elems=el_s, chief=[(0.0, 0.0)],
             w_area=2.0 * np.pi * mrs * el_s["L"],
             front=fr_s, rear=(mzs < 0) & (mrs <= 13e-3))
-        w_s = (2.0 * np.pi * mrs * el_s["L"])[fr_s]
+        # Referenzmittel MIT DEMSELBEN Operator wie das BEM-Frontmittel:
+        # Fläche × Membran-Modengewicht (s. _cap_mode_quad). Sonst
+        # verglichen man zwei verschiedene Mittelungen miteinander.
+        w_s = ((2.0 * np.pi * mrs * el_s["L"])
+               * k67f26._membrane_mode_weight(mrs))[fr_s]
         A_s = (mrs**2 + mzs**2) / foc26**2 - 1.0
         xi_s = np.sqrt(0.5 * (A_s + np.sqrt(A_s**2
                                             + 4.0 * mzs**2 / foc26**2)))
@@ -6294,9 +6382,42 @@ if __name__ == "__main__":
             (f"flache Stirnfläche muss die Kalotte um 3-4 dB übertreffen "
              f"({np.round(d_band26, 2)})")
         f_band26 = 20.0 * np.log10(np.abs(F_flat26[1:]))
-        assert np.all((f_band26 > 6.0) & (f_band26 < 8.5)), \
-            (f"Druckstau nahe Verdopplung (+6..+8 dB) erwartet "
+        # Der Druckstau der flachen Stirnfläche liegt ÜBER der starren
+        # unendlichen Wand (+6.02 dB): die Mitte einer Scheibe ist ein
+        # Fokus, weil der Rand von dort überall gleich weit entfernt ist
+        # und die Randwellen kohärent addieren. Wie weit darüber, hängt
+        # vom MITTELUNGSGEWICHT ab — deshalb hier keine kalibrierte
+        # Bandbreite, sondern die weichungsfreie ORDNUNG
+        #     Flächenmittel < Modenmittel < Scheibenmitte,
+        # die für jedes mittenlastige Gewicht gelten MUSS. Nur die untere
+        # Schranke ist absolut (starre Wand).
+        assert np.all(f_band26 > 6.02), \
+            (f"Druckstau muss die starre Wand (+6.02 dB) übertreffen "
              f"({np.round(f_band26, 2)})")
+
+        class _FlaechenFrontBem(MicrophoneCapsule):
+            """Frontmittel flächengleich — untere Ordnungsschranke."""
+
+            def _membrane_mode_weight(self, r):
+                return np.ones_like(np.asarray(r, dtype=float))
+
+        class _ZentrumFrontBem(MicrophoneCapsule):
+            """Frontmittel nur über die Scheibenmitte — obere Schranke."""
+
+            def _membrane_mode_weight(self, r):
+                return (np.asarray(r, dtype=float)
+                        < 0.1 * self.a_mem).astype(float)
+
+        om_o26 = 2.0 * np.pi * np.array([9000.0])       # ungünstigster Fall
+        F_ar26 = abs(_FlaechenFrontBem(**par26)._bem_axial_fields(
+            om_o26, th0_26)[0][0, 0])
+        F_ze26 = abs(_ZentrumFrontBem(**par26)._bem_axial_fields(
+            om_o26, th0_26)[0][0, 0])
+        F_mo26 = abs(F_flat26[3])
+        assert F_ar26 < F_mo26 < F_ze26, \
+            (f"Modenmittel muss zwischen Flächenmittel und Scheibenmitte "
+             f"liegen ({20 * np.log10(F_ar26):.2f} / "
+             f"{20 * np.log10(F_mo26):.2f} / {20 * np.log10(F_ze26):.2f} dB)")
         # d) Multiplikativität über den vollen Signalpfad (Netzwerk unberührt)
 
         class _KalottenFrontBem(MicrophoneCapsule):
@@ -7058,5 +7179,75 @@ if __name__ == "__main__":
               f"(Güte getroffen); Lage {fpk32:.0f} gegen 550 Hz "
               f"({100 * (det32 - 1):+.0f} % — Massenüberschuss im "
               f"Lochzweig, dokumentiert)  OK")
+
+    # --------- Gegenprobe 33: Modengewicht der Frontmittelung -------------
+    # Der Antrieb einer Membranmode ist die Galerkin-Projektion
+    # <p_f · psi> / <psi>, nicht der flächengleiche Mittelwert (Šimonová/
+    # Honzík, JASA 159, 4512 (2026), Gl. 5 + A2; Lavergne et al.). Bis
+    # hierher mittelte die Kalotte flächengleich — das erzeugt bei
+    # u = k·a·sin(theta) = 3.83 eine Auslöschung, die die Grundmode gar
+    # nicht hat (ihre erste Nullstelle liegt bei u = 5.52).
+    #
+    # Verankert an drei Aussagen:
+    # a) FREIFELD-GRENZFALL, exakt und ohne freien Parameter: für eine
+    #    kleine Kalotte auf großem Körper (quasi flache Membran) muss die
+    #    Quadratur die geschlossene Form
+    #        D(u) = z01²·J0(u)/(z01² − u²)
+    #    liefern — hergeleitet aus <J0(k r sin θ) · J0(z01 r/a)> mit dem
+    #    Bessel-Produktintegral (Gl. A2 der Arbeit).
+    # b) GRENZFALL GEWICHT ≡ 1: mit konstantem Gewicht muss dieselbe
+    #    Quadratur das ALTE Flächenmittel A(u) = 2·J1(u)/u reproduzieren
+    #    — der Umbau ist also eine echte Verallgemeinerung, kein Bruch.
+    # c) NORMIERUNG: Σw = 1, und für ka → 0 bleibt |F| = 1 (kein Gewinn
+    #    aus dem Nichts), geprüft an einer realen Kapsel.
+    if _HAS_SCIPY:
+        from scipy.special import j0 as _j0_33, j1 as _j1_33
+        z01_33 = MicrophoneCapsule._J0_ZEROS[0]
+        c33 = MicrophoneCapsule(membrane_diameter=25.4e-3,
+                                body_diameter=25.4e-3 * 40.0)
+        u_33, w_33 = c33._cap_mode_quad()
+        assert abs(float(np.sum(w_33)) - 1.0) < 1e-12, \
+            f"Modengewichte müssen auf 1 normiert sein ({np.sum(w_33)})"
+        r_33 = c33.R_body * np.sqrt(np.clip(1.0 - u_33**2, 0.0, None))
+        worst_D33 = 0.0
+        for u33 in (0.5, 1.0, 2.0, 3.0, 3.8317, 4.5, 5.0):
+            got = float(np.dot(w_33, _j0_33((u33 / c33.a_mem) * r_33)))
+            ref = (0.5 * z01_33 * _j1_33(z01_33) if abs(u33 - z01_33) < 1e-9
+                   else z01_33**2 * _j0_33(u33) / (z01_33**2 - u33**2))
+            worst_D33 = max(worst_D33, abs(got - ref))
+        assert worst_D33 < 1e-4, \
+            (f"Modenprojektion muss D(u) = z01²J0(u)/(z01²−u²) treffen "
+             f"({worst_D33:.1e})")
+        # b) Gewicht ≡ 1 -> altes Flächenmittel A(u) = 2 J1(u)/u
+        u0_33 = c33._cap_cos
+        x33, wg33 = np.polynomial.legendre.leggauss(48)
+        uu33 = 0.5 * (1.0 + u0_33) + 0.5 * (1.0 - u0_33) * x33
+        wf33 = 0.5 * (1.0 - u0_33) * wg33
+        wf33 = wf33 / np.sum(wf33)
+        rr33 = c33.R_body * np.sqrt(np.clip(1.0 - uu33**2, 0.0, None))
+        worst_A33 = 0.0
+        for u33 in (1.0, 2.0, 3.0, 3.8317):
+            got = float(np.dot(wf33, _j0_33((u33 / c33.a_mem) * rr33)))
+            worst_A33 = max(worst_A33, abs(got - 2.0 * _j1_33(u33) / u33))
+        assert worst_A33 < 1e-4, \
+            (f"mit konstantem Gewicht muss das alte Flächenmittel "
+             f"2·J1(u)/u herauskommen ({worst_A33:.1e})")
+        # c) reale Kapsel: ka -> 0 gibt keinen Gewinn
+        c33b = MicrophoneCapsule(architecture="single",
+                                 membrane_diameter=25.4e-3,
+                                 body_diameter=28e-3)
+        F33 = c33b._diffraction_factors(np.array([2.0 * np.pi * 5.0]),
+                                        np.array([0.0]))[0]
+        assert abs(abs(complex(F33[0, 0])) - 1.0) < 5e-3, \
+            f"ka->0 muss |F| = 1 liefern ({abs(complex(F33[0, 0])):.4f})"
+        # Größe des Effekts, zur Einordnung im Protokoll
+        d33 = 20.0 * np.log10(
+            abs(z01_33**2 * _j0_33(3.0) / (z01_33**2 - 9.0))
+            / abs(2.0 * _j1_33(3.0) / 3.0))
+        print(f"Modengewicht der Frontmittelung: Projektion trifft D(u) "
+              f"({worst_D33:.1e}), Gewicht≡1 reproduziert 2·J1(u)/u "
+              f"({worst_A33:.1e}), Σw = 1, ka→0 neutral; Unterschied zum "
+              f"Flächenmittel bei u = 3 rund {d33:+.1f} dB "
+              f"(dessen Nullstelle bei u = 3.83 entfällt)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
