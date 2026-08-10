@@ -167,6 +167,66 @@ TR = {
               "Membranen ohnehin als volle Felder und "
               "ignoriert diese Einstellung.",
     },
+    "lbl_modal_source": {
+        "en": "Mode-dependent source pressure",
+        "de": "Modenabhängiger Quelldruck",
+    },
+    "help_modal_source": {
+        "en": "Off (default) drives every membrane mode with one common "
+              "scalar pressure. On gives each mode its own Galerkin "
+              "projection <p_f·psi_0m>, the physically correct drive. "
+              "Because the modes sit in parallel at the same gap node, "
+              "this collapses EXACTLY to one equivalent source "
+              "p_eff = Sum Y_m p_m / Sum Y_m — no approximation, no fitted "
+              "coefficient. Two paths differ: WITH diffraction the chain "
+              "already carries the fundamental's projection, so only the "
+              "ratio p_m/p_1 enters (factor exactly 1 for a single mode). "
+              "WITHOUT diffraction the chain carries a uniform pressure "
+              "and knows no aperture effect at all, so D_m enters in "
+              "absolute terms — there the switch matters even with one "
+              "mode. Effect measured against a published FEM reference at "
+              "GRAZING incidence: RMS deviation above 5 kHz drops from "
+              "14.1 to 5.4 dB with three modes (Gegenprobe 34). On axis "
+              "nothing changes — the effect scales with k·a·sin(theta). "
+              "LIMIT: convergence over the mode count is NOT monotone "
+              "(five modes give 7.7 instead of 5.4 dB). The higher modal "
+              "branches carry only the material damping since the squeeze "
+              "film moved into the chain two-port, so branch 4 resonates "
+              "near 5.1 kHz with Q ~ 1e4 and gets too much weight. Stay "
+              "at three modes. The 3D solver carries the membranes as "
+              "full fields and ignores this setting.",
+        "de": "Aus (Voreinstellung) treibt alle Membranmoden "
+              "mit einem gemeinsamen skalaren Druck. Ein gibt "
+              "jeder Mode ihre eigene Galerkin-Projektion "
+              "<p_f·psi_0m> — den physikalisch richtigen "
+              "Antrieb. Da die Moden parallel am selben "
+              "Spaltknoten liegen, lässt sich das EXAKT zu "
+              "einer Ersatzquelle p_eff = Σ Y_m p_m / Σ Y_m "
+              "zusammenziehen: keine Näherung, kein "
+              "Fit-Koeffizient. Zwei Pfade sind zu "
+              "unterscheiden: MIT Beugung trägt die Kette "
+              "bereits die Projektion der Grundmode, dort geht "
+              "nur das Verhältnis p_m/p_1 ein (bei einer Mode "
+              "exakt 1). OHNE Beugung führt die Kette einen "
+              "uniformen Druck und kennt gar keinen "
+              "Aperturfaktor, dort geht D_m absolut ein — "
+              "hier wirkt der Schalter also schon bei einer "
+              "Mode. Wirkung, gegen eine veröffentlichte "
+              "FEM-Referenz bei STREIFENDEM Einfall gemessen: "
+              "die RMS-Abweichung oberhalb 5 kHz sinkt von "
+              "14,1 auf 5,4 dB mit drei Moden (Gegenprobe 34). "
+              "Auf Achse ändert sich nichts — der Effekt "
+              "skaliert mit k·a·sin(theta). GRENZE: die "
+              "Konvergenz über die Modenzahl ist NICHT monoton "
+              "(fünf Moden liefern 7,7 statt 5,4 dB). Die "
+              "höheren Modenzweige tragen nur noch die "
+              "Materialdämpfung, seit der Spaltfilm im "
+              "Ketten-Zweitor sitzt; Zweig 4 resoniert deshalb "
+              "bei 5,1 kHz mit Q ~ 1e4 und bekommt zu viel "
+              "Gewicht. Bei drei Moden bleiben. Der 3D-Löser "
+              "führt die Membranen als volle Felder und "
+              "ignoriert diese Einstellung.",
+    },
 
     # ------------------------- Backplate --------------------------------
     "exp_backplate": {"en": "Backplate", "de": "Backplate"},
