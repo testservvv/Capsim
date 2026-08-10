@@ -52,11 +52,15 @@ except ImportError:  # pragma: no cover — Fallback auf Näherungsformeln
 
 
 def _j0_mode(x):
-    """J0(x) auf 0 <= x <= j01, für das Membran-Modengewicht.
+    """J0(x) für das Membran-Modengewicht (0 <= x <= z_0m).
 
-    Mit SciPy exakt; ohne SciPy über die Potenzreihe, die auf diesem
-    kurzen Intervall (x <= 2.405) nach ~12 Gliedern auf Maschinen-
-    genauigkeit konvergiert — der Fallback ist hier also kein Kompromiss.
+    Mit SciPy exakt. Ohne SciPy über die Potenzreihe: für die Grundmode
+    (x <= 2.405) konvergiert sie nach ~12 Gliedern auf Maschinen-
+    genauigkeit. Für höhere Moden reicht das Argument bis z_05 = 14.93;
+    dort braucht die Reihe mehr Glieder UND verliert durch Auslöschung
+    Stellen (größtes Glied ~7e4 gegen J0 ~ 1e-2). 40 Glieder halten den
+    Fehler unter 1e-9 — ausreichend für ein Gewicht, aber bewusst
+    dokumentiert statt stillschweigend.
     """
     x = np.asarray(x, dtype=float)
     if _HAS_SCIPY:
@@ -64,7 +68,7 @@ def _j0_mode(x):
     t = -0.25 * x * x
     term = np.ones_like(x)
     out = np.ones_like(x)
-    for m in range(1, 16):
+    for m in range(1, 41):
         term = term * t / (m * m)
         out = out + term
     return out
@@ -324,6 +328,7 @@ class MicrophoneCapsule:
         membrane_thickness=6e-6,
         membrane_tension=400.0,
         membrane_modes=1,
+        modal_source=0,
         # --- Backplate-System ---------------------------------------------
         air_gap=40e-6,
         backplate_diameter=20e-3,
@@ -404,6 +409,12 @@ class MicrophoneCapsule:
             raise ValueError(
                 f"membrane_modes muss zwischen 1 und {len(self._J0_ZEROS)} "
                 "liegen (axialsymmetrische (0,m)-Moden)."
+            )
+        self.modal_source = int(modal_source)
+        if self.modal_source not in (0, 1):
+            raise ValueError(
+                "modal_source ist ein Schalter: 0 (aus, Voreinstellung) "
+                "oder 1 (modenabhängiger Quelldruck)."
             )
 
         # ---------------------- Backplate-System ---------------------------
@@ -1997,7 +2008,85 @@ class MicrophoneCapsule:
     # ======================================================================
     # Beugung / Druckstau am Kapselkörper
     # ======================================================================
-    def _cap_mode_quad(self, n_nodes=48):
+    def _modal_source_scale(self, omega, theta, F_mode1):
+        """Korrekturfaktor p_eff/p_1 des MODENABHÄNGIGEN Quelldrucks.
+
+        Jede Membranmode wird von ihrer eigenen Galerkin-Projektion
+        <p_f · psi_0m> getrieben, nicht von einem gemeinsamen Skalar
+        (Šimonová/Honzík, JASA 159, 4512 (2026), Gl. 5 + 24). Im
+        Kettenmodell liegen die Moden PARALLEL an demselben Spaltknoten,
+        deshalb lässt sich das exakt auf eine Ersatzquelle zusammenziehen:
+
+            Σ_m Y_m (p_m − p_gap) = (Σ_m Y_m)·(p_eff − p_gap),
+            p_eff = Σ_m Y_m p_m / Σ_m Y_m.
+
+        Das ist keine Näherung, solange alle Moden an denselben
+        nachgelagerten Knoten koppeln — im 1D/2D-Pfad ist das der Fall.
+        Zurückgegeben wird p_eff/p_1, weil die Kette bereits p_1 führt.
+
+        Die Modenfaktoren p_m/p_1 kommen aus derselben Projektion wie die
+        Grundmode:
+          * mit Beugung aus der Kalotten-/BEM-Oberflächenmittelung mit
+            dem Gewicht J0(z_0m·r/a_mem),
+          * ohne Beugung (freie ebene Welle) in geschlossener Form
+                D_m(u) = z_0m²·J0(u)/(z_0m² − u²),   u = k·a_mem·sin(theta),
+            dem Bessel-Produktintegral (Gl. A2).
+
+        Bei ``membrane_modes = 1`` bleibt nur die Grundmode: der Faktor ist
+        dann mit Beugung exakt 1 (die Kette führt bereits die richtige
+        Projektion) und ohne Beugung D_1(u) — der APERTUREFFEKT der freien
+        Membran, den der Pfad ohne Körper bisher gar nicht kannte.
+        """
+        omega = np.atleast_1d(np.asarray(omega, dtype=float))
+        theta = np.atleast_1d(np.asarray(theta, dtype=float))
+        z = self._J0_ZEROS
+        nm = self.membrane_modes
+
+        # Modenfaktoren p_m/p_1, Form (nm, Nomega, Ntheta)
+        if self.include_diffraction and _HAS_SCIPY:
+            if nm == 1:
+                return np.ones((omega.size, theta.size), dtype=complex)
+            rel = [np.ones((omega.size, theta.size), dtype=complex)]
+            for m in range(1, nm):
+                F_m, _ = self._diffraction_factors(omega, theta, mode=m + 1)
+                rel.append(F_m / F_mode1)
+            rel = np.array(rel)
+        else:
+            u = np.outer(omega / C_AIR * self.a_mem, np.sin(theta))
+            D = []
+            for m in range(nm):
+                den = z[m] ** 2 - u**2
+                # Hebbare Singularität bei u = z_0m: Grenzwert z*J1(z)/2
+                safe = np.where(np.abs(den) < 1e-9, 1.0, den)
+                Dm = z[m] ** 2 * _j0_mode(u) / safe
+                if _HAS_SCIPY:
+                    from scipy.special import j1 as _j1_ms
+                    lim = 0.5 * z[m] * _j1_ms(z[m])
+                    Dm = np.where(np.abs(den) < 1e-9, lim, Dm)
+                D.append(Dm.astype(complex))
+            # ABSOLUT, nicht auf die Grundmode normiert: der Pfad ohne
+            # Beugung führt in der Kette den UNIFORMEN Druck p = 1 und
+            # kennt den Aperturfaktor bisher gar nicht. Im Beugungspfad
+            # ist es umgekehrt — dort trägt die Kette bereits F_1.
+            rel = np.array(D)
+
+        if nm == 1:
+            return rel[0] if rel.ndim == 3 else rel
+
+        # Modenadmittanzen Y_m(omega) aus derselben Zerlegung wie
+        # _membrane_impedance / _higher_mode_branches
+        R = self._membrane_film_damping(omega, self.h_gap_front,
+                                        self.R_A_gap_front)
+        R = np.asarray(R, dtype=complex) * np.ones_like(omega, dtype=complex)
+        Y = [1.0 / (R + 1j * omega * self.M_A_mem
+                    + 1.0 / (1j * omega * self.C_A_eff))]
+        for M_m, C_m in self._higher_mode_branches():
+            Y.append(1.0 / (R + 1j * omega * M_m
+                            + 1.0 / (1j * omega * C_m)))
+        Y = np.array(Y)[:, :, None]                 # (nm, Nomega, 1)
+        return np.sum(Y * rel, axis=0) / np.sum(Y, axis=0)
+
+    def _cap_mode_quad(self, n_nodes=48, mode=1):
         """Knoten u und NORMIERTE Modengewichte der Membrankalotte.
 
         Der Antrieb einer Membranmode ist nicht der Flächenmittelwert des
@@ -2013,6 +2102,11 @@ class MicrophoneCapsule:
         Die Integration läuft über dA = 2π R² du, deshalb ist die
         Gauss–Legendre-Quadratur direkt in u exakt richtig.
 
+        ``mode`` wählt die Bessel-Mode (1 = Grundmode); die höheren
+        brauchen dasselbe Gewicht mit ihrer eigenen Nullstelle z_0m und
+        werden für den modenabhängigen Quelldruck benötigt
+        (s. :meth:`_modal_source_scale`).
+
         Rückgabe: (u, w) mit Σ w = 1, sodass <f>_Mode = Σ w_i f(u_i).
         Für eine Punktmembran (u0 → 1) leere Arrays — dort ist C_n = 1.
 
@@ -2023,12 +2117,15 @@ class MicrophoneCapsule:
         u0 = self._cap_cos
         if (1.0 - u0) < 1e-9:
             return np.empty(0), np.empty(0)
+        z0m = self._J0_ZEROS[max(int(mode), 1) - 1]
         x, w = np.polynomial.legendre.leggauss(int(n_nodes))
         u = 0.5 * (1.0 + u0) + 0.5 * (1.0 - u0) * x        # -> [u0, 1]
         wq = 0.5 * (1.0 - u0) * w
         s = np.sqrt(np.clip(1.0 - u * u, 0.0, None))       # sin(psi)
-        arg = self._J0_ZEROS[0] * s * self.R_body / self.a_mem
-        wq = wq * _j0_mode(np.clip(arg, 0.0, self._J0_ZEROS[0]))
+        arg = z0m * s * self.R_body / self.a_mem
+        # Klammerung am EIGENEN Membranrand: r = a_mem entspricht
+        # arg = z_0m, jenseits davon sitzt keine Mode mehr.
+        wq = wq * _j0_mode(np.clip(arg, 0.0, z0m))
         tot = float(np.sum(wq))
         if not np.isfinite(tot) or abs(tot) < 1e-300:
             return np.empty(0), np.empty(0)
@@ -2045,7 +2142,7 @@ class MicrophoneCapsule:
         x = self._J0_ZEROS[0] * np.clip(r / self.a_mem, 0.0, 1.0)
         return _j0_mode(x)
 
-    def _diffraction_factors(self, omega, theta):
+    def _diffraction_factors(self, omega, theta, mode=1):
         """Druckfaktoren an Membran und Rückeinlässen inkl. Beugung.
 
         DRUCKSTAU UND ABSCHATTUNG AM KAPSELKÖRPER
@@ -2113,7 +2210,7 @@ class MicrophoneCapsule:
         P_t = _legendre_table(ct, n_max + 1)                # an cos(theta)
         P_ur = _legendre_table(np.array([self._ring_cos]), n_max + 2)
         u0 = self._cap_cos
-        u_q, w_q = self._cap_mode_quad()          # Knoten + Modengewichte
+        u_q, w_q = self._cap_mode_quad(mode=mode)  # Knoten + Modengewichte
         P_q = _legendre_table(u_q, n_max + 1) if u_q.size else None
 
         F_f = np.zeros((omega.size, theta.size), dtype=complex)
@@ -3312,6 +3409,30 @@ class MicrophoneCapsule:
         return Xf, Xr
 
     def _source_pressures(self, omega, theta):
+        """Quelldrücke p_front/p_rear, optional MODENABHÄNGIG.
+
+        Ohne ``modal_source`` (Voreinstellung 0) exakt
+        :meth:`_source_pressures_fundamental` — bit-für-bit das bisherige
+        Verhalten. Mit ``modal_source = 1`` wird der Antrieb jeder
+        Membranmode einzeln projiziert und über die Modenadmittanzen zu
+        einer Ersatzquelle zusammengezogen (s. :meth:`_modal_source_scale`).
+
+        Der Faktor wirkt auf BEIDE Membranen der Doppelmembran-Bauform:
+        sie sind gleich groß, tragen dieselben Modenformen, und der
+        Unterschied ihrer Oberflächenfelder steckt bereits im Transfer
+        G_ax bzw. im rückseitigen BEM-Mittel. Beim Einzelmembran-Pfad
+        bleibt p_rear unberührt — dort ist es ein EINLASSPORT ohne
+        Membranmode.
+        """
+        p_f, p_r = self._source_pressures_fundamental(omega, theta)
+        if not self.modal_source:
+            return p_f, p_r
+        scale = self._modal_source_scale(omega, theta, p_f)
+        if self.architecture == "dual_diaphragm":
+            return p_f * scale, p_r * scale
+        return p_f * scale, p_r
+
+    def _source_pressures_fundamental(self, omega, theta):
         """Effektive Quelldrücke p_front/p_rear für Einfallswinkel theta.
 
         Mit Beugung: Kugelstreufaktoren (s. :meth:`_diffraction_factors`).
@@ -7249,5 +7370,122 @@ if __name__ == "__main__":
               f"({worst_A33:.1e}), Σw = 1, ka→0 neutral; Unterschied zum "
               f"Flächenmittel bei u = 3 rund {d33:+.1f} dB "
               f"(dessen Nullstelle bei u = 3.83 entfällt)  OK")
+
+    # --------- Gegenprobe 34: modenabhängiger Quelldruck ------------------
+    # Schalter ``modal_source`` (Voreinstellung 0 = aus). Bei 1 wird jede
+    # Membranmode von ihrer EIGENEN Galerkin-Projektion getrieben statt von
+    # einem gemeinsamen Skalar; die Moden liegen im Kettenmodell parallel
+    # am selben Spaltknoten, deshalb ist die Zusammenfassung zu einer
+    # Ersatzquelle p_eff = Σ Y_m p_m / Σ Y_m exakt (s. _modal_source_scale).
+    #
+    # MOTIVATION, gemessen: gegen die COMSOL-Referenz (Gegenprobe 32) bei
+    # STREIFENDEM Einfall — so wird sie angeregt, mit dem Radialprofil
+    # J0(k0 r) über die Membranfläche — fehlten dem Modell oberhalb 5 kHz
+    # 14 dB. Der Nachweis, dass das die ANREGUNG ist und nicht die
+    # Innenakustik: treibt man das (FEM-validierte) Modell der Autoren
+    # ebenfalls uniform statt mit ebener Welle, weicht es genauso ab
+    # (bei 10 kHz +17.5 dB dort gegen +17.3 dB hier), und die beiden
+    # uniform getriebenen Modelle treffen sich auf 0.2 dB.
+    #
+    # Verankert:
+    # a) AUS ist bit-für-bit der Bestand, und der Schalter hat ein Gatter.
+    # b) FREIFELD-EXAKTHEIT: ohne Beugung muss der Faktor bei
+    #    membrane_modes = 1 exakt D_1(u) = z01²J0(u)/(z01²−u²) sein.
+    # c) MIT BEUGUNG und einer Mode ist der Faktor exakt 1 — dort trägt
+    #    die Kette die Projektion bereits (Gegenprobe 33), doppelt wäre
+    #    falsch.
+    # d) WIRKUNG: gegen die COMSOL-Referenz sinkt die RMS-Abweichung ab
+    #    5 kHz von 14.1 dB auf unter 6 dB.
+    # e) DOKUMENTIERTE GRENZE: die Konvergenz über die Modenzahl ist NICHT
+    #    monoton. Die Zweige der Modenzerlegung tragen seit Gegenprobe 31
+    #    nur noch die Materialdämpfung (der Spaltfilm sitzt im Ketten-
+    #    Zweitor), sind also praktisch ungedämpft — Mode 4 resoniert bei
+    #    5.1 kHz mit Q ~ 1e4 und bekommt dort zu viel Gewicht. Das ist
+    #    eine Eigenschaft der Zerlegung, die der Schalter nur SICHTBAR
+    #    macht; sie gehört dokumentiert, nicht wegkalibriert. Deshalb
+    #    steht hier die Zweigresonanz als Strukturaussage.
+    if _HAS_SCIPY:
+        from scipy.special import j0 as _j0_34
+        z34 = MicrophoneCapsule._J0_ZEROS
+        par34 = dict(
+            membrane_material={"rho": 1944.0, "E": 4.0e9, "nu": 0.35},
+            membrane_resonance_hz=1040.0, membrane_diameter=36.0e-3,
+            membrane_thickness=25e-6, membrane_tension=116.27,
+            air_gap=230e-6, backplate_diameter=36.0e-3,
+            backplate_thickness=1.6e-3, bias_voltage=1.0,
+            architecture="single", n_through_holes=4,
+            through_hole_diameter=1.0e-3, through_hole_pcd=2 * 8.4853e-3,
+            n_blind_holes=0, rear_network_enabled=True,
+            cavity_length=7.6e-3, n_cavity_holes=0, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, include_diffraction=False,
+            squeeze_model="2d")
+        f34 = np.array([1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 7000.0,
+                        10000.0])
+        # a) aus == Bestand, und das Gatter greift
+        h_a = MicrophoneCapsule(**par34).transfer_function(f34)
+        h_b = MicrophoneCapsule(modal_source=0, **par34).transfer_function(f34)
+        assert np.array_equal(h_a, h_b), \
+            "modal_source = 0 muss bit-für-bit der Bestand sein"
+        try:
+            MicrophoneCapsule(modal_source=2, **par34)
+            raise AssertionError("modal_source braucht ein Gatter")
+        except ValueError:
+            pass
+        # b) Freifeld: eine Mode -> exakt D_1(u)
+        c34 = MicrophoneCapsule(modal_source=1, membrane_modes=1, **par34)
+        th34 = np.array([np.pi / 2])                  # streifend: u maximal
+        om34 = 2.0 * np.pi * f34
+        s34 = c34._modal_source_scale(
+            om34, th34, c34._source_pressures_fundamental(om34, th34)[0])
+        u34 = om34 / C_AIR * c34.a_mem
+        D34 = z34[0]**2 * _j0_34(u34) / (z34[0]**2 - u34**2)
+        assert np.max(np.abs(s34[:, 0] - D34)) < 1e-12, \
+            (f"Freifeld-Faktor muss exakt D_1(u) sein "
+             f"({np.max(np.abs(s34[:, 0] - D34)):.1e})")
+        # c) mit Beugung und einer Mode: Faktor exakt 1 (keine Doppelung)
+        c34d = MicrophoneCapsule(
+            **{**par34, "include_diffraction": True, "body_diameter": 40e-3,
+               "modal_source": 1, "membrane_modes": 1})
+        s34d = c34d._modal_source_scale(
+            om34, th34, c34d._source_pressures_fundamental(om34, th34)[0])
+        assert np.max(np.abs(s34d - 1.0)) < 1e-12, \
+            "mit Beugung trägt die Kette die Projektion bereits (Faktor 1)"
+        # d) Wirkung gegen die COMSOL-Referenz bei streifendem Einfall
+        ref34 = np.array([0.00, -17.84, -28.49, -33.59, -30.94, -29.78,
+                          -40.16])          # COMSOL, auf 1 kHz normiert
+        def _graz34(**kw):
+            cc = MicrophoneCapsule(**{**par34, **kw})
+            H = np.asarray(cc.angle_responses(f34, angles_deg=(90.0,))
+                           ["H"][90.0])
+            a = 20.0 * np.log10(np.abs(H))
+            return a - a[0]
+        hi34 = f34 >= 5000.0
+        rms_off = float(np.sqrt(np.mean(
+            (_graz34(modal_source=0)[hi34] - ref34[hi34])**2)))
+        rms_on = float(np.sqrt(np.mean(
+            (_graz34(modal_source=1, membrane_modes=3)[hi34]
+             - ref34[hi34])**2)))
+        assert rms_off > 12.0, \
+            f"ohne Projektion muss die bekannte Lücke bleiben ({rms_off:.1f})"
+        assert rms_on < 6.0, \
+            (f"modenabhängige Quelle muss die Lücke deutlich schließen "
+             f"({rms_off:.1f} -> {rms_on:.1f} dB)")
+        # e) dokumentierte Grenze: ungedämpfte Zweigresonanz Mode 4
+        c34m = MicrophoneCapsule(modal_source=1, membrane_modes=5, **par34)
+        M4, C4 = c34m._higher_mode_branches()[2]
+        f4 = 1.0 / (2.0 * np.pi * np.sqrt(M4 * C4))
+        R4 = float(np.atleast_1d(c34m._membrane_film_damping(
+            np.array([2.0 * np.pi * f4]), c34m.h_gap_front,
+            c34m.R_A_gap_front))[0])
+        Q4 = float(np.sqrt(M4 / C4) / R4)
+        assert 4500.0 < f4 < 5700.0 and Q4 > 1000.0, \
+            (f"Zweig 4 sitzt bei {f4:.0f} Hz mit Q = {Q4:.0f} — die "
+             f"Modenzerlegung dämpft die höheren Zweige nicht")
+        print(f"Modenabhängiger Quelldruck: aus ≡ Bestand, Gatter greift; "
+              f"Freifeld exakt D_1(u) ({np.max(np.abs(s34[:, 0] - D34)):.0e}), "
+              f"mit Beugung Faktor 1; streifend gegen COMSOL ab 5 kHz "
+              f"{rms_off:.1f} -> {rms_on:.1f} dB (3 Moden). GRENZE: Zweig 4 "
+              f"bei {f4:.0f} Hz mit Q = {Q4:.0f} ungedämpft -> Konvergenz "
+              f"über die Modenzahl nicht monoton  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
