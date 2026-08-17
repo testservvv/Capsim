@@ -7599,4 +7599,94 @@ if __name__ == "__main__":
               f"bedämpft ({f4_0:.0f} -> {f4:.0f} Hz). GRENZE: Konvergenz "
               f"über die Modenzahl weiterhin nicht monoton  OK")
 
+    # --------- Gegenprobe 35: Filmträgheit Φ(ω) gegen die Literatur -------
+    # Die Frequenzkorrektur des Spaltfilms (:meth:`_film_R_dynamic`) haben
+    # wir selbst hergeleitet: Φ(ω) = (h³/12μ)/K_f mit dem Schlitz-
+    # Zwikker–Kosten-Leitwert K_f. Sie lässt sich extern verankern.
+    #
+    # Homentcovschi & Miles, J. Acoust. Soc. Am. 124(1), 175–181 (2008),
+    # doi:10.1121/1.2918542, leiten eine Reynolds-Gleichung her, die
+    # Trägheit und Gasverdünnung enthält (ihre Gl. 12/13). Ihr
+    # Trägheitsfaktor M hängt am Parameter
+    #
+    #     K = d0 · sqrt(rho·omega/mu)
+    #
+    # und sie geben die Tieffrequenz-Entwicklung M = 1 − i·K²/10 an.
+    # Konvention: ihr e^{−iωt} gegen unser e^{+jωt}, also ihr −i = unser
+    # +j. Unser Φ muss damit 1 + j·K²/10 sein. Wegen α = (h/2)·sqrt(jωρ/μ)
+    # ist K = 2·|α|/sqrt(j), die beiden Parameter sind dasselbe.
+    #
+    # Verankert wird die REIHE, nicht nur ein Zahlenwert:
+    # a) Φ(ω→0) = 1 exakt (Poiseuille-Grenzfall).
+    # b) Das erste Glied trifft die Publikation. Aus
+    #    1 − tanh(α)/α = α²/3 − 2α⁴/15 + 17α⁶/315 − … folgt
+    #        Φ = 1/(1 − 2α²/5 + 17α⁴/105 − …)
+    #          = 1 + (2/5)α² + (4/25 − 17/105)·α⁴ + …
+    #    mit α² = j·K²/4 wird (2/5)α² = j·K²/10 — genau ihr Term.
+    # c) Das NÄCHSTE Glied ist damit festgelegt: 4/25 − 17/105 = −1/525
+    #    und α⁴ = −K⁴/16, also +K⁴/8400. Dass unser Φ auch das trifft,
+    #    zeigt einen echten Reihenanschluss und keinen Zufall an einem
+    #    Punkt — nach Abzug beider Glieder bleibt O(K⁶).
+    # d) WARNUNG als Prüfung: die Autoren schreiben, M = 1 sei unter
+    #    100 kHz eine gute Näherung. Das gilt für MEMS-Spalte von 1–2 µm
+    #    (dort K < 0.5). Bei Kapselspalten ist K = O(1…10) und die
+    #    Korrektur wesentlich — wer sie mit Verweis auf die
+    #    MEMS-Literatur wegvereinfacht, macht einen Fehler. Deshalb steht
+    #    hier eine untere Schranke für den K67-Fall.
+    _K_of = lambda h, f: h * np.sqrt(RHO0 * 2.0 * np.pi * f / MU_AIR)
+    c35 = MicrophoneCapsule(architecture="single")
+    # a) Poiseuille-Grenzfall: Φ → 1, und zwar QUADRATISCH in K. Eine
+    #    feste Zahlenschranke wäre hier falsch — bei jeder endlichen
+    #    Frequenz bleibt das erste Glied jK²/10 stehen. Geprüft wird
+    #    deshalb das Skalierungsgesetz: eine Dekade tiefere Frequenz muss
+    #    den Abstand zu 1 um genau eine Dekade verkleinern (K² ∝ ω).
+    #    Das Fenster liegt bewusst bei 0.1–10 Hz: noch tiefer wird
+    #    1 − tanh(α)/α ≈ α²/3 als Differenz zweier Zahlen nahe 1
+    #    berechnet und verliert durch Auslöschung Stellen (bei 1 mHz
+    #    bereits 0.06 %) — das ist Rundung, nicht Physik.
+    dev35 = []
+    for f0_35 in (1.0e-1, 1.0e0, 1.0e1):
+        p35 = complex(np.atleast_1d(MicrophoneCapsule._film_R_dynamic(
+            np.array([2.0 * np.pi * f0_35]), 60e-6))[0])
+        dev35.append(abs(p35 - 1.0) / (_K_of(60e-6, f0_35) ** 2))
+    assert max(abs(d / 0.1 - 1.0) for d in dev35) < 1e-3, \
+        (f"Φ − 1 muss im Grenzfall exakt K²/10 sein (gemessen "
+         f"{np.round(dev35, 6)})")
+    # b/c) Reihenanschluss über zwei Glieder
+    worst1_35, worst2_35, ord6_35 = 0.0, 0.0, []
+    for h35 in (15e-6, 25e-6, 40e-6, 60e-6, 230e-6):
+        for f35 in (200.0, 1000.0, 2000.0, 8000.0, 20000.0):
+            K35 = _K_of(h35, f35)
+            if K35 > 1.6:                 # jenseits davon bricht die Reihe
+                continue
+            phi = complex(np.atleast_1d(MicrophoneCapsule._film_R_dynamic(
+                np.array([2.0 * np.pi * f35]), h35))[0])
+            lit1 = 1.0 + 1j * K35**2 / 10.0
+            lit2 = lit1 + K35**4 / 8400.0
+            worst1_35 = max(worst1_35, abs(phi - lit1) / K35**4)
+            worst2_35 = max(worst2_35, abs(phi - lit2))
+            ord6_35.append(abs(phi - lit2) / K35**6)
+    assert worst1_35 < 2.0e-4, \
+        (f"Φ muss die publizierte Entwicklung 1 + jK²/10 in erster Ordnung "
+         f"treffen (Rest/K⁴ = {worst1_35:.2e}, erwartet 1/8400)")
+    assert abs(np.mean(ord6_35) - 1.323e-6) / 1.323e-6 < 0.05, \
+        (f"nach Abzug beider Glieder muss O(K⁶) bleiben "
+         f"(Rest/K⁶ = {np.mean(ord6_35):.3e})")
+    # d) bei Kapselspalten ist die Korrektur NICHT vernachlässigbar
+    K67_35 = _K_of(40e-6, 7000.0)
+    phi_k67 = complex(np.atleast_1d(MicrophoneCapsule._film_R_dynamic(
+        np.array([2.0 * np.pi * 7000.0]), 40e-6))[0])
+    assert K67_35 > 1.5 and abs(phi_k67.imag) > 0.3, \
+        (f"bei Kapselspalten muss die Filmträgheit spürbar sein "
+         f"(K = {K67_35:.2f}, Im Φ = {phi_k67.imag:.3f}) — die "
+         f"MEMS-Näherung M ≈ 1 gilt hier nicht")
+    print(f"Filmträgheit extern verankert (Homentcovschi & Miles, JASA 124, "
+          f"175 (2008)): |Φ−1|/K² = {np.mean(dev35):.5f} über drei "
+          f"Frequenzdekaden (exakt 1/10); erstes Glied == publiziertes "
+          f"1 + jK²/10 (Rest/K⁴ = {worst1_35:.1e} gegen hergeleitete "
+          f"1/8400); nach Abzug des K⁴-Glieds bleibt O(K⁶) "
+          f"({np.mean(ord6_35):.2e}); K67-Spalt K = {K67_35:.2f} mit "
+          f"Im Φ = {phi_k67.imag:.2f} — MEMS-Näherung M ≈ 1 gilt dort "
+          f"NICHT  OK")
+
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
