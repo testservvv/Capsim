@@ -7726,6 +7726,29 @@ if __name__ == "__main__":
     # damit KEIN Massenüberschuss sein: eine Korrektur würde die
     # Antiresonanz weiter nach unten schieben. Das widerlegt den
     # ursprünglichen Verdacht aus Gegenprobe 32.
+    #
+    # STOKES-ZELLE GEPRÜFT UND VERWORFEN. Homentcovschi/Murray/Miles,
+    # Microfluid Nanofluid 9, 865–879 (2010), lösen dieselbe Zelle in
+    # Stokes-Näherung außerhalb der Schmierfilmannahme und geben eine
+    # geschlossene Reihenlösung (ihre Gl. 42/54/56). Nachgebaut und
+    # gegen ihre eigene Tabelle 3 validiert: alle sechs publizierten
+    # Strukturen auf 0.0 % reproduziert. Für unsere Geometrien liefert
+    # sie 1.20× (CTU) bis 1.56× (Messmikrofon) unseres Filmterms, in
+    # Real- UND Imaginärteil gleich skaliert.
+    #
+    # ÜBERNOMMEN WIRD SIE TROTZDEM NICHT, und der Grund ist ein
+    # Grenzfalltest: für d→0 muss jede Zellformel gegen die Schmierfilm-
+    # lösung laufen, denn dort ist Škvor exakt (s. die Widerstandsprobe
+    # unten). Ihre tut das NICHT — das Verhältnis sättigt bei 1.1547
+    # (q = 0.003) bzw. 1.5600 (q = 0.101). Die Ursache benennen die
+    # Autoren selbst: die Ein-Term-Näherung gleichförmigen Drucks UND
+    # gleichförmiger Geschwindigkeit an der Lochöffnung (ihre Gl. 46/47),
+    # gültig nur für kleine Lochradien. In ihren Validierungsfällen
+    # trägt der Film nur 27…38 % der Zellimpedanz — der Rest ist der
+    # Poiseuille-Widerstand der Bohrung —, der Fehler verschwindet dort
+    # also in der ±10-%-Übereinstimmung mit der Messung. In unseren
+    # Kapseln trägt der Film 98…100 %. Ihre Formel zu übernehmen hieße,
+    # einen Fehler von 35…56 % einzubauen.
     if _HAS_SCIPY:
         from scipy.integrate import quad as _quad36
         worst36 = 0.0
@@ -7744,6 +7767,29 @@ if __name__ == "__main__":
         assert worst36 < 1e-6, \
             (f"Reaktivanteil muss exakt die kinetische Energie der "
              f"Schmierfilmströmung sein (Abweichung {worst36:.1e})")
+        # WIDERSTANDSTEIL: B(q) ist die EXAKTE Lösung der Reynolds-Zelle.
+        # Darauf beruht das Urteil über die Stokes-Zelle oben — eine
+        # Formel, die im Grenzfall d→0 nicht hierher läuft, ist dort
+        # falsch. Erstprinzipien: Q(r) = v·π(r_c²−r²) fließt EINWÄRTS,
+        # dp/dr = 12μQ/(2πr h³), p(r_h) = 0, R = <p>_Zelle/(v·π·r_c²).
+        worst36r = 0.0
+        for q36 in (0.003, 0.01, 0.03, 0.1, 0.3):
+            r_c36, h36 = 9.0e-3, 230e-6
+            b36 = r_c36 * np.sqrt(q36)
+            k36 = 6.0 * MU_AIR / h36**3
+
+            def _p36(rr, _rc=r_c36, _b=b36, _k=k36):
+                return _k * (_rc**2 * np.log(rr / _b) - (rr * rr - _b * _b) / 2.0)
+
+            F36 = _quad36(lambda rr: _p36(rr) * 2.0 * np.pi * rr,
+                          b36, r_c36, limit=200)[0]
+            R_int = (F36 / (np.pi * r_c36**2)) / (np.pi * r_c36**2)
+            B36q = (q36 / 2.0 - q36**2 / 8.0 - np.log(q36) / 4.0 - 3.0 / 8.0)
+            R_form = 12.0 * MU_AIR / (np.pi * h36**3) * B36q
+            worst36r = max(worst36r, abs(R_int / R_form - 1.0))
+        assert worst36r < 1e-6, \
+            (f"B(q) muss die exakte Reynolds-Zellösung sein "
+             f"(Abweichung {worst36r:.1e})")
         # Der Zellterm selbst muss diesen Grenzwert ANNEHMEN, und zwar in
         # der richtigen Form. Eine feste Zahlenschranke wäre hier falsch:
         # bei endlicher Frequenz ist 1 − tanh(α)/α ≈ 1 − 1/α, also
@@ -7766,8 +7812,9 @@ if __name__ == "__main__":
         assert max(abs(p - 1.0) for p in prod36) < 5e-4, \
             (f"Zellterm muss ρ0·B/(π·h) wie 1 + 1/(√2·|α|) annehmen "
              f"(Produkte {np.round(prod36, 5)})")
-        print(f"Reaktivanteil der Zelle: Impuls- und Energieweg identisch "
-              f"(max {worst36:.0e} über q = 0.003…0.3); Zellterm nimmt "
+        print(f"Zellterm exakt im Schmierfilm: Widerstand == Reynolds-"
+              f"Zellösung ({worst36r:.0e}), Reaktivanteil == kinetische "
+              f"Energie ({worst36:.0e}) über q = 0.003…0.3; Zellterm nimmt "
               f"ρ0·B(q)/(π·h) wie 1 + 1/(√2·|α|) an "
               f"(Grenzgesetz {min(prod36):.5f}…{max(prod36):.5f}); "
               f"wirbelfreie Lösung liegt HÖHER (+5…16 %) — der Zellterm ist "
