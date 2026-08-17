@@ -7343,20 +7343,36 @@ if __name__ == "__main__":
     #    13 % zu tief, weil der Lochzweig zu viel akustische Masse trägt
     #    (gemessen an der Antiresonanz Lochmasse/Spaltnachgiebigkeit:
     #    3203 Hz gegen 3500 Hz in der FEM, also Faktor 1.19 in der Masse).
-    #    WO der Überschuss sitzt, ist offen. Der ursprüngliche Verdacht
-    #    galt der Zell-Engstelle ρ0·B(q)/(π·h) — er ist inzwischen
-    #    WIDERLEGT (Gegenprobe 36): deren Reaktivanteil ist exakt die
-    #    kinetische Energie der Schmierfilmströmung, und die wirbelfreie
-    #    Lösung derselben Zelle liefert eine noch GRÖSSERE Trägheit
-    #    (+5…16 %, mit h→0 gegen den Schmierfilmwert). Eine Korrektur
-    #    dort würde die Kerbe also weiter nach unten schieben, nicht nach
-    #    oben. Auch die Literatur zeigt in diese Richtung: Reynolds
-    #    UNTERschätzt die Dämpfung (Homentcovschi et al. 2010).
-    #    Verbleibende Kandidaten sind die Rohr-/Mündungsmasse der
-    #    Bohrungen und die Nachgiebigkeit des Spalts (n_p = 1.30 hier,
-    #    zwischen isotherm und adiabat — sie erklärt höchstens 4 % der
-    #    9 % Frequenzabweichung). Deshalb steht hier eine Schranke und
-    #    keine Korrektur — ein angepasster Faktor wäre ein Fit.
+    #    DIE URSACHE IST INZWISCHEN GEKLÄRT, und es ist KEIN
+    #    Massenüberschuss. Der Reihe nach ausgeschlossen:
+    #      * Zell-Engstelle: ihr Reaktivanteil ist exakt die kinetische
+    #        Energie der Schmierfilmströmung, und sowohl die wirbelfreie
+    #        Lösung (+5…16 %) als auch die Stokes-Zelle (+20…56 %)
+    #        liefern MEHR, nicht weniger (Gegenprobe 36). Auch die
+    #        Literatur zeigt dorthin: Reynolds UNTERschätzt die Dämpfung.
+    #      * Mündungsmasse: selbst ihre völlige Streichung hebt die Kerbe
+    #        nur um 5.9 % — nötig wären 9.2 %, und negativ kann sie nicht
+    #        sein. Struktur geprüft: 1D und 2D setzen sie EINMAL an,
+    #        portseitig mit Fok-Faktor; die Filmseite deckt der Zellterm.
+    #      * Membranmasse und Rückkammervolumen: Empfindlichkeit der
+    #        Kerbe exakt NULL. Sie ist die reine Loch-Spalt-Antiresonanz.
+    #      * Spaltnachgiebigkeit: n_p = 1.30 (zwischen isotherm und
+    #        adiabat) erklärt höchstens 4 %.
+    #    Einziger starker Hebel ist der Lochradius (d ln f/d ln r =
+    #    +0.61) — ein direkt tabellierter Wert.
+    #
+    #    DER VERGLEICH SELBST WAR SCHIEF. Die FEM zeigt in diesem Band
+    #    ein DUBLETT (Minima 3500 und 4200 Hz, Maximum dazwischen bei
+    #    3860 Hz); der 2D-Pfad kann nur EINE Kerbe haben, weil er die
+    #    vier Bohrungen homogenisiert. Verglichen wurde also eine
+    #    Einzelkerbe mit der ersten von zweien. Der 3D-Feldlöser, der die
+    #    Löcher diskret auflöst, reproduziert das Dublett (3227/4025 Hz,
+    #    s. Prüfung unten) und trifft die FEM insgesamt besser
+    #    (RMS 3.16 gegen 3.41 dB über 10 Hz…5 kHz).
+    #    Gegenprobe 31 hält bereits fest, dass die Homogenisierung bei
+    #    12 Bohrungen am Ende ist — bei VIER ist sie weit darüber hinaus.
+    #    Die Schranke unten misst deshalb wesentlich die
+    #    Homogenisierungsgrenze, nicht einen Modellfehler der Physik.
     if _HAS_SCIPY:
         # COMSOL-Referenz, auf 100 Hz normiert (Fig. 4 der Arbeit)
         ref32 = ((100.0, 0.00), (200.0, 0.70), (300.0, 1.98), (500.0, 6.20),
@@ -7395,13 +7411,46 @@ if __name__ == "__main__":
         assert 0.82 < det32 < 1.02, \
             (f"Resonanzlage {fpk32:.0f} Hz gegen 550 Hz (FEM) — "
              f"Verstimmung {det32:.3f} außerhalb der dokumentierten "
-             f"Schranke; der Lochzweig trägt zu viel Masse")
+             f"Schranke (im Wesentlichen die Homogenisierungsgrenze bei "
+             f"nur vier Bohrungen, s. Kommentar)")
+        # d) DUBLETT: die FEM hat im Kerbenband ZWEI Minima (3500 und
+        #    4200 Hz). Das ist ein Effekt der vier DISKRETEN Bohrungen —
+        #    der homogenisierende 2D-Pfad kann prinzipiell nur eines
+        #    haben, der 3D-Feldlöser beide. Genau das wird hier geprüft;
+        #    es ist die Strukturaussage hinter der Schranke oben.
+        def _minima32(sm):
+            cc = MicrophoneCapsule(**{**dict(
+                membrane_material={"rho": 1944.0, "E": 4.0e9, "nu": 0.35},
+                membrane_resonance_hz=1040.0, membrane_diameter=36.0e-3,
+                membrane_thickness=25e-6, membrane_tension=116.27,
+                air_gap=230e-6, backplate_diameter=36.0e-3,
+                backplate_thickness=1.6e-3, bias_voltage=1.0,
+                architecture="single", n_through_holes=4,
+                through_hole_diameter=1.0e-3,
+                through_hole_pcd=2 * 8.4853e-3, n_blind_holes=0,
+                rear_network_enabled=True, cavity_length=7.6e-3,
+                n_cavity_holes=0, fabric_front_rayl=0.0,
+                fabric_rear_rayl=0.0, include_diffraction=False),
+                "squeeze_model": sm})
+            ff = np.geomspace(2800.0, 5000.0, 140)
+            aa = 20.0 * np.log10(np.abs(cc.transfer_function(ff)))
+            return [float(ff[i]) for i in range(1, len(ff) - 1)
+                    if aa[i] < aa[i - 1] and aa[i] < aa[i + 1]]
+        m2_32, m3_32 = _minima32("2d"), _minima32("3d")
+        assert len(m2_32) == 1, \
+            (f"der homogenisierende 2D-Pfad kann nur EIN Minimum haben "
+             f"({np.round(m2_32)})")
+        assert len(m3_32) == 2, \
+            (f"der 3D-Feldlöser muss das Dublett der diskreten Bohrungen "
+             f"zeigen ({np.round(m3_32)} gegen FEM 3500/4200 Hz)")
         print(f"Externe FEM-Referenz (Šimonová/Honzík 2026, COMSOL): "
               f"Tiefton {np.max(np.abs((a32 - a32_ref)[:3])):.2f} dB, "
               f"Resonanzüberhöhung {peak32:+.2f} gegen +6.74 dB "
-              f"(Güte getroffen); Lage {fpk32:.0f} gegen 550 Hz "
-              f"({100 * (det32 - 1):+.0f} % — Massenüberschuss im "
-              f"Lochzweig, dokumentiert)  OK")
+              f"(Güte getroffen); Dublett der vier Bohrungen: 2D "
+              f"{len(m2_32)} Minimum, 3D {np.round(m3_32).astype(int)} Hz "
+              f"gegen FEM 3500/4200; Lage {fpk32:.0f} gegen 550 Hz "
+              f"({100 * (det32 - 1):+.0f} % — Homogenisierungsgrenze bei "
+              f"vier Bohrungen, dokumentiert)  OK")
 
     # --------- Gegenprobe 33: Modengewicht der Frontmittelung -------------
     # Der Antrieb einer Membranmode ist die Galerkin-Projektion
