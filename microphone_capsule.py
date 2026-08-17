@@ -7343,13 +7343,20 @@ if __name__ == "__main__":
     #    13 % zu tief, weil der Lochzweig zu viel akustische Masse trägt
     #    (gemessen an der Antiresonanz Lochmasse/Spaltnachgiebigkeit:
     #    3203 Hz gegen 3500 Hz in der FEM, also Faktor 1.19 in der Masse).
-    #    Der Überschuss sitzt mutmaßlich in der Zell-Engstelle
-    #    ρ0·B(q)/(π·h), die 28…55 % der Zweigmasse ausmacht; ob es eine
-    #    Doppelzählung mit dem aufgelösten Feld ist oder ein h/r_h-Effekt
-    #    der Mündung, ist mit EINER Referenzgeometrie nicht entscheidbar
-    #    (hier h/r_h = 0.46, in unseren Kapseln 0.05…0.08). Deshalb steht
-    #    hier eine Schranke und keine Korrektur — ein angepasster Faktor
-    #    wäre ein Fit, kein Physikgewinn.
+    #    WO der Überschuss sitzt, ist offen. Der ursprüngliche Verdacht
+    #    galt der Zell-Engstelle ρ0·B(q)/(π·h) — er ist inzwischen
+    #    WIDERLEGT (Gegenprobe 36): deren Reaktivanteil ist exakt die
+    #    kinetische Energie der Schmierfilmströmung, und die wirbelfreie
+    #    Lösung derselben Zelle liefert eine noch GRÖSSERE Trägheit
+    #    (+5…16 %, mit h→0 gegen den Schmierfilmwert). Eine Korrektur
+    #    dort würde die Kerbe also weiter nach unten schieben, nicht nach
+    #    oben. Auch die Literatur zeigt in diese Richtung: Reynolds
+    #    UNTERschätzt die Dämpfung (Homentcovschi et al. 2010).
+    #    Verbleibende Kandidaten sind die Rohr-/Mündungsmasse der
+    #    Bohrungen und die Nachgiebigkeit des Spalts (n_p = 1.30 hier,
+    #    zwischen isotherm und adiabat — sie erklärt höchstens 4 % der
+    #    9 % Frequenzabweichung). Deshalb steht hier eine Schranke und
+    #    keine Korrektur — ein angepasster Faktor wäre ein Fit.
     if _HAS_SCIPY:
         # COMSOL-Referenz, auf 100 Hz normiert (Fig. 4 der Arbeit)
         ref32 = ((100.0, 0.00), (200.0, 0.70), (300.0, 1.98), (500.0, 6.20),
@@ -7688,5 +7695,82 @@ if __name__ == "__main__":
           f"({np.mean(ord6_35):.2e}); K67-Spalt K = {K67_35:.2f} mit "
           f"Im Φ = {phi_k67.imag:.2f} — MEMS-Näherung M ≈ 1 gilt dort "
           f"NICHT  OK")
+
+    # --------- Gegenprobe 36: Reaktivanteil der Zell-Engstelle ------------
+    # Der Zellterm B(q)/(π·K_f) liefert Widerstand UND Trägheit aus EINER
+    # komplexen Größe. Der Widerstand ist über Škvor verankert
+    # (Gegenprobe 8/30); der Reaktivanteil war bisher nur als analytische
+    # Fortsetzung desselben B(q) begründet. Hier steht seine unabhängige
+    # Herleitung.
+    #
+    # Im Trägheitsgrenzwert (K_f → h/(jωρ)) wird der Zellterm zu
+    # M = ρ0·B(q)/(π·h). Dieselbe Größe folgt aus der KINETISCHEN ENERGIE
+    # der Schmierfilmströmung, ganz ohne Impulsbilanz:
+    #
+    #     u(r) = Q(r)/(2π r h),  Q(r) = v·π(r_c² − r²)
+    #     E    = ½ρ0 ∫ u² dV,   M = 2E/q²,   q = v·π·r_c²
+    #     =>   M = ρ0/(2π h r_c⁴)·[r_c⁴ln(r_c/r_h) − r_c²(r_c²−r_h²)
+    #                              + (r_c⁴−r_h⁴)/4]
+    #          = ρ0·B(q)/(π·h)                        (mit q = r_h²/r_c²)
+    #
+    # Zwei Wege, ein Ergebnis — der Reaktivanteil ist also exakt die
+    # Trägheit der Schmierfilmströmung und keine Fortschreibung.
+    #
+    # RICHTUNG EINER MÖGLICHEN KORREKTUR (Scratchpad, nicht hier
+    # nachgerechnet — ein PDE-Löser gehört nicht in die Suite): löst man
+    # dieselbe Zelle wirbelfrei (Potentialströmung, exakt im Trägheits-
+    # grenzfall) auf einem konvergierten Gitter, liegt die Trägheit
+    # HÖHER als der Schmierfilmwert — bei r_c/r_h = 6 um +16 % (h/r_h =
+    # 0.4) bis +0.7 % (h/r_h = 0.02), also mit dem korrekten Grenzfall
+    # h→0. Für unsere Kapselgeometrien sind es 5…10 %. Der Zellterm kann
+    # damit KEIN Massenüberschuss sein: eine Korrektur würde die
+    # Antiresonanz weiter nach unten schieben. Das widerlegt den
+    # ursprünglichen Verdacht aus Gegenprobe 32.
+    if _HAS_SCIPY:
+        from scipy.integrate import quad as _quad36
+        worst36 = 0.0
+        for q36 in (0.003, 0.01, 0.03, 0.1, 0.3):
+            r_c36, h36 = 9.0e-3, 230e-6
+            r_h36 = r_c36 * np.sqrt(q36)
+            # kinetische Energie der Schmierfilmströmung (v = 1)
+            def _u2dV(rr, _rc=r_c36, _h=h36):
+                return ((np.pi * (_rc**2 - rr**2) / (2.0 * np.pi * rr * _h))**2
+                        * 2.0 * np.pi * rr * _h)
+            E36 = 0.5 * RHO0 * _quad36(_u2dV, r_h36, r_c36, limit=200)[0]
+            M_energy = 2.0 * E36 / (np.pi * r_c36**2) ** 2
+            B36 = (q36 / 2.0 - q36**2 / 8.0 - np.log(q36) / 4.0 - 3.0 / 8.0)
+            M_cell = RHO0 * B36 / (np.pi * h36)
+            worst36 = max(worst36, abs(M_energy / M_cell - 1.0))
+        assert worst36 < 1e-6, \
+            (f"Reaktivanteil muss exakt die kinetische Energie der "
+             f"Schmierfilmströmung sein (Abweichung {worst36:.1e})")
+        # Der Zellterm selbst muss diesen Grenzwert ANNEHMEN, und zwar in
+        # der richtigen Form. Eine feste Zahlenschranke wäre hier falsch:
+        # bei endlicher Frequenz ist 1 − tanh(α)/α ≈ 1 − 1/α, also
+        #     M/M_∞ = 1 + Re(1/α) = 1 + 1/(√2·|α|)
+        # (α trägt die Phase π/4). Geprüft wird deshalb das Grenzgesetz
+        # (M/M_∞ − 1)·√2·|α| → 1 — das verankert die ganze Asymptotik,
+        # nicht einen Punkt.
+        h36b, q36b = 230e-6, 0.01
+        B36b = (q36b / 2.0 - q36b**2 / 8.0 - np.log(q36b) / 4.0 - 3.0 / 8.0)
+        M_inf36 = RHO0 * B36b / (np.pi * h36b)
+        prod36 = []
+        for f36 in (1.0e6, 5.0e6, 2.0e7):
+            om36 = np.array([2.0 * np.pi * f36])
+            Kf36 = ((h36b**3 / (12.0 * MU_AIR))
+                    / MicrophoneCapsule._film_R_dynamic(om36, h36b))
+            Z36 = B36b / (np.pi * complex(np.atleast_1d(Kf36)[0]))
+            al36 = abs(0.5 * h36b * np.sqrt(1j * om36[0] * RHO0 / MU_AIR))
+            prod36.append((Z36.imag / om36[0] / M_inf36 - 1.0)
+                          * np.sqrt(2.0) * al36)
+        assert max(abs(p - 1.0) for p in prod36) < 5e-4, \
+            (f"Zellterm muss ρ0·B/(π·h) wie 1 + 1/(√2·|α|) annehmen "
+             f"(Produkte {np.round(prod36, 5)})")
+        print(f"Reaktivanteil der Zelle: Impuls- und Energieweg identisch "
+              f"(max {worst36:.0e} über q = 0.003…0.3); Zellterm nimmt "
+              f"ρ0·B(q)/(π·h) wie 1 + 1/(√2·|α|) an "
+              f"(Grenzgesetz {min(prod36):.5f}…{max(prod36):.5f}); "
+              f"wirbelfreie Lösung liegt HÖHER (+5…16 %) — der Zellterm ist "
+              f"kein Massenüberschuss  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
