@@ -1052,7 +1052,7 @@ with st.sidebar:
         st.number_input(tr("lbl_air_gap"), 5.0, 500.0, step=1.0,
                         key="p_air_gap_um")
         st.number_input(tr("lbl_bp_dia"), 2.0, 60.0, step=0.5,
-                        key="p_bp_diameter_mm")
+                        key="p_bp_diameter_mm", help=tr("help_bp_dia"))
         st.number_input(tr("lbl_bp_thick"), 0.2, 20.0, step=0.1,
                         key="p_bp_thickness_mm")
         st.number_input(tr("lbl_bias"), 0.5, 400.0, step=1.0,

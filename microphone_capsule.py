@@ -990,11 +990,14 @@ class MicrophoneCapsule:
         # NUMERISCHER BODEN der Membrandämpfung (s. _Q_MEMBRANE_INTERNAL).
         # Die DOMINANTE Dämpfung der Membran-Grundmode kommt aus dem Spalt-
         # film: die Piston-Bewegung der Membran drückt die Spaltluft lateral
-        # zu den Löchern (Škvor-Widerstand R_A_gap). Dieser Widerstand wird
-        # in _membrane_impedance frequenzkorrigiert direkt in Reihe geschaltet
-        # (die polarisierte Front-Membran über h_gap_front, die passive Rück-
-        # membran über h_gap). Der Wert hier trägt nur, wenn KEIN Spaltfilm
-        # existiert (geschlossene Backplate, n_th = 0 -> R_A_gap_front = None).
+        # zu den Löchern (Škvor-Widerstand R_A_gap). Dieser Widerstand sitzt
+        # AUSSCHLIESSLICH im Spalt-Zweitor (_backplate_gap_abcd bzw. das
+        # 2D-Feld) — Gegenprobe 31 hat die frühere zusätzliche Reihenschaltung
+        # in _membrane_impedance als Doppelzählung entfernt. Der Wert hier ist
+        # nur der Materialverlust der Folie und trägt praktisch allein dann,
+        # wenn KEIN Spaltfilm existiert (geschlossene Backplate, n_th = 0
+        # und kein Randspalt -> R_A_gap_front = None); über Q = 20…1e5
+        # ändert er die Resonanzüberhöhung um ≤ 0.07 dB.
         self.R_A_mem = (
             np.sqrt(self.M_A_mem / self.C_A_eff) / self._Q_MEMBRANE_INTERNAL
         )
@@ -1076,6 +1079,18 @@ class MicrophoneCapsule:
                     "muss in (0, 1) liegen."
                 )
             self._q_drain = q
+            # BEWUSSTE GRENZE DES 1D-PFADS: Škvor rechnet die Spaltluft
+            # unter der GANZEN Platte zu den Löchern; die Membranfläche
+            # AUSSERHALB des Plattenrands (a_bp < a_mem) erzeugt aber
+            # Volumenfluss, der den Film über den tieferen Ringraum am
+            # Rand umgeht. Das 2D-Feldmodell führt das seit Gegenprobe 37
+            # explizit (Faktor f_in² mit f_in = u(2−u), u = (a_bp/a_mem)²);
+            # hier bleibt es absichtlich weg, weil der Faktor von der
+            # Antriebskonvention abhängt — Škvor und _edge_R rechnen mit
+            # KOLBEN-Antrieb (dann wäre es u²), das Feld mit der Parabel-
+            # mode. Der 1D-Pfad ist der grobe Lumped-Pfad (er weicht auch
+            # sonst um bis zu 13 dB vom Feldmodell ab); wer a_bp < a_mem
+            # quantitativ rechnen will, nimmt squeeze_model='2d'.
             self.R_A_gap = self._skvor_R(self.h_gap)          # nominal
             # wirksamer Widerstand der polarisierten (Front-)Seite mit
             # statisch verkleinertem Spalt
@@ -3684,7 +3699,10 @@ class MicrophoneCapsule:
             keit), koppeln NICHT zur Rückseite
           * Durchgangslöcher: Admittanz g_h, koppeln zum rückwärtigen Port
             (Druckdifferenz p - p_rear)
-          * Membran treibt mit der Modenform v(r) = φ(r)·U/∫φ dA
+          * Membran treibt mit der Modenform v(r) = φ(r)·U/∫φ dA, wobei
+            ∫φ dA über die GANZE Membran läuft — der außerhalb der Platte
+            erzeugte Anteil umgeht den Film über den Rand (s. u.,
+            RANDUMGEHUNG)
 
         ZELL-ENGSTELLENWIDERSTAND: die axialsymmetrische Homogenisierung
         kann die azimutale Strömungskonvergenz zu den DISKRETEN Löchern
@@ -3895,7 +3913,29 @@ class MicrophoneCapsule:
                 self.ring_vent_L)
             A_l, B_l = T_line[0, 0], T_line[0, 1]
             D_l = T_line[1, 1]
-        src_a = phi * A / Sphi                            # Membran treibt (U=1)
+        # ------------------------------------------------------------------
+        # RANDUMGEHUNG (a_bp < a_mem): die Membran erzeugt ihren Volumenfluss
+        # über ihrer GANZEN Fläche, der Quetschfilm liegt aber nur unter der
+        # Backplate. Der außerhalb erzeugte Anteil läuft NICHT unter die
+        # Platte — er tritt über den Ringraum zwischen Plattenrand und
+        # Membraneinspannung ein, der um die Absatztiefe (B&K: 0.3 mm gegen
+        # 21 µm Spalt) tiefer ist und dessen Schmierwiderstand deshalb um
+        # (h/h_ring)³ ~ 1e-4 kleiner ist. Er wird am FILMRAND eingespeist;
+        # umgekehrt sieht die Membran dort den Randdruck statt des
+        # Filmdrucks. Mit φ = 1 − r²/a_mem² ist der Flussanteil ÜBER der
+        # Platte geschlossen bekannt:
+        #     f_in = ∫_0^a_bp φ dA / ∫_0^a_mem φ dA = u·(2 − u),
+        #     u = (a_bp/a_mem)²,
+        # und für einen quasi drucklosen Rand skaliert die Filmimpedanz
+        # exakt mit f_in² (Quelle UND Projektion schrumpfen). Gegenprobe 37
+        # hält die lochfreie Platte gegen die geschlossene Form, Gegenprobe
+        # 38 die ganze Kette gegen zwei gemessene B&K-Kapseln.
+        # a_bp >= a_mem -> f_in = 1, q_by = 0: Bestand.
+        Sphi_tot = max(0.5 * np.pi * self.a_mem**2, Sphi)
+        f_in = Sphi / Sphi_tot
+        q_by = 1.0 - f_in                                 # Umgehungsfluss
+        S_out = Sphi_tot - Sphi                           # Modengewicht außen
+        src_a = phi * A / Sphi_tot                        # Membran treibt (U=1)
         T = np.empty((2, 2, Nf), dtype=complex)
         M_sys = N + 1 if ring_open else N
         ab = np.zeros((3, M_sys), dtype=complex)
@@ -3914,6 +3954,10 @@ class MicrophoneCapsule:
             rhs = np.zeros((M_sys, 2), dtype=complex)
             rhs[:N, 0] = src_a
             rhs[:N, 1] = g_h * A
+            if q_by > 0.0 and not ring_open:
+                # kein Randspalt: der Ringraum ist eine Sackgasse, die nur
+                # über den Filmrand entleert -> Eintritt in die äußerste Zelle
+                rhs[N - 1, 0] += q_by
             if ring_open:
                 G_edge = 4.0 * np.pi * N * K_face[f, N]
                 ab[1, N - 1] += G_edge
@@ -3923,10 +3967,14 @@ class MicrophoneCapsule:
                 ab[1, N] = G_edge + D_l[f] / B_l[f]
                 # Rückport treibt (Fall b): -Y12·p_rück = +1/B
                 rhs[N, 1] = 1.0 / B_l[f]
+                rhs[N, 0] = q_by              # Umgehung in den Randknoten
             sol = _solve_banded((1, 1), ab, rhs)
             p_a, p_b = sol[:N, 0], sol[:N, 1]
-            alpha = np.sum(p_a * phi * A) / Sphi
-            beta = np.sum(p_b * phi * A) / Sphi
+            # Druck im Ringraum außerhalb der Platte = Randdruck
+            p_out_a = sol[N, 0] if ring_open else p_a[-1]
+            p_out_b = sol[N, 1] if ring_open else p_b[-1]
+            alpha = (np.sum(p_a * phi * A) + S_out * p_out_a) / Sphi_tot
+            beta = (np.sum(p_b * phi * A) + S_out * p_out_b) / Sphi_tot
             gamma = np.sum(g_h * A * p_a)
             delta = np.sum(g_h * A * (p_b - 1.0))
             if ring_open:
@@ -7868,5 +7916,202 @@ if __name__ == "__main__":
               f"(Grenzgesetz {min(prod36):.5f}…{max(prod36):.5f}); "
               f"wirbelfreie Lösung liegt HÖHER (+5…16 %) — der Zellterm ist "
               f"kein Massenüberschuss  OK")
+
+    # --------- Gegenprobe 37: Randumgehung, geschlossene Form -------------
+    # Der Quetschfilm liegt nur unter der Backplate, die Membran erzeugt
+    # ihren Volumenfluss aber über ihrer GANZEN Fläche. Für eine LOCHFREIE
+    # Platte mit drucklosem Rand (breiter Randspalt) und der parabolischen
+    # Grundmode φ = 1 − r²/a_mem² ist die Filmimpedanz geschlossen
+    # integrierbar. Mit u = (a_bp/a_mem)² und x = r²/a_mem²:
+    #     Q(x) = 2x − x²                     (Fluss durch den Radius r)
+    #     p(x) = (6μ/πh³)·[(u − u²/4) − (x − x²/4)]
+    #     Z    = ∫p·φ dA / ∫φ dA
+    #          = (12μ/πh³)·(u²/2 − u³/3 + u⁴/16)
+    # Der Grenzfall u = 1 (Platte so groß wie die Membran) ist 11μ/(4πh³).
+    # Diese EINE Probe verankert alle drei Teile der Umgehung zugleich:
+    # die Normierung der Quelle auf die ganze Membranfläche, die
+    # Einspeisung des Restflusses am Filmrand und die Projektion, die
+    # außerhalb der Platte den Randdruck statt des Filmdrucks sieht.
+    # Ohne die Umgehung wäre Z um 1/f_in² = 1/[u(2−u)]² zu groß — bei
+    # den B&K-Kapseln der Gegenprobe 38 sind das +28 bzw. +56 %.
+    if _HAS_SCIPY:
+        b37 = dict(membrane_resonance_hz=None, membrane_thickness=5e-6,
+                   membrane_tension=3000.0,
+                   membrane_material={"rho": 8900.0, "E": 200e9, "nu": 0.31},
+                   air_gap=25e-6, backplate_thickness=1e-3,
+                   bias_voltage=10.0, architecture="single",
+                   n_through_holes=0, n_blind_holes=0,
+                   ring_vent_width=3e-3, ring_vent_length=1e-4,
+                   rear_network_enabled=True, cavity_length=5e-3,
+                   n_cavity_holes=0, fabric_front_rayl=0.0,
+                   fabric_rear_rayl=0.0, include_diffraction=False,
+                   squeeze_model="2d")
+        om37 = np.array([2.0 * np.pi * 20.0])       # tief -> reines Poiseuille
+        worst37, a37 = 0.0, 10e-3
+        for rb37 in (1.0, 0.95, 0.90, 0.85, 0.80, 0.70):
+            c37 = MicrophoneCapsule(membrane_diameter=2 * a37,
+                                    backplate_diameter=2 * a37 * rb37, **b37)
+            T37 = c37._gap_field_2port(om37)
+            Z37 = complex((T37[0, 1] / T37[1, 1])[0]).real
+            u37 = (c37.a_bp / c37.a_mem) ** 2
+            Zan37 = (12.0 * MU_AIR / (np.pi * c37.h_gap**3)
+                     * (u37**2 / 2.0 - u37**3 / 3.0 + u37**4 / 16.0))
+            worst37 = max(worst37, abs(Z37 / Zan37 - 1.0))
+        assert worst37 < 1e-3, \
+            (f"Randumgehung muss die geschlossene Form treffen "
+             f"(Abweichung {worst37:.1e})")
+        # Grenzfall u = 1: 11μ/(4πh³)
+        c37e = MicrophoneCapsule(membrane_diameter=2 * a37,
+                                 backplate_diameter=2 * a37, **b37)
+        T37e = c37e._gap_field_2port(om37)
+        Z37e = complex((T37e[0, 1] / T37e[1, 1])[0]).real
+        rel37e = Z37e / (11.0 * MU_AIR / (4.0 * np.pi * c37e.h_gap**3)) - 1.0
+        assert abs(rel37e) < 1e-3, \
+            (f"lochfreie Platte mit a_bp = a_mem muss 11μ/(4πh³) sein "
+             f"({rel37e:+.1e})")
+        print(f"Randumgehung: Filmimpedanz == (12μ/πh³)·(u²/2 − u³/3 + "
+              f"u⁴/16) über a_bp/a_mem = 0.70…1.00 ({worst37:.0e}); "
+              f"Grenzfall u = 1 == 11μ/(4πh³) ({rel37e:+.0e})  OK")
+
+    # --------- Gegenprobe 38: EXTERNE Referenz B&K 4134/4146 --------------
+    # Zweite fremde Verankerung, und die erste gegen eine MESSUNG:
+    # A. J. Zuckerwar, "Theoretical response of condenser microphones",
+    # J. Acoust. Soc. Am. 64(5), 1278–1285 (1978), doi:10.1121/1.382112.
+    # Die Arbeit ist als Referenz ungewöhnlich vollständig: Tabelle I
+    # enthält BEIDE Kapseln komplett (Membranradius, Dicke, Dichte,
+    # Vakuumresonanz, Vorspannung, Spalt, Backplate-Radius, Rückkammer-
+    # volumen, Lochkreise mit Zahl/Radius/Tiefe und den Randschlitz),
+    # Tabelle II die Ersatzelemente, Fig. 6/7 Amplitude UND Phase gegen
+    # Messwerte (elektrostatischer Aktuator, also gleichförmiger Antrieb
+    # ohne Beugung; Polarisation nur 28 V, damit die statische Auslenkung
+    # vernachlässigbar bleibt — bei uns 0.07 bzw. 0.19 % Feder-Erweichung).
+    # Der übliche Fallstrick, Geometrie und Kurve aus verschiedenen
+    # Quellen zu mischen, entfällt damit. Die Tabelle ist in sich
+    # konsistent: aus Tabelle I folgen f_vak, M = (4/3)ρt/S,
+    # C = S²/(8πT) und Q = √(M/C_ser)/R auf vier Stellen genau.
+    #
+    # ABBILDUNG. Der Randschlitz ist genau unser ``ring_vent_*``: beim
+    # 4134 liegt er bei 4.026 ± 0.419 mm, reicht also exakt vom Platten-
+    # rand (3.607) bis zur Membraneinspannung (4.445). Beim 4146 hat die
+    # Platte DREI Lochkreise (12/6/1) mit zwei Radien und drei Tiefen; wir
+    # kennen einen Durchmesser und eine Tiefe. Zusammengefasst wird auf
+    # 19 Bohrungen mit r = 0.4763 mm; die Ersatztiefe aus der Parallel-
+    # schaltung ist für Widerstand (~n r⁴/l) und Masse (~n r²/l) praktisch
+    # gleich (1.6658 / 1.6608 mm). Eine exakte diskrete Reynolds-Rechnung
+    # zeigt, dass diese Zusammenfassung nur 1.2 % kostet.
+    #
+    # GENAUIGKEIT DER REFERENZ. M, C_M, C_A und R stehen als ZAHLEN in den
+    # Tabellen. Die Punkte aus Fig. 6/7 sind dagegen von der gedruckten
+    # Kurve abgenommen (Achsen über die Teilstriche kalibriert, Kurve
+    # spaltenweise verfolgt, Messsymbole per gleitendem Median entfernt);
+    # die Restunsicherheit liegt bei etwa ±0.15 dB und ±2°. Die Schranken
+    # unten sind entsprechend gesetzt und nicht enger.
+    #
+    # WAS SIE GEZEIGT HAT. Vor der Randumgehung (Gegenprobe 37) lag der
+    # Spaltwiderstand um +39 % (4134) bzw. +106 % (4146) zu hoch und der
+    # Frequenzgang um 0.76 bzw. 3.22 dB RMS daneben — der 4146 verlor
+    # seine Resonanzüberhöhung ganz. Eine unabhängige, gitterkonvergente
+    # Lösung der inkompressiblen Reynolds-Gleichung mit DISKRETEN
+    # Bohrungen in (r,φ) hat den Fehler zerlegt: das Radialfeld selbst ist
+    # exakt (0.1 % gegen die analytische Lösung), die Filmberandung war es
+    # nicht. Was bleibt, ist die Streuung der Škvor-Zellregel
+    # q = n·r²/a_bp²: über 16 Ringgeometrien liegt sie zwischen 0.78 und
+    # 1.44 gegen die exakte Lösung. Der 4146 sitzt mit +35 % am oberen
+    # Ende; die Regel selbst bleibt damit ein offener Punkt (die
+    # naheliegende Alternative „Zellfläche = Lochabstand²" wurde geprüft
+    # und ist SCHLECHTER: RMS(log) 0.33 gegen 0.19).
+    if _HAS_SCIPY:
+        _NI38 = {"rho": 8900.0, "E": 200.0e9, "nu": 0.31}   # Tab. I: Nickel
+        bk38 = {
+            # (Parameter, Tab.-II-Ersatzelemente, Fig.-6/7-Punkte)
+            "4134": (dict(
+                membrane_material=_NI38, membrane_resonance_hz=None,
+                membrane_diameter=2 * 4.445e-3, membrane_thickness=5.0e-6,
+                membrane_tension=3162.3, air_gap=2.077e-5,
+                backplate_diameter=2 * 3.607e-3,
+                backplate_thickness=0.843e-3, bias_voltage=28.0,
+                architecture="single", n_through_holes=6,
+                through_hole_diameter=2 * 5.080e-4,
+                through_hole_pcd=2 * 2.032e-3, n_blind_holes=0,
+                ring_vent_width=0.838e-3, ring_vent_length=3.048e-4,
+                rear_network_enabled=True, delay_length=0.0,
+                cavity_length=1.264e-7 / (np.pi * 3.607e-3**2),
+                n_cavity_holes=0, fabric_front_rayl=0.0,
+                fabric_rear_rayl=0.0, include_diffraction=False,
+                squeeze_model="2d"),
+                dict(M=955.0, C_M=0.485e-13, C_A=9.01e-13, R=18.9e7),
+                (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4, 1.6e4, 2e4),
+                (0.00, 0.00, 0.00, 0.00, 0.00, 0.14, -0.71, -1.11, -3.06),
+                (3.87, 5.68, 8.01, 14.50, 23.76, 37.86, 51.12, 65.65, 81.75),
+                (0.60, 2.5, 0.20, 0.25)),          # Schranken: dB/Grad/C_A/R
+            "4146": (dict(
+                membrane_material=_NI38, membrane_resonance_hz=None,
+                membrane_diameter=2 * 8.890e-3, membrane_thickness=5.0e-6,
+                membrane_tension=2140.9, air_gap=2.655e-5,
+                backplate_diameter=2 * 6.617e-3,
+                backplate_thickness=1.6633e-3, bias_voltage=28.0,
+                architecture="single",
+                through_hole_rings=[(12, 2 * 4.763e-3), (6, 2 * 2.375e-3),
+                                    (1, 0.0)],
+                through_hole_diameter=2 * 4.763e-4, n_blind_holes=0,
+                ring_vent_width=1.473e-3, ring_vent_length=3.556e-4,
+                rear_network_enabled=True, delay_length=0.0,
+                cavity_length=6.736e-7 / (np.pi * 6.617e-3**2),
+                n_cavity_holes=0, fabric_front_rayl=0.0,
+                fabric_rear_rayl=0.0, include_diffraction=False,
+                squeeze_model="2d"),
+                dict(M=239.0, C_M=11.45e-13, C_A=48.6e-13, R=1.91e7),
+                (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4),
+                (0.00, 0.32, 0.57, 1.42, 1.59, -4.67, -8.02),
+                (6.43, 12.30, 22.27, 42.15, 72.63, 122.22, 132.75),
+                (1.60, 10.0, 0.10, 0.45)),
+        }
+        res38 = {}
+        for nm38, (par38, tab38, f38, a38, p38, lim38) in bk38.items():
+            c38 = MicrophoneCapsule(**par38)
+            # a) Ersatzelemente der Membran: analytisch, müssen exakt sein
+            assert abs(c38.M_A_mem / tab38["M"] - 1.0) < 5e-3, \
+                (f"{nm38}: M_A muss (4/3)ρt/S sein "
+                 f"({c38.M_A_mem:.1f} gegen {tab38['M']:.0f})")
+            assert abs(c38.C_A_mem / tab38["C_M"] - 1.0) < 5e-3, \
+                (f"{nm38}: C_A der Membran muss S²/(8πT) sein "
+                 f"({c38.C_A_mem:.4e} gegen {tab38['C_M']:.4e})")
+            # b) Luftzweig bei 250 Hz gegen Tabelle II
+            w38 = np.array([2.0 * np.pi * 250.0])
+            Zr38 = c38._membrane_port_impedance(w38)[3][0]
+            CA38 = -1.0 / (w38[0] * Zr38.imag)
+            eC38 = CA38 / tab38["C_A"] - 1.0
+            eR38 = Zr38.real / tab38["R"] - 1.0
+            assert abs(eC38) < lim38[2], \
+                (f"{nm38}: Luftnachgiebigkeit gegen Tab. II "
+                 f"({100 * eC38:+.1f} %)")
+            assert abs(eR38) < lim38[3], \
+                (f"{nm38}: Spaltwiderstand gegen Tab. II "
+                 f"({100 * eR38:+.1f} % — dokumentierte Schranke, "
+                 f"s. Streuung der Zellregel im Kommentar)")
+            # c) Frequenzgang gegen Fig. 6/7 (Amplitude UND Phase)
+            fa38 = np.asarray(f38, dtype=float)
+            Hn38 = (c38.transfer_function(fa38)
+                    / c38.transfer_function(np.array([250.0]))[0])
+            am38 = 20.0 * np.log10(np.abs(Hn38)) - np.asarray(a38)
+            ph38 = (-np.rad2deg(np.unwrap(np.angle(Hn38)))
+                    - np.asarray(p38))
+            rms_a38 = float(np.sqrt(np.mean(am38**2)))
+            rms_p38 = float(np.sqrt(np.mean(ph38**2)))
+            assert rms_a38 < lim38[0], \
+                (f"{nm38}: Amplitude gegen Fig. 6/7 "
+                 f"({rms_a38:.2f} dB RMS)")
+            assert rms_p38 < lim38[1], \
+                (f"{nm38}: Phase gegen Fig. 6/7 ({rms_p38:.2f}° RMS)")
+            res38[nm38] = (rms_a38, rms_p38, eC38, eR38)
+        print(f"Externe Messreferenz (Zuckerwar 1978, B&K 4134/4146): "
+              f"M und C_M analytisch getroffen (<0.2 %); 4134 "
+              f"{res38['4134'][0]:.2f} dB / {res38['4134'][1]:.2f}° RMS "
+              f"gegen Fig. 6, C_A {100 * res38['4134'][2]:+.1f} %, "
+              f"R {100 * res38['4134'][3]:+.1f} %; 4146 "
+              f"{res38['4146'][0]:.2f} dB / {res38['4146'][1]:.2f}° RMS "
+              f"gegen Fig. 7, C_A {100 * res38['4146'][2]:+.1f} %, "
+              f"R {100 * res38['4146'][3]:+.1f} % (Streuung der Škvor-"
+              f"Zellregel, dokumentiert)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

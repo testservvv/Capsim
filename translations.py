@@ -232,6 +232,32 @@ TR = {
     "exp_backplate": {"en": "Backplate", "de": "Backplate"},
     "lbl_air_gap": {"en": "Air gap [µm]", "de": "Luftspalt [µm]"},
     "lbl_bp_dia": {"en": "Diameter [mm]", "de": "Durchmesser [mm]"},
+    "help_bp_dia": {
+        "en": "If the backplate is smaller than the membrane, the membrane "
+              "area outside the plate rim still displaces air — but that "
+              "air does not travel under the plate. It enters through the "
+              "much deeper annular space between plate rim and membrane "
+              "clamp, whose lubrication resistance is smaller by "
+              "(gap/annulus)³. The squeeze film therefore only carries the "
+              "flow generated OVER the plate, f = u·(2 − u) with "
+              "u = (r_plate/r_membrane)², and its impedance scales with f². "
+              "For a 1 inch B&K capsule that is −36 %. The field model "
+              "('2D'/'3D' gap film) resolves this; the lumped '1D' path "
+              "deliberately does not, because there the correction depends "
+              "on the drive convention.",
+        "de": "Ist die Backplate kleiner als die Membran, verdrängt die "
+              "Membranfläche außerhalb des Plattenrands trotzdem Luft — "
+              "diese läuft aber nicht unter der Platte hindurch. Sie tritt "
+              "über den viel tieferen Ringraum zwischen Plattenrand und "
+              "Membraneinspannung ein, dessen Schmierwiderstand um "
+              "(Spalt/Ringraum)³ kleiner ist. Der Quetschfilm trägt deshalb "
+              "nur den ÜBER der Platte erzeugten Fluss, f = u·(2 − u) mit "
+              "u = (r_Platte/r_Membran)², und seine Impedanz skaliert mit "
+              "f². Bei einer 1-Zoll-B&K-Kapsel sind das −36 %. Das "
+              "Feldmodell (Spaltfilm '2D'/'3D') führt das aus, der "
+              "Lumped-Pfad '1D' bewusst nicht — dort hängt die Korrektur "
+              "von der Antriebskonvention ab.",
+    },
     "lbl_bp_thick": {"en": "Thickness [mm]", "de": "Dicke [mm]"},
     "lbl_bias": {
         "en": "Polarization voltage [V]",
