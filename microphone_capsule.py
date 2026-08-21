@@ -119,7 +119,22 @@ class MicrophoneCapsule:
         air_gap : float             — Luftspalt Membran/Backplate [m]
         backplate_diameter : float  — Backplate-Durchmesser [m]
         backplate_thickness : float — Backplate-Dicke [m]
-        bias_voltage : float        — Polarisationsspannung [V]
+        bias_voltage : float
+            Polarisationsspannung [V] JE SPALT, nicht als Gesamtversorgung.
+            Bei ``"dual"`` liegt sie damit an BEIDEN Spalten voll an (die
+            Backplates auf ±U gegen die Membran, Gesamtversorgung also 2·U)
+            — das ist die Gegentakt-Verschaltung, die den Sinn der Bauform
+            ausmacht: der Wandlerkoeffizient verdoppelt sich. Der Preis ist,
+            dass sich auch die Feder-Erweichung beider Spalte ADDIERT. Die
+            Pull-in-Spannung steigt trotzdem, aber nur um den Faktor 1.3464
+            (Gegenprobe 39): der Gewinn kommt allein daraus, dass sich die
+            statischen Kräfte aufheben und die Membran im Ruhepunkt bleibt,
+            statt wie bei ``"single"`` bis auf 0.44·h zu kriechen, wo der
+            verkleinerte Spalt die Erweichung hochtreibt. Wer stattdessen
+            EINE Versorgung symmetrisch auf beide Spalte teilen will (U/2
+            je Spalt), setzt ``bias_voltage`` auf die Hälfte: die
+            Empfindlichkeit fällt dann auf den Wert der Einzel-Backplate
+            zurück, die Pull-in-Spannung liegt doppelt so hoch.
         architecture : str
             ``"single"``          — eine Backplate hinter der Membran;
             ``"dual"``            — symmetrische Backplates vor UND hinter
@@ -944,8 +959,18 @@ class MicrophoneCapsule:
         # FEDER-ERWEICHUNG am Arbeitspunkt ("spring softening"):
         #     k_neg = dF/dw0 = eps0 U0^2 Int phi^2/g(r)^3
         # akustisch: 1/C_eff = 1/C_A - 4*k_neg/S^2   (w0 -> V_disp: Faktor 2/S)
-        # Bei Dual-Backplates heben sich die statischen Kräfte auf (w0 = 0),
-        # die Erweichung beider Seiten addiert sich.
+        #
+        # DUAL-BACKPLATES (Gegentakt): u_bias liegt an BEIDEN Spalten voll
+        # an (Backplates auf ±U, Gesamtversorgung 2·U). Die statischen
+        # Kräfte heben sich auf -> w0 = 0, die Erweichung beider Seiten
+        # ADDIERT sich (k_neg = 2·eps0·U²·I_k(0)). Pull-in ist deshalb das
+        # KLEINSIGNAL-Kriterium k_gen > k_neg am Ruhespalt, nicht das
+        # Verschwinden eines Gleichgewichts. Beide Effekte zusammen ergeben
+        #     U_PI(dual)/U_PI(single) = sqrt(A3(x*) / (2·A3(0))) = 1.3464
+        # mit A3(x) = Int_0^1 t²/(1-x t)³ dt und dem Pull-in-Punkt x* =
+        # w0/h = 0.4404 der Einzel-Backplate (Gegenprobe 39). Der Gewinn
+        # kommt also NICHT aus einer kleineren Feldstärke, sondern allein
+        # daraus, dass die Membran im Ruhepunkt bleibt.
         # ------------------------------------------------------------------
         self.phi_th = self.n_th * np.pi * self.r_th**2 / self.S_bp
         self.phi_bh = self.n_bh * np.pi * self.r_bh**2 / self.S_bp
@@ -8113,5 +8138,94 @@ if __name__ == "__main__":
               f"gegen Fig. 7, C_A {100 * res38['4146'][2]:+.1f} %, "
               f"R {100 * res38['4146'][3]:+.1f} % (Streuung der Škvor-"
               f"Zellregel, dokumentiert)  OK")
+
+    # --------- Gegenprobe 39: Pull-in der Gegentakt-Bauform ---------------
+    # Die Erwartung „zwei Backplates -> doppelte Pull-in-Spannung" trifft
+    # NICHT zu, und der Grund ist lehrreich genug, ihn festzuschreiben.
+    # Bei ``dual`` liegt u_bias an BEIDEN Spalten voll an (±U gegen die
+    # Membran). Damit
+    #   * heben sich die statischen Kräfte auf: w0 = 0,
+    #   * verdoppelt sich der Wandlerkoeffizient (das ist der Sinn der
+    #     Bauform),
+    #   * ADDIERT sich aber auch die Feder-Erweichung beider Spalte.
+    # Pull-in ist deshalb das Kleinsignal-Kriterium k_gen = 2·eps0·U²·I_k(0)
+    # am RUHESPALT, während die Einzel-Backplate erst kollabiert, nachdem
+    # die Membran auf w0 = x*·h gekrochen ist — dort ist der Spalt kleiner
+    # und I_k entsprechend größer. Genau diese Verschiebung ist der ganze
+    # Gewinn.
+    #
+    # Mit dem Modenprofil phi = 1 - r²/a² und t = phi in Modenkoordinate:
+    #     A2(x) = Int_0^1 t /(1 - x t)² dt = [1/(1-x) - 1 + ln(1-x)] / x²
+    #     A3(x) = Int_0^1 t²/(1 - x t)³ dt
+    #           = [1/(2(1-x)²) - 2/(1-x) - ln(1-x) + 3/2] / x³
+    # Gleichgewicht UND tangentiale Instabilität zugleich liefern für die
+    # Einzel-Backplate x* = A2(x*)/(2·A3(x*)) = 0.44042, und daraus
+    #     U_PI(dual)/U_PI(single) = sqrt(A3(x*)/(2·A3(0))) = sqrt(1.5·A3(x*))
+    #                             = 1.34640.
+    # (Für einen starren Kolben wäre x* = 1/3 und das Verhältnis
+    # sqrt(27/16) = 1.29904 — die Parabelmode kriecht weiter, deshalb der
+    # etwas größere Gewinn.) Der Faktor 2 gälte nur, wenn man EINE
+    # Versorgung symmetrisch auf beide Spalte teilt (U/2 je Spalt); dann
+    # fällt die Empfindlichkeit aber auf den Einzel-Backplate-Wert zurück.
+    def _A2_39(x):
+        return (1.0 / (1.0 - x) - 1.0 + np.log(1.0 - x)) / x**2
+
+    def _A3_39(x):
+        return (0.5 / (1.0 - x)**2 - 2.0 / (1.0 - x)
+                - np.log(1.0 - x) + 1.5) / x**3
+
+    # a) die geschlossenen Formen gegen numerische Integration
+    t39 = np.linspace(0.0, 1.0, 400001)
+    worst39 = 0.0
+    for x39 in (0.1, 0.3, 0.44042, 0.7):
+        worst39 = max(
+            worst39,
+            abs(_A2_39(x39) / np.trapezoid(t39 / (1 - x39 * t39)**2, t39) - 1),
+            abs(_A3_39(x39)
+                / np.trapezoid(t39**2 / (1 - x39 * t39)**3, t39) - 1))
+    assert worst39 < 1e-7, \
+        f"geschlossene Form von A2/A3 muss stimmen ({worst39:.1e})"
+    # b) Pull-in-Punkt der Einzel-Backplate und daraus das Verhältnis
+    lo39, hi39 = 1e-6, 0.95
+    for _ in range(80):
+        mid39 = 0.5 * (lo39 + hi39)
+        if mid39 - _A2_39(mid39) / (2.0 * _A3_39(mid39)) < 0.0:
+            lo39 = mid39
+        else:
+            hi39 = mid39
+    x_pi39 = 0.5 * (lo39 + hi39)
+    rat39 = float(np.sqrt(1.5 * _A3_39(x_pi39)))
+    # c) das Modell muss beides treffen — Elektrode nahezu voll, damit die
+    #    Lochprofile die analytische Aussage nicht verwischen; kleiner Bias,
+    #    damit der Arbeitspunkt der Einzel-Backplate bei w0 -> 0 liegt.
+    g39 = dict(membrane_diameter=25.4e-3, backplate_diameter=25.4e-3,
+               membrane_resonance_hz=8000.0, air_gap=40e-6,
+               backplate_thickness=3e-3, n_through_holes=4,
+               through_hole_diameter=0.05e-3, n_blind_holes=0,
+               bias_voltage=1.0, include_diffraction=False)
+    c39s = MicrophoneCapsule(architecture="single", **g39)
+    c39d = MicrophoneCapsule(architecture="dual", **g39)
+    r39 = c39d.U_pullin / c39s.U_pullin
+    assert abs(r39 / rat39 - 1.0) < 1e-3, \
+        (f"Pull-in-Verhältnis dual/single muss sqrt(A3(x*)/(2·A3(0))) sein "
+         f"({r39:.5f} gegen {rat39:.5f})")
+    assert r39 > 1.0, "zwei symmetrische Backplates müssen den Pull-in ANHEBEN"
+    assert abs(r39 - 2.0) > 0.5, \
+        "der Gewinn ist NICHT Faktor 2 — die Erweichung beider Spalte addiert sich"
+    # d) die Gegentakt-Verschaltung selbst: w0 = 0, theta und Erweichung x2
+    assert c39d.w0_static == 0.0, \
+        "bei symmetrischen Backplates heben sich die statischen Kräfte auf"
+    assert abs(c39d._theta / c39s._theta - 2.0) < 1e-3, \
+        (f"Gegentakt muss den Wandlerkoeffizienten verdoppeln "
+         f"({c39d._theta / c39s._theta:.5f})")
+    assert abs(c39d.softening_ratio / c39s.softening_ratio - 2.0) < 1e-3, \
+        (f"die Feder-Erweichung beider Spalte muss sich addieren "
+         f"({c39d.softening_ratio / c39s.softening_ratio:.5f})")
+    print(f"Gegentakt-Pull-in: U_PI(dual)/U_PI(single) = {r39:.5f} gegen "
+          f"sqrt(1.5·A3(x*)) = {rat39:.5f} (Pull-in-Punkt der Einzelplatte "
+          f"x* = w0/h = {x_pi39:.5f}; Kolben-Grenzfall wäre "
+          f"{np.sqrt(27 / 16):.5f}); w0 = 0, Wandlerkoeffizient und "
+          f"Feder-Erweichung beide exakt ×2 — der Faktor 2 im Pull-in "
+          f"gälte nur bei geteilter Versorgung  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

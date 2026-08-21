@@ -263,6 +263,36 @@ TR = {
         "en": "Polarization voltage [V]",
         "de": "Polarisationsspannung [V]",
     },
+    "help_bias": {
+        "en": "Voltage PER GAP, not the total supply. With two symmetric "
+              "backplates it therefore sits across both gaps in full "
+              "(plates at ±U against the membrane, total supply 2·U) — "
+              "that is the push-pull wiring the design exists for, and it "
+              "doubles the transducer coefficient. The price is that the "
+              "spring softening of both gaps adds up. Pull-in still rises, "
+              "but only by 1.3464×, not 2×: the gain comes solely from the "
+              "static forces cancelling, so the membrane stays at rest "
+              "instead of creeping to 0.44·gap as it does with one "
+              "backplate. To model one supply split symmetrically instead "
+              "(U/2 per gap), enter half the value: sensitivity then falls "
+              "back to the single-backplate figure and pull-in is twice as "
+              "high.",
+        "de": "Spannung JE SPALT, nicht die Gesamtversorgung. Bei zwei "
+              "symmetrischen Backplates liegt sie damit an BEIDEN Spalten "
+              "voll an (Platten auf ±U gegen die Membran, Gesamtversorgung "
+              "also 2·U) — das ist die Gegentakt-Verschaltung, für die es "
+              "die Bauform gibt, und sie verdoppelt den Wandler-"
+              "koeffizienten. Der Preis: die Feder-Erweichung beider "
+              "Spalte addiert sich. Die Pull-in-Spannung steigt trotzdem, "
+              "aber nur um den Faktor 1.3464, nicht 2: der Gewinn kommt "
+              "allein daraus, dass sich die statischen Kräfte aufheben und "
+              "die Membran im Ruhepunkt bleibt, statt wie bei einer "
+              "Backplate bis auf 0.44·Spalt zu kriechen. Wer stattdessen "
+              "EINE Versorgung symmetrisch teilen will (U/2 je Spalt), "
+              "trägt den halben Wert ein: die Empfindlichkeit fällt dann "
+              "auf den Einzel-Backplate-Wert zurück, die Pull-in-Spannung "
+              "liegt doppelt so hoch.",
+    },
     "lbl_arch": {"en": "Architecture", "de": "Architektur"},
     "help_arch": {
         "en": "K67 design: two membranes on the outside, two inner "

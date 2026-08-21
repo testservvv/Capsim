@@ -1056,7 +1056,7 @@ with st.sidebar:
         st.number_input(tr("lbl_bp_thick"), 0.2, 20.0, step=0.1,
                         key="p_bp_thickness_mm")
         st.number_input(tr("lbl_bias"), 0.5, 400.0, step=1.0,
-                        key="p_bias_v")
+                        key="p_bias_v", help=tr("help_bias"))
         st.radio(tr("lbl_arch"), list(ARCH_LABELS),
                  format_func=_label_formatter(), key="p_architecture",
                  help=tr("help_arch"))
