@@ -2084,12 +2084,61 @@ class MicrophoneCapsule:
                               * (K_f + Y_h * self.a_mem**2 / z_m**2)))
         return out
 
+    def _modal_split_factor(self):
+        """Normierung der Modenaufteilung, s_N = Σ_{j<=N} (z_1/z_j)^4.
+
+        WARUM DAS NÖTIG IST
+        -------------------
+        Die statische Nachgiebigkeit einer Membran ist eine FESTE Zahl,
+        πa⁴/(8T), unabhängig davon, mit wie vielen Moden man sie
+        beschreibt. In der exakten Modalzerlegung verteilt sie sich als
+
+            C_m = πa⁴/(8T) · 32/z_m⁴,   Σ_m C_m = πa⁴/(8T)
+
+        (Rayleigh-Summe Σ 1/z_m⁴ = 1/32, s. Gegenprobe 42). Die
+        Grundmode allein trägt davon nur 32/z_1⁴ = 95.68 %.
+
+        Unser Ein-Freiheitsgrad-Modell ist aber KEINE Mode-1 dieser Reihe,
+        sondern die klassische Lumped-Näherung: Nachgiebigkeit = exakter
+        statischer Wert, Masse = kinetisches Äquivalent des Parabelprofils.
+        Für einen Freiheitsgrad ist das richtig. Legt man die höheren
+        Moden ADDITIV daneben (jede mit C_A_mem·(z_1/z_m)^4), zählt die
+        Reihe die Nachgiebigkeit doppelt: gemessen +0.30/+0.35/+0.36/+0.37
+        dB Tiefton bei 2/3/4/5 Moden — ein Effekt, den es nicht gibt.
+
+        Der Ausweg ohne Sprung bei N = 1: ALLE Zweigimpedanzen mit s_N
+        multiplizieren. Die Admittanzen sinken damit um 1/s_N, die Summe
+        der Nachgiebigkeiten wird für JEDES N exakt die des Ein-Moden-
+        Modells, und weil Masse und Nachgiebigkeit jedes Zweigs im
+        gleichen Verhältnis wandern, bleiben alle Modenresonanzen
+        unverändert. N = 1 -> s_1 = 1: bitgleich zum Bestand.
+
+        Preis, dokumentiert: der Hochtongrenzwert. Die exakten Modenmassen
+        erfüllen Σ 1/M_m = S/σ — eine vielmodige Membran verhält sich weit
+        oberhalb aller Resonanzen wie ein freier KOLBEN. Ohne Normierung
+        liefe unsere Reihe über diesen Wert hinaus (5 Moden +0.01 dB,
+        10 Moden +0.35, 50 Moden +0.63 — sie wird mit mehr Termen
+        SCHLECHTER); mit Normierung liegt sie bei 5 Moden 0.37 dB
+        darunter und konvergiert monoton. Ein zu tiefer Hochtongrenzwert
+        ist der harmlosere Fehler als eine divergierende Reihe.
+
+        Die elektrostatische Feder-Erweichung wirkt weiterhin nur auf die
+        Grundmode; durch die Normierung wird ihr Beitrag um 1/s_N
+        verdünnt (bei 13.5 % Erweichung und 5 Moden 0.05 dB).
+        """
+        if self.membrane_modes <= 1:
+            return 1.0
+        x = self._J0_ZEROS
+        return float(sum((x[0] / x[m]) ** 4
+                         for m in range(self.membrane_modes)))
+
     def _modal_parallel(self, omega, Z1, R, h_film=None):
         """Grundmode Z1 mit den höheren Moden PARALLEL schalten.
 
         Die höheren Zweige tragen zusätzlich ihre innere Umverteilung im
         Spaltfilm (s. :meth:`_modal_internal_Z`); ohne sie wären sie
-        praktisch ungedämpft.
+        praktisch ungedämpft. Die Aufteilung ist nachgiebigkeits-erhaltend
+        normiert (s. :meth:`_modal_split_factor`).
         """
         branches = self._higher_mode_branches()
         if not branches:
@@ -2100,7 +2149,7 @@ class MicrophoneCapsule:
         for (M_m, C_m), Zi in zip(branches, Z_int):
             Y = Y + 1.0 / (R + Zi + 1j * omega * M_m
                            + 1.0 / (1j * omega * C_m))
-        return 1.0 / Y
+        return self._modal_split_factor() / Y
 
     def _membrane_impedance(self, omega):
         """Serienimpedanz der Membran: Z = R + j*omega*M + 1/(j*omega*C_eff).
@@ -7051,20 +7100,42 @@ if __name__ == "__main__":
         assert abs(f_m / f1_28 - rat28) < 1e-9, \
             (f"Modenfrequenz muss x_m/x_1 folgen: {f_m:.1f} statt "
              f"{f1_28 * rat28:.1f} Hz")
-    # Massegesteuerter Grenzwert der Parallelschaltung: die wirksame
-    # Masse sinkt auf 1/Σ(1/M_m). Ohne Dämpfung (R = 0) isoliert das die
-    # Modenalgebra von der Filmdämpfung — die Reihe konvergiert sauber
-    # (50 kHz: 0.9989, 1 MHz: 0.999997). Die drei Moden zusammen machen
-    # die Membran akustisch um den Faktor 0.789 leichter.
-    M_eff28 = 1.0 / sum(1.0 / M for M in
-                        [c28_3.M_A_mem] + [b[0] for b in br28])
+    # Massegesteuerter Grenzwert der Parallelschaltung: die wirksame Masse
+    # sinkt auf s_N/Σ(1/M_m) — der Faktor s_N ist die nachgiebigkeits-
+    # erhaltende Normierung der Modenaufteilung (s. _modal_split_factor
+    # und Gegenprobe 42). Ohne Dämpfung (R = 0) isoliert das die
+    # Modenalgebra von der Filmdämpfung.
+    # PHYSIKALISCH schärfer als die reine Algebra: die exakten Modenmassen
+    # erfüllen Σ 1/M_m = S/σ, eine vielmodige Membran verhält sich weit
+    # oberhalb aller Resonanzen also wie ein freier KOLBEN. Mit der
+    # Normierung nähert sich unsere wirksame Masse diesem Grenzwert
+    # MONOTON VON OBEN (1 Mode 4/3, 3 Moden 1.096, 5 Moden 1.043 mal σ/S)
+    # — ohne sie lief die Reihe darüber hinaus und wurde mit mehr Termen
+    # schlechter.
+    s_N28 = c28_3._modal_split_factor()
+    M_eff28 = s_N28 / sum(1.0 / M for M in
+                          [c28_3.M_A_mem] + [b[0] for b in br28])
     om_hf28 = np.array([2.0 * np.pi * 2.0e5])
     Z1_hf28 = (1j * om_hf28 * c28_3.M_A_mem
                + 1.0 / (1j * om_hf28 * c28_3.C_A_eff))
     Z_hf28 = c28_3._modal_parallel(om_hf28, Z1_hf28, 0.0)[0]
     assert abs(Z_hf28.imag / om_hf28[0] / M_eff28 - 1.0) < 1e-3, \
-        (f"Massegrenzwert muss 1/Σ(1/M_m) treffen "
+        (f"Massegrenzwert muss s_N/Σ(1/M_m) treffen "
          f"({Z_hf28.imag / om_hf28[0]:.3f} vs. {M_eff28:.3f})")
+    M_pist28 = c28_3.mat_rho * c28_3.t_mem / c28_3.S_mem
+    rel28 = []
+    for n28 in (1, 3, 5):
+        cc28 = MicrophoneCapsule(membrane_modes=n28, **mk28)
+        rel28.append(
+            (cc28._modal_split_factor()
+             / sum(1.0 / M for M in [cc28.M_A_mem]
+                   + [b[0] for b in cc28._higher_mode_branches()]))
+            / M_pist28)
+    assert abs(rel28[0] - 4.0 / 3.0) < 1e-9, \
+        f"eine Mode muss die Parabelmasse 4/3·σ/S sein ({rel28[0]:.4f})"
+    assert 1.0 < rel28[2] < rel28[1] < rel28[0], \
+        (f"die wirksame Masse muss monoton von oben gegen die Kolbenmasse "
+         f"σ/S laufen ({np.round(rel28, 4)})")
     assert np.all(np.real(c28_3._membrane_impedance(om28c)) > 0.0), \
         "Passivität: Re{Z_mem} > 0 über das Band"
     # Konvergenz + Wirkung im Hochton (Grundmode-Anker unberührt)
@@ -7084,12 +7155,17 @@ if __name__ == "__main__":
     d35 = abs(lev28[5][2] - lev28[3][2])
     assert d35 < d13, \
         f"Modenreihe muss konvergieren ({d35:.2f} vs. {d13:.2f} dB)"
-    # Die höheren Moden heben den Hochton an (weichere Membran) — aber
-    # DEUTLICH WENIGER, seit sie im Spaltfilm ihre eigene innere
-    # Umverteilung tragen (_modal_internal_Z). Bis dahin waren die Zweige
-    # unbelastet und ungedämpft und die Anhebung entsprechend zu groß.
-    # Verankert wird das STRUKTURELL: mit Filmlast muss die Anhebung
-    # positiv, aber ein Vielfaches kleiner sein als ohne.
+    # Die höheren Moden machen die Membran im massegesteuerten Bereich
+    # leichter (Grenzwert oben) und würden den Hochton entsprechend
+    # anheben — aber im Spaltfilm tragen sie ihre eigene innere
+    # Umverteilung (_modal_internal_Z), und die frisst die Anhebung fast
+    # vollständig auf. Verankert wird das STRUKTURELL an der Differenz:
+    # UNBELASTETE Zweige heben klar an, mit Filmlast bleibt ein Bruchteil.
+    # (Seit der nachgiebigkeitserhaltenden Normierung, Gegenprobe 42, ist
+    # der belastete Rest bei dieser Kapsel sogar leicht NEGATIV: bei
+    # 16 kHz ist sie noch nicht massegesteuert, dort überwiegt der um
+    # 1/s_N steifere Zweig. Ein Vorzeichen ist hier deshalb nichts, worauf
+    # man sich festlegen sollte — der Betrag ist die Aussage.)
 
     class _UngedaempfteModen(MicrophoneCapsule):
         """Modenzweige OHNE innere Umverteilung — nur zum Vergleich."""
@@ -7102,11 +7178,12 @@ if __name__ == "__main__":
     lev28u = 20.0 * np.log10(np.abs(H28u) / np.abs(H28u[0]))
     lift28 = lev28[3][2] - lev28[1][2]
     lift28u = lev28u[2] - lev28[1][2]
-    assert lift28 > 0.0, \
-        "höhere Moden müssen den Hochton anheben (weichere Membran)"
-    assert lift28u > 4.0 * lift28, \
+    assert lift28u > 1.0, \
+        (f"unbelastete Modenzweige müssen den Hochton klar anheben "
+         f"({lift28u:.2f} dB)")
+    assert abs(lift28) < 0.25 * lift28u, \
         (f"die Filmlast der Moden muss die Anhebung deutlich dämpfen "
-         f"({lift28u:.2f} dB unbelastet gegen {lift28:.2f} dB mit Last)")
+         f"({lift28u:+.2f} dB unbelastet gegen {lift28:+.2f} dB mit Last)")
     # Der 7-kHz-Sattel ist NICHT modal: er bleibt praktisch unverändert
     assert abs(lev28[3][1] - lev28[1][1]) < 0.5, \
         (f"7-kHz-Sattel ist kein Modeneffekt "
@@ -8491,5 +8568,140 @@ if __name__ == "__main__":
               f"Kugel; gitterkonvergent ({n_grob}->{n_fein} Elemente: "
               f"{d41c:.3f} dB); off-axis bleibt {d41:+.0f} dB bei "
               f"90°/14 kHz — nicht die Körperform, dokumentiert  OK")
+
+    # --------- Gegenprobe 42: Flächenmittel der Modenreihe ----------------
+    # Grinnip (JAES 54(3), 2006, Gl. 54/55) gibt als Signal das
+    # FLÄCHENMITTEL der Membranauslenkung aus: jede Mode wird einzeln per
+    # Galerkin-Projektion angetrieben und trägt mit ihrem eigenen
+    # Flächenmittel ⟨ψ_m⟩ = 2·J1(z_m)/z_m zum Ausgang bei. Genau diese
+    # Reihe steht hinter unseren PARALLELEN Modenzweigen — und sie hat
+    # zwei exakt bekannte Grenzwerte, an denen sich alles aufhängen lässt:
+    #
+    #   Σ 1/z_m² = 1/4      ->  Σ 1/M_m = S/σ  (Hochton: freier KOLBEN)
+    #   Σ 1/z_m⁴ = 1/32     ->  Σ C_m  = πa⁴/(8T)  (exakte Statik)
+    #
+    # Die zweite Summe ist der Grund für :meth:`_modal_split_factor`: die
+    # Grundmode allein trägt 32/z_1⁴ = 95.68 % der statischen
+    # Nachgiebigkeit, unser Ein-Freiheitsgrad-Modell aber 100 %. Ohne
+    # Normierung addieren die höheren Zweige noch einmal 4.4 % dazu.
+    #
+    # Geprüft wird DREIERLEI, jeweils gegen eine geschlossene Lösung:
+    # a) die beiden Rayleigh-Summen selbst,
+    # b) die Modenreihe des Flächenmittels gegen die exakte dynamische
+    #    Vakuumlösung η(r) = (p/σω²)[J0(kr)/J0(ka) − 1] — dieselbe
+    #    Funktion, die Zuckerwar als Ansatz benutzt — über die Grundmode
+    #    hinweg, plus die statische Bessel-Anregung gegen Quadratur,
+    # c) das MODELL: die Tieftonempfindlichkeit darf nicht davon abhängen,
+    #    mit wie vielen Moden gerechnet wird, und die Modenresonanzen
+    #    müssen dabei stehen bleiben.
+    if _HAS_SCIPY:
+        from scipy.integrate import quad as _quad42
+        from scipy.special import j0 as _j0_42, j1 as _j1_42
+        from scipy.special import jn_zeros as _jnz_42
+        # a) Rayleigh-Summen (die Identitäten, auf denen die Normierung ruht)
+        z42 = _jnz_42(0, 4000)
+        s4_42 = float(np.sum(1.0 / z42**4))
+        s2_42 = float(np.sum(1.0 / z42**2))
+        assert abs(s4_42 * 32.0 - 1.0) < 1e-9, \
+            f"Rayleigh-Summe Σ1/z⁴ muss 1/32 sein ({s4_42:.12f})"
+        assert abs(s2_42 * 4.0 - 1.0) < 1e-3, \
+            f"Rayleigh-Summe Σ1/z² muss 1/4 sein ({s2_42:.9f})"
+
+        # b) Flächenmittel der Modenreihe gegen geschlossene Lösungen
+        a42, T42, sg42 = 1.0945e-2, 39.19, 1630.0 * 2.4e-6
+
+        def _amean42(p_func, om, n_mod):
+            """⟨η⟩ nach Grinnip Gl. (54)/(55), Vakuum."""
+            tot = 0.0
+            for m in range(n_mod):
+                zm = z42[m]
+                proj = _quad42(
+                    lambda x, _z=zm: p_func(x * a42) * _j0_42(_z * x) * 2.0 * x,
+                    0.0, 1.0, limit=200)[0]
+                tot += (proj / ((T42 * (zm / a42)**2 - om**2 * sg42)
+                                * _j1_42(zm)**2)) * 2.0 * _j1_42(zm) / zm
+            return tot
+
+        # b1) statisch, gleichförmig: Konvergenz gegen a²/(8T)
+        st42 = a42**2 / (8.0 * T42)
+        konv42 = [abs(_amean42(lambda r: 1.0, 0.0, n) / st42 - 1.0)
+                  for n in (1, 5, 60)]
+        assert konv42[0] > 0.04 and abs(konv42[0] - (1.0 - 32.0 / z42[0]**4)) \
+            < 1e-3, \
+            (f"die Grundmode allein muss 32/z_1⁴ = 95.7 % tragen "
+             f"({100 * (1 - konv42[0]):.2f} %)")
+        assert konv42[2] < 1e-4, \
+            f"die Reihe muss gegen die exakte Statik konvergieren ({konv42})"
+        # b2) statisch, Bessel-Antrieb, gegen direkte Quadratur der ODE
+        worst42 = 0.0
+        for u42 in (1.0, 2.8, 5.0):
+            pf42 = (lambda r, _u=u42: _j0_42(_u * r / a42))
+
+            def _eta42(r, _p=pf42):
+                inner = lambda s: _quad42(lambda t: _p(t) * t, 0.0, s,
+                                          limit=200)[0]
+                return _quad42(lambda s: inner(s) / s, r, a42,
+                               limit=200)[0] / T42
+
+            ex42 = _quad42(lambda r: _eta42(r) * 2.0 * r / a42**2, 0.0, a42,
+                           limit=200)[0]
+            worst42 = max(worst42,
+                          abs(_amean42(pf42, 0.0, 60) / ex42 - 1.0))
+        assert worst42 < 1e-4, \
+            f"Reihe muss die statische Quadratur treffen ({worst42:.1e})"
+        # b3) dynamisch im Vakuum über die Grundmode hinweg
+        worst42d = 0.0
+        for f42 in (100.0, 2500.0, 5000.0, 15000.0):
+            om42 = 2 * np.pi * f42
+            k42 = om42 * np.sqrt(sg42 / T42) * a42
+            ex42d = ((2.0 * _j1_42(k42) / (k42 * _j0_42(k42)) - 1.0)
+                     / (sg42 * om42**2))
+            worst42d = max(worst42d,
+                           abs(_amean42(lambda r: 1.0, om42, 60) / ex42d - 1.0))
+        assert worst42d < 1e-4, \
+            (f"Reihe muss die geschlossene Vakuumlösung treffen "
+             f"({worst42d:.1e})")
+
+        # c) DAS MODELL: Tiefton modenunabhängig, Resonanzen unverändert
+        g42 = dict(membrane_diameter=25.4e-3, membrane_resonance_hz=8000.0,
+                   air_gap=40e-6, backplate_diameter=25e-3,
+                   backplate_thickness=3e-3, n_through_holes=60,
+                   through_hole_diameter=1.0e-3, n_blind_holes=30,
+                   include_diffraction=False, squeeze_model="2d")
+        f_lo42 = np.array([20.0])
+        s_ref42 = abs(MicrophoneCapsule(membrane_modes=1,
+                                        **g42).transfer_function(f_lo42)[0])
+        dlf42, fm42 = [], None
+        for nm42 in (2, 3, 4, 5):
+            c42 = MicrophoneCapsule(membrane_modes=nm42, **g42)
+            dlf42.append(20 * np.log10(
+                abs(c42.transfer_function(f_lo42)[0]) / s_ref42))
+            got = [1.0 / (2 * np.pi * np.sqrt(M * C))
+                   for M, C in c42._higher_mode_branches()]
+            soll = [c42.f_res * z42[m] / z42[0] for m in range(1, nm42)]
+            assert np.allclose(got, soll, rtol=1e-9), \
+                (f"die Normierung darf die Modenresonanzen nicht "
+                 f"verschieben ({np.round(got)} gegen {np.round(soll)})")
+            fm42 = got
+        assert max(abs(d) for d in dlf42) < 0.02, \
+            (f"die Tieftonempfindlichkeit darf nicht von der Modenzahl "
+             f"abhängen ({np.round(dlf42, 4)} dB — ohne Normierung waren "
+             f"es +0.30…+0.37 dB)")
+        # d) dokumentierter Preis: Hochtongrenzwert gegen die Kolbenmasse
+        hf42 = [0.75 * float(np.sum((z42[0] / z42[:n])**2))
+                / float(np.sum((z42[0] / z42[:n])**4)) for n in (1, 3, 5)]
+        assert all(hf42[i] < hf42[i + 1] < 1.0 for i in range(2)), \
+            (f"der Hochtongrenzwert muss MONOTON von unten gegen die "
+             f"Kolbenmasse S/σ laufen ({np.round(hf42, 4)})")
+        print(f"Flächenmittel der Modenreihe (Grinnip 2006, Gl. 54/55): "
+              f"Rayleigh Σ1/z⁴·32 = {s4_42 * 32:.9f}; Reihe trifft die "
+              f"statische Quadratur ({worst42:.0e}) und die geschlossene "
+              f"Vakuumlösung ({worst42d:.0e}); Grundmode allein trägt "
+              f"{100 * 32 / z42[0]**4:.2f} % der Statik — deshalb normiert: "
+              f"Tiefton jetzt modenunabhängig "
+              f"({max(abs(d) for d in dlf42):.4f} dB statt +0.37), "
+              f"Modenresonanzen unverändert ({fm42[0] / 1e3:.1f} kHz…), "
+              f"Hochtongrenzwert monoton {np.round(hf42, 3)} gegen "
+              f"Kolbenmasse  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
