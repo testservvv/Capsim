@@ -166,6 +166,9 @@ DEFAULTS = {
     "mem_tension_npm": 13.7,
     "mem_modes": 1,
     "modal_source": False,
+    # Mittenterminierung (Kontaktstift/Bolzen); 0 = randgespannte
+    # Kreismembran. Die K67 hat eine — ihr Wert ist Sache des Projekts.
+    "center_post_mm": 0.0,
     # Backplate
     "air_gap_um": 65.0,
     "bp_diameter_mm": 25.0,
@@ -405,6 +408,7 @@ _ZERO_STATE = {
     # Bias (0.5 V) — der Null-Zustand muss BAUBAR bleiben (U_PI ≈ 1.2 V).
     "f_res_hz": 100.0, "mem_diameter_mm": 3.0, "mem_thickness_um": 0.5,
     "mem_tension_npm": 1.0, "mem_modes": 1, "modal_source": False,
+    "center_post_mm": 0.0,
     "air_gap_um": 50.0,
     "bp_diameter_mm": 2.0,
     "bp_thickness_mm": 0.2, "bias_v": 0.5, "center_gap_um": 0.0,
@@ -508,6 +512,7 @@ def build_capsule(p):
         membrane_tension=p["mem_tension_npm"],
         membrane_modes=int(p.get("mem_modes", 1)),
         modal_source=1 if p.get("modal_source", False) else 0,
+        center_post_diameter=p.get("center_post_mm", 0.0) * 1e-3,
         air_gap=p["air_gap_um"] * 1e-6,
         backplate_diameter=p["bp_diameter_mm"] * 1e-3,
         backplate_thickness=p["bp_thickness_mm"] * 1e-3,
@@ -1053,6 +1058,10 @@ with st.sidebar:
                         key="p_mem_thickness_um")
         st.number_input(tr("lbl_mem_tension"), 1.0, 5000.0, step=10.0,
                         key="p_mem_tension_npm")
+        st.number_input(tr("lbl_center_post"), 0.0,
+                        0.5 * st.session_state["p_mem_diameter_mm"],
+                        step=0.1, format="%.2f", key="p_center_post_mm",
+                        help=tr("help_center_post"))
         st.number_input(tr("lbl_mem_modes"), 1, 5, step=1,
                         key="p_mem_modes", help=tr("help_mem_modes"))
         st.checkbox(tr("lbl_modal_source"), key="p_modal_source",

@@ -181,6 +181,62 @@ TR = {
               "Membranen ohnehin als volle Felder und "
               "ignoriert diese Einstellung.",
     },
+    "lbl_center_post": {
+        "en": "Center termination ⌀ [mm]",
+        "de": "Mittenterminierung ⌀ [mm]",
+    },
+    "help_center_post": {
+        "en": "Diameter of a CENTER TERMINATION — a contact stud or bolt "
+              "that pins the middle of the diaphragm. 0 (default) = the "
+              "classic edge-clamped circular membrane. A pinned centre "
+              "makes the diaphragm an ANNULAR membrane, and that is not a "
+              "small correction: the static solution of T∇²w = −p with two "
+              "boundaries carries a logarithm, "
+              "C_T(ring)/C_T(circle) = 1 − r⁴ + (1−r²)²/ln r with "
+              "r = r_i/a, and a logarithm does not vanish like r². A "
+              "0.26-mm stud on a 26-mm diaphragm (r = 0.01) already "
+              "removes 22 % of the compliance, lifts the fundamental "
+              "eigenvalue from 2.4048 to 2.8009 — 16 % more resonance at "
+              "the same tension — and raises the pull-in voltage by 18 %. "
+              "The peak deflection also moves off centre, to r/a ≈ 0.33. "
+              "Everything downstream follows: piston factor, effective "
+              "area, mode shapes (ring modes instead of J0), the working "
+              "point and spring softening, C0, the squeeze-film profile "
+              "and the aperture averaging of the diffraction. Anchored "
+              "against J. E. Warren, JASA 58(3), 733–740 (1975), who gives "
+              "the critical forcing parameter for circular (0.789) and "
+              "annular (1.548 at r = 0.1) membranes (Gegenprobe 45). "
+              "LIMITS: the 3D field solver rejects annular membranes, and "
+              "the ring factor is derived for the TENSION part only — a "
+              "bending-stiff plate is rejected.",
+        "de": "Durchmesser einer MITTENTERMINIERUNG — Kontaktstift "
+              "oder Bolzen, der die Membranmitte festlegt. 0 "
+              "(Voreinstellung) = klassische randgespannte "
+              "Kreismembran. Eine festgelegte Mitte macht die "
+              "Membran zur RINGMEMBRAN, und das ist kein kleiner "
+              "Korrekturterm: die statische Lösung von T∇²w = −p "
+              "mit zwei Rändern enthält einen Logarithmus, "
+              "C_T(Ring)/C_T(Kreis) = 1 − r⁴ + (1−r²)²/ln r mit "
+              "r = r_i/a, und ein Logarithmus verschwindet nicht "
+              "wie r². Ein 0,26-mm-Stift auf einer 26-mm-Membran "
+              "(r = 0,01) nimmt schon 22 % der Nachgiebigkeit "
+              "weg, hebt den Grundmoden-Eigenwert von 2,4048 auf "
+              "2,8009 — bei gleicher Vorspannung 16 % mehr "
+              "Resonanz — und die Pull-in-Spannung um 18 %. Das "
+              "Auslenkungsmaximum wandert außerdem aus der Mitte "
+              "heraus, auf r/a ≈ 0,33. Alles Weitere folgt: "
+              "Kolbenfaktor, wirksame Fläche, Modenformen "
+              "(Ringmoden statt J0), Arbeitspunkt und "
+              "Feder-Erweichung, C0, das Spaltfilmprofil und die "
+              "Aperturmittelung der Beugung. Verankert an "
+              "J. E. Warren, JASA 58(3), 733–740 (1975), der den "
+              "kritischen Antriebsparameter für Kreis- (0,789) "
+              "und Ringmembran (1,548 bei r = 0,1) angibt "
+              "(Gegenprobe 45). GRENZEN: der 3D-Feldlöser weist "
+              "Ringmembranen ab, und der Ringfaktor gilt nur für "
+              "den VORSPANNUNGSANTEIL — eine biegesteife Platte "
+              "wird abgewiesen.",
+    },
     "lbl_modal_source": {
         "en": "Mode-dependent source pressure",
         "de": "Modenabhängiger Quelldruck",

@@ -46,6 +46,7 @@ try:
     from scipy.special import jv as _besselj
     from scipy.special import spherical_jn as _sph_jn
     from scipy.special import spherical_yn as _sph_yn
+    from scipy.special import yv as _bessely
 
     _HAS_SCIPY = True
 except ImportError:  # pragma: no cover — Fallback auf Näherungsformeln
@@ -73,6 +74,57 @@ def _j0_mode(x):
         term = term * t / (m * m)
         out = out + term
     return out
+
+
+def _j1_mode(x):
+    """J1(x) für die Modenintegrale (gleiche Konvention wie _j0_mode)."""
+    x = np.asarray(x, dtype=float)
+    if _HAS_SCIPY:
+        return _besselj(1, x)
+    t = -0.25 * x * x
+    term = 0.5 * x
+    out = term.copy()
+    for m in range(1, 41):
+        term = term * t / (m * (m + 1.0))
+        out = out + term
+    return out
+
+
+def _ring_static_shape(u, u_i):
+    """Statische Auslenkungsform einer (Ring-)Membran über u = (r/a)².
+
+    Aus T·∇²w = −p mit w(a) = 0 und — bei MITTENTERMINIERUNG — zusätzlich
+    w(r_i) = 0:
+
+        w(r) = p/(4T)·[(a²−r²) + (a²−r_i²)·ln(r/a)/ln(a/r_i)]
+
+    In der Modenkoordinate u = (r/a)², u_i = (r_i/a)² (dS = S·du):
+
+        φ(u) = (1−u) − (1−u_i)·ln(u)/ln(u_i).
+
+    ``u_i = 0`` liefert exakt die Parabel 1−u, also bitgleich den Stand
+    ohne Mittenterminierung. Der Logarithmus ist der Grund dafür, dass
+    schon ein winziger Mittenpfosten die Membran stark versteift: er
+    verschwindet nicht wie u_i, sondern nur wie 1/ln(u_i).
+    """
+    u = np.asarray(u, dtype=float)
+    if u_i <= 0.0:
+        return 1.0 - u
+    su = np.clip(u, u_i, 1.0)
+    return (1.0 - su) - (1.0 - u_i) * np.log(su) / np.log(u_i)
+
+
+def _ring_compliance_factor(rho):
+    """C_T(Ring)/C_T(Kreis) = 1 − ρ⁴ + (1−ρ²)²/ln ρ, ρ = r_i/a.
+
+    Geschlossene Form des Volumenintegrals über :func:`_ring_static_shape`
+    (Gegenprobe 45 prüft sie gegen die numerische Quadratur). Der
+    Grenzwert ρ → 0 ist 1, aber NICHT stetig differenzierbar: bei
+    ρ = 0.01 stehen schon 0.783, bei ρ = 0.05 nur noch 0.668.
+    """
+    if rho <= 0.0:
+        return 1.0
+    return 1.0 - rho**4 + (1.0 - rho**2) ** 2 / np.log(rho)
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +167,30 @@ class MicrophoneCapsule:
         membrane_diameter : float   — Membrandurchmesser [m]
         membrane_thickness : float  — Membrandicke [m]
         membrane_tension : float    — mechanische Vorspannung [N/m]
+        center_post_diameter : float
+            Durchmesser der MITTENTERMINIERUNG [m]; 0 (Voreinstellung) =
+            klassische randgespannte Kreismembran. Ein Kontaktstift oder
+            Mittenbolzen legt die Membranmitte fest — sie ist dann keine
+            Kreis-, sondern eine RINGMEMBRAN, und das ist kein kleiner
+            Korrekturterm. Die statische Lösung von T∇²w = −p enthält bei
+            zwei Rändern einen Logarithmus:
+
+                C_T(Ring)/C_T(Kreis) = 1 − ρ⁴ + (1−ρ²)²/ln ρ,  ρ = r_i/a,
+
+            und ein Logarithmus verschwindet nicht wie ρ². Schon ρ = 0.01
+            — ein 0.26-mm-Stift auf einer 26-mm-Membran — nimmt 22 % der
+            Nachgiebigkeit weg, hebt den Grundmoden-Eigenwert von 2.4048
+            auf 2.8009 (bei fester Vorspannung also die Resonanz um 16 %)
+            und die Pull-in-Spannung um 18 %. Betroffen sind:
+            Nachgiebigkeit, Kolbenfaktor, wirksame Fläche, Eigenwerte und
+            Modenformen (Ringmoden statt J0), Elektrostatik (Arbeitspunkt,
+            Feder-Erweichung, Pull-in, C0), Spaltfilm-Profil und die
+            Aperturmittelung der Beugung. Anker: J. E. Warren, JASA 58(3),
+            733–740 (1975) gibt den kritischen Antriebsparameter für
+            Kreis- (0.789) und Ringmembran (1.548 bei ρ = 0.1);
+            Gegenprobe 45 prüft beides. GRENZEN: der 3D-Feldlöser ist für
+            Ringmembranen gesperrt, und der Ringfaktor gilt für den
+            VORSPANNUNGSANTEIL — eine biegesteife Platte wird abgewiesen.
 
     Backplate-System
         air_gap : float             — Luftspalt Membran/Backplate [m]
@@ -354,6 +430,7 @@ class MicrophoneCapsule:
         membrane_tension=400.0,
         membrane_modes=1,
         modal_source=0,
+        center_post_diameter=0.0,
         # --- Backplate-System ---------------------------------------------
         air_gap=40e-6,
         backplate_diameter=20e-3,
@@ -442,6 +519,29 @@ class MicrophoneCapsule:
                 "modal_source ist ein Schalter: 0 (aus, Voreinstellung) "
                 "oder 1 (modenabhängiger Quelldruck)."
             )
+        # ---------------------- MITTENTERMINIERUNG -------------------------
+        # Eine in der Mitte festgelegte Membran (Kontaktstift, Mittenbolzen)
+        # ist keine Kreis-, sondern eine RINGMEMBRAN. Das ist kein kleiner
+        # Korrekturterm: die statische Lösung enthält einen Logarithmus, und
+        # der macht schon einen winzigen Pfosten zu einer Größe erster
+        # Ordnung (r_i/a = 1 % -> 22 % weniger Nachgiebigkeit).
+        self.r_post = 0.5 * float(center_post_diameter)
+        if self.r_post < 0.0:
+            raise ValueError("center_post_diameter darf nicht negativ sein.")
+        self.rho_post = self.r_post / self.a_mem
+        if self.rho_post >= 0.6:
+            raise ValueError(
+                f"Mittenterminierung: r_i/a = {self.rho_post:.3f} — über 0.6 "
+                "ist die Membran ein schmaler Ring, für den die hier "
+                "benutzten Lumped-Formen (ein Freiheitsgrad, Kolbenmasse) "
+                "nicht mehr sinnvoll sind."
+            )
+        if self.r_post > 0.0 and not _HAS_SCIPY:
+            raise ValueError(
+                "Mittenterminierung braucht SciPy (Besselfunktionen zweiter "
+                "Art für die Ringmoden)."
+            )
+        self.u_post = self.rho_post ** 2
 
         # ---------------------- Backplate-System ---------------------------
         self.h_gap = float(air_gap)
@@ -796,37 +896,94 @@ class MicrophoneCapsule:
     # ======================================================================
     def _derive_parameters(self):
         a, t = self.a_mem, self.t_mem
+        if self.r_post >= 0.9 * self.a_bp:
+            # Spaltfilm und Elektrode leben auf dem Ring r_i..a_bp — der
+            # muss auch einer sein.
+            raise ValueError(
+                f"Mittenterminierung: der Pfosten (r_i = "
+                f"{self.r_post * 1e3:.2f} mm) lässt von der Backplate "
+                f"(a_bp = {self.a_bp * 1e3:.2f} mm) keinen brauchbaren "
+                "Ring übrig.")
         self.S_mem = np.pi * a**2                 # Membranfläche [m^2]
         self.S_bp = np.pi * self.a_bp**2          # Backplate-Fläche [m^2]
         rho_s = self.mat_rho * t                  # Flächendichte [kg/m^2]
 
         # ------------------------------------------------------------------
-        # AKUSTISCHE MASSE DER MEMBRAN
-        # Für eine am Rand eingespannte, gleichmäßig druckbelastete Membran
-        # ist das Auslenkungsprofil näherungsweise parabolisch:
-        #     w(r) = w0 * (1 - r^2/a^2)
-        # Gleichsetzen der kinetischen Energie des realen Profils mit der
-        # eines Ersatzkolbens gleicher VOLUMEN-Schnelle liefert die
-        # effektive akustische Masse (Standard-Lumped-Element-Resultat):
-        #     M_A = (4/3) * rho_s / (pi * a^2)        [kg/m^4]
+        # STATISCHE FORM, KOLBENFAKTOR UND WIRKSAME FLÄCHE
+        # Alles Folgende hängt an EINER Funktion: dem statischen Profil
+        # φ(u) über u = (r/a)² (s. _ring_static_shape). Ohne Mitten-
+        # terminierung ist das die Parabel 1−u und alle Momente sind die
+        # bekannten Zahlen; mit Mittenterminierung dieselben Formeln,
+        # nur andere Momente. Die Normierung ist φ_max = 1, damit w0 die
+        # MAXIMALE Auslenkung bleibt (bei einer Ringmembran liegt sie
+        # nicht in der Mitte, sondern bei r/a ≈ 0.33…0.46).
         # ------------------------------------------------------------------
-        self.M_A_mem = (4.0 / 3.0) * rho_s / self.S_mem
+        if self.u_post <= 0.0:
+            # Parabel: die Momente sind exakt bekannt — keine Quadratur,
+            # damit der Bestand BITGLEICH bleibt.
+            self._phi_max, self._phi_umax = 1.0, 0.0
+            m1, m2 = 0.5, 1.0 / 3.0
+        else:
+            # Maximum in geschlossener Form: dφ/du = −1 − (1−u_i)/(u·ln u_i)
+            self._phi_umax = float(np.clip(
+                -(1.0 - self.u_post) / np.log(self.u_post),
+                self.u_post, 1.0))
+            self._phi_max = float(_ring_static_shape(self._phi_umax,
+                                                     self.u_post))
+            # Momente per Gauss–Legendre (glatter Integrand auf [u_i, 1])
+            _xq, _wq = np.polynomial.legendre.leggauss(512)
+            _uq = 0.5 * (1.0 + self.u_post) + 0.5 * (1.0 - self.u_post) * _xq
+            _wq = 0.5 * (1.0 - self.u_post) * _wq
+            _pq = _ring_static_shape(_uq, self.u_post) / self._phi_max
+            m1 = float(np.dot(_wq, _pq))
+            m2 = float(np.dot(_wq, _pq**2))
+        self._phi_m1, self._phi_m2 = m1, m2
+        # wirksame Fläche: Volumenverschiebung je Maximalauslenkung
+        self.S_eff_mem = self.S_mem * m1
+        # ------------------------------------------------------------------
+        # AKUSTISCHE MASSE DER MEMBRAN
+        # Gleichsetzen der kinetischen Energie des Profils mit der eines
+        # Ersatzkolbens gleicher VOLUMEN-Schnelle:
+        #     M_A = (<φ²>/<φ>²) · rho_s / S            [kg/m^4]
+        # Parabel: <φ²>/<φ>² = (1/3)/(1/4) = 4/3 — der Standardwert.
+        # Ringmembran: der Faktor SINKT (ρ = 0.1: 1.242), das Profil ist
+        # gedrungener.
+        # ------------------------------------------------------------------
+        self._piston_factor = m2 / m1**2
+        self.M_A_mem = self._piston_factor * rho_s / self.S_mem
 
         # ------------------------------------------------------------------
         # AKUSTISCHE NACHGIEBIGKEIT DER MEMBRAN
         # 1) Anteil der Vorspannung T [N/m] (Beranek):
         #        C_T = pi * a^4 / (8 * T)             [m^5/N = m^3/Pa]
         #    (statische Durchbiegung w0 = p*a^2/(4T), Volumen = p*pi*a^4/(8T))
+        #    MIT MITTENTERMINIERUNG kommt der geschlossene Ringfaktor
+        #        g(ρ) = 1 − ρ⁴ + (1−ρ²)²/ln ρ
+        #    dazu (s. _ring_compliance_factor) — bei ρ = 0.05 sind das
+        #    schon 33 % weniger Nachgiebigkeit.
         # 2) Anteil der Biegesteifigkeit der Folie (eingespannte Platte):
         #        D   = E * t^3 / (12 * (1 - nu^2))    [N*m]
         #        C_B = pi * a^6 / (192 * D)
         # Beide Federn wirken parallel (Steifigkeiten addieren sich):
         #        1/C_phys = 1/C_T + 1/C_B
         # ------------------------------------------------------------------
-        C_T = np.pi * a**4 / (8.0 * self.tension)
+        self._ring_g = _ring_compliance_factor(self.rho_post)
+        C_T = np.pi * a**4 / (8.0 * self.tension) * self._ring_g
         D_plate = self.mat_E * t**3 / (12.0 * (1.0 - self.mat_nu**2))
         C_B = np.pi * a**6 / (192.0 * D_plate)
         self.C_A_phys = 1.0 / (1.0 / C_T + 1.0 / C_B)
+        # GRENZE, dokumentiert: der Ringfaktor gilt für die VORSPANNUNG.
+        # Die Biegesteifigkeit einer eingespannten Ringplatte hat einen
+        # anderen Formfaktor, der hier nicht gerechnet wird. Bei Folien-
+        # membranen trägt sie Promille — wird sie relevant, ist das ein
+        # Fehler und keine Feinheit.
+        if self.r_post > 0.0 and C_T > 0.02 * C_B:
+            raise ValueError(
+                "Mittenterminierung: die Biegesteifigkeit der Folie trägt "
+                f"{100.0 * C_T / (C_T + C_B):.1f} % der Gesamtsteifigkeit. "
+                "Der Ringfaktor ist nur für den VORSPANNUNGSANTEIL "
+                "hergeleitet — für eine so steife Platte gilt er nicht."
+            )
 
         # Aus Vorspannung/Steifigkeit resultierende Resonanz (Diagnose):
         self.f_res_from_tension = 1.0 / (
@@ -843,7 +1000,9 @@ class MicrophoneCapsule:
         # Lumped-Werte (LF-exakt, f_res-Kalibrierung absorbiert den
         # Unterschied; die vollen Modenformen rechnet der 3D-Löser) —
         # diese Größe dient dem ehrlichen Vergleich in summary().
-        _j01 = 2.404825557695773
+        # Mit Mittenterminierung ist der Eigenwert der der RINGmembran
+        # (z_1 = 2.80 statt 2.40 schon bei r_i/a = 1 %).
+        _j01 = float(self._ring_modes()["z"][0])
         f_T_ex = _j01 / (2.0 * np.pi * a) * np.sqrt(self.tension / rho_s)
         f_B_ex = (10.2158 / (2.0 * np.pi * a**2)
                   * np.sqrt(D_plate / rho_s))
@@ -868,18 +1027,27 @@ class MicrophoneCapsule:
         # das Membranprofil ist die Grundmode phi. (Steht VOR der Elektro-
         # statik, weil deren Porositätsprofile dieselben Dichten nutzen.)
         # ------------------------------------------------------------------
+        # Mit MITTENTERMINIERUNG beginnt das Gitter am Pfostenrand: dort
+        # sitzt eine Wand, kein Fluss, und das Membranprofil ist die
+        # Ringform (s. _ring_static_shape). Ohne Pfosten ist r0 = 0 und
+        # alles unten reduziert sich bitgleich auf den bisherigen Stand.
         N = 60
-        dr = self.a_bp / N
-        r_c = (np.arange(N) + 0.5) * dr
+        r0 = self.r_post
+        dr = (self.a_bp - r0) / N
+        r_c = r0 + (np.arange(N) + 0.5) * dr
+        r_f = r0 + np.arange(N + 1) * dr
         self._fld_area = 2.0 * np.pi * r_c * dr           # Zellflächen [m^2]
-        self._fld_phi = np.maximum(1.0 - (r_c / self.a_mem) ** 2, 0.0)
+        self._fld_phi = _ring_static_shape(
+            np.minimum((r_c / self.a_mem) ** 2, 1.0), self.u_post)
+        self._fld_phi = np.maximum(self._fld_phi, 0.0) / self._phi_max
         self._fld_Sphi = float(np.sum(self._fld_phi * self._fld_area))
-        # Geometriefaktor der lateralen Flächenleitwerte: Gface = 2*pi*k*K
-        # (Fläche k liegt bei r = k*dr; Randflächen 0 = kein Fluss -> Neumann)
+        # Geometriefaktor der lateralen Flächenleitwerte: Gface = 2*pi*r_f/dr*K
+        # (Randflächen 0 = kein Fluss -> Neumann, innen die Pfostenwand)
         gg = np.zeros(N + 1)
-        gg[1:N] = 2.0 * np.pi * np.arange(1, N)
+        gg[1:N] = 2.0 * np.pi * r_f[1:N] / dr
         self._fld_gface_geom = gg
-        self._fld_S_elec = np.pi * self.a_bp**2
+        self._fld_gedge_geom = 4.0 * np.pi * r_f[N] / dr
+        self._fld_S_elec = np.pi * (self.a_bp**2 - r0**2)
         self._fld_N = N
 
         # Radiale Dichteverteilungen der Löcher (normiert: Σ dens·A = 1),
@@ -934,7 +1102,9 @@ class MicrophoneCapsule:
         # Feldmodell — damit sind Lochkreise (PCD) auch in Pull-in, Feder-
         # Erweichung, Wandlerkoeffizient und C0 konsistent berücksichtigt.
         # Ohne PCD ergeben sich exakt die bisherigen konstanten Anteile.
-        u_es = np.linspace(0.0, self._ub, 401)
+        # Mit Mittenterminierung beginnt die Elektrodenfläche am
+        # Pfostenrand: unter dem Pfosten gibt es weder Luftspalt noch Feld.
+        u_es = np.linspace(self.u_post, self._ub, 401)
         r_es = self.a_mem * np.sqrt(u_es)
         dth_es = np.interp(r_es, r_c, self._fld_dens_th)
         dbh_es = np.interp(r_es, r_c, self._fld_dens_bh)
@@ -950,6 +1120,16 @@ class MicrophoneCapsule:
         tot = p_th + p_bh
         scale = np.where(tot > 0.95, 0.95 / np.maximum(tot, 1e-30), 1.0)
         self._es_u = u_es
+        # Modenprofil an denselben Stützstellen (Parabel bzw. Ringform),
+        # normiert auf 1 — damit bleibt w0 die MAXIMALE Auslenkung.
+        self._es_phi = (_ring_static_shape(u_es, self.u_post)
+                        / self._phi_max)
+        # Flächenmittel des Profils ÜBER DER ELEKTRODE (für den Arbeits-
+        # punkt-Spalt weiter unten). Ohne Pfosten exakt 1 − ub/2.
+        self._es_phi_mean = (
+            1.0 - self._ub / 2.0 if self.r_post <= 0.0 else
+            float(np.trapezoid(self._es_phi, u_es)
+                  / (self._ub - self.u_post)))
         self._es_c_solid = 1.0 - tot * scale
         self._es_c_blind = p_bh * scale
 
@@ -1003,7 +1183,10 @@ class MicrophoneCapsule:
                 "Durchgangs- und Blindlöcher bedecken >= 90 % der "
                 "Backplate — keine wirksame Elektrode mehr."
             )
-        self._k_gen = self.S_mem**2 / (4.0 * self.C_A_mem)
+        # generalisierte Steifigkeit zur Koordinate w0 (Maximalauslenkung):
+        # E = (w0·S_eff)²/(2C_A)  ->  k_gen = S_eff²/C_A. Ohne Mitten-
+        # terminierung ist S_eff = S/2, also der bisherige Wert S²/(4C_A).
+        self._k_gen = self.S_eff_mem**2 / self.C_A_mem
 
         eq = self._solve_static_deflection(self.u_bias)
         if eq is None:
@@ -1087,7 +1270,7 @@ class MicrophoneCapsule:
         # Polarisationsspannung in REALISTISCHEM Maß an die Richt-
         # charakteristik. Bei 'dual' (beidseitig polarisiert) ist w0 = 0.
         # ------------------------------------------------------------------
-        sag = self.w0_static * (1.0 - self._ub / 2.0)
+        sag = self.w0_static * self._es_phi_mean
         self.h_gap_front = max(self.h_gap - sag, 0.05 * self.h_gap)
 
         # ------------------------------------------------------------------
@@ -1495,6 +1678,18 @@ class MicrophoneCapsule:
 
         # 3D-Löser: Gitter-/Lochgeometrie einmalig aufbauen
         if self.squeeze_model == "3d":
+            if self.r_post > 0.0:
+                # Der 3D-Löser führt die Membranen als FD-Felder auf einem
+                # (r,phi)-Gitter ab r = 0 mit Achsenbedingung. Eine
+                # Mittenterminierung wäre dort eine INNERE Dirichlet-
+                # Randbedingung samt Wandbedingung für die Filme — das ist
+                # nicht gebaut. Gesperrt statt still falsch.
+                raise ValueError(
+                    "Mittenterminierung ist im 3D-Feldlöser nicht gebaut "
+                    "(innerer Rand für Membranfelder und Spaltfilme). "
+                    "Für Ringmembranen squeeze_model='1d' oder '2d' "
+                    "nehmen."
+                )
             self._build_3d_geometry()
 
     # ======================================================================
@@ -1626,7 +1821,7 @@ class MicrophoneCapsule:
         Backplate der Dual-Architektur).
         """
         u = self._es_u
-        v = 1.0 - u                               # Modenprofil phi
+        v = self._es_phi                          # Modenprofil phi (max 1)
         g_s = self.h_gap - w0 * v                 # Spalt, solide Elektrode
         g_b = self.h_gap + self.d_bh - w0 * v     # Feldweg über Blindloch
         c_s = self._es_c_solid
@@ -1640,7 +1835,7 @@ class MicrophoneCapsule:
     def _static_residual(self, u_bias, w_grid):
         """k_gen·w0 − F_es(w0) für ein Array von Auslenkungen (vektorisiert)."""
         u = self._es_u
-        v = 1.0 - u
+        v = self._es_phi
         w2 = np.atleast_1d(w_grid)[:, None]
         g_s = self.h_gap - w2 * v[None, :]
         g_b = self.h_gap + self.d_bh - w2 * v[None, :]
@@ -2048,12 +2243,24 @@ class MicrophoneCapsule:
         """
         if self.membrane_modes <= 1:
             return []
-        x = self._J0_ZEROS
         w1 = 1.0 / np.sqrt(self.M_A_mem * self.C_A_mem)
         out = []
+        if self.r_post <= 0.0:
+            x = self._J0_ZEROS
+            for m in range(1, self.membrane_modes):
+                rat = x[m] / x[0]
+                M_m = self.M_A_mem * rat**2
+                C_m = 1.0 / ((w1 * rat) ** 2 * M_m)
+                out.append((M_m, C_m))
+            return out
+        # RINGMEMBRAN: das Massenverhältnis ist nicht mehr (z_m/z_1)²,
+        # sondern der exakte Quotient der Modenintegrale I2/I1² — die
+        # Frequenzstaffelung bleibt z_m/z_1 (s. _ring_modes).
+        md = self._ring_modes()
+        mu = md["I2"] / md["I1"] ** 2
         for m in range(1, self.membrane_modes):
-            rat = x[m] / x[0]
-            M_m = self.M_A_mem * rat**2
+            rat = md["z"][m] / md["z"][0]
+            M_m = self.M_A_mem * float(mu[m] / mu[0])
             C_m = 1.0 / ((w1 * rat) ** 2 * M_m)
             out.append((M_m, C_m))
         return out
@@ -2118,10 +2325,21 @@ class MicrophoneCapsule:
         else:
             Y_h = 0.0
         out = []
+        if self.r_post <= 0.0:
+            for m in range(1, self.membrane_modes):
+                z_m = self._J0_ZEROS[m]
+                out.append(1.0 / (4.0 * np.pi
+                                  * (K_f + Y_h * self.a_mem**2 / z_m**2)))
+            return out
+        # RINGMEMBRAN: allgemein Z_m = (I2/I1²)/(S·(K_f·k_m² + Y_h)); für
+        # die Vollmembran ist I2/I1² = z²/4 und das reduziert sich exakt
+        # auf die Zeile darüber.
+        md = self._ring_modes()
         for m in range(1, self.membrane_modes):
-            z_m = self._J0_ZEROS[m]
-            out.append(1.0 / (4.0 * np.pi
-                              * (K_f + Y_h * self.a_mem**2 / z_m**2)))
+            z_m = md["z"][m]
+            fac = float(md["I2"][m] / md["I1"][m] ** 2)
+            out.append(fac / (self.S_mem
+                              * (K_f * (z_m / self.a_mem) ** 2 + Y_h)))
         return out
 
     def _modal_split_factor(self):
@@ -2168,9 +2386,14 @@ class MicrophoneCapsule:
         """
         if self.membrane_modes <= 1:
             return 1.0
-        x = self._J0_ZEROS
-        return float(sum((x[0] / x[m]) ** 4
-                         for m in range(self.membrane_modes)))
+        if self.r_post <= 0.0:
+            x = self._J0_ZEROS
+            return float(sum((x[0] / x[m]) ** 4
+                             for m in range(self.membrane_modes)))
+        # RINGMEMBRAN: C_m ∝ I1²/(z² I2) statt 1/z⁴ (s. _ring_modes).
+        md = self._ring_modes()
+        c = md["I1"] ** 2 / (md["z"] ** 2 * md["I2"])
+        return float(np.sum(c[:self.membrane_modes]) / c[0])
 
     def _modal_parallel(self, omega, Z1, R, h_film=None):
         """Grundmode Z1 mit den höheren Moden PARALLEL schalten.
@@ -2330,6 +2553,31 @@ class MicrophoneCapsule:
                                                        mode=m + 1)
                     rel.append(F_m / F_mode1)
                 rel = np.array(rel)
+        elif self.r_post > 0.0:
+            # RINGMEMBRAN im Freifeld: dasselbe Lommel-Integral, nur mit
+            # der Ringmodenform. Mit C0(z) = 0 und C1(zρ) = 2/(πzρ) ist
+            #     ∫ψ_m J0(u r/a) dA / ∫ψ_m dA
+            #       = 2[z·C1(z)·J0(u) − (2/π)·J0(uρ)] / ((z²−u²)·I1),
+            # und der Zähler verschwindet bei u = z exakt mit dem Nenner
+            # (Wronski) — die Singularität ist hebbar wie im Vollkreis.
+            md = self._ring_modes()
+            rho = self.rho_post
+            u = np.outer(omega / C_AIR * self.a_mem, np.sin(theta))
+            D = []
+            for m in range(nm):
+                zm = md["z"][m]
+                C1 = (_besselj(1, zm) * _bessely(0, zm * rho)
+                      - _bessely(1, zm) * _besselj(0, zm * rho))
+                num = (zm * C1 * _besselj(0, u)
+                       - (2.0 / np.pi) * _besselj(0, u * rho))
+                den = zm**2 - u**2
+                lim = ((zm * C1 * _besselj(1, zm)
+                        - (2.0 * rho / np.pi) * _besselj(1, zm * rho))
+                       / (2.0 * zm))
+                safe = np.where(np.abs(den) < 1e-9, 1.0, den)
+                Dm = np.where(np.abs(den) < 1e-9, lim, num / safe)
+                D.append((2.0 * Dm / md["I1"][m]).astype(complex))
+            rel = np.array(D)                      # absolut, wie unten
         else:
             u = np.outer(omega / C_AIR * self.a_mem, np.sin(theta))
             D = []
@@ -2407,31 +2655,117 @@ class MicrophoneCapsule:
         u0 = self._cap_cos
         if (1.0 - u0) < 1e-9:
             return np.empty(0), np.empty(0)
-        z0m = self._J0_ZEROS[max(int(mode), 1) - 1]
         x, w = np.polynomial.legendre.leggauss(int(n_nodes))
         u = 0.5 * (1.0 + u0) + 0.5 * (1.0 - u0) * x        # -> [u0, 1]
         wq = 0.5 * (1.0 - u0) * w
         s = np.sqrt(np.clip(1.0 - u * u, 0.0, None))       # sin(psi)
-        arg = z0m * s * self.R_body / self.a_mem
-        # Klammerung am EIGENEN Membranrand: r = a_mem entspricht
-        # arg = z_0m, jenseits davon sitzt keine Mode mehr.
-        wq = wq * _j0_mode(np.clip(arg, 0.0, z0m))
+        # Klammerung am EIGENEN Membranrand (und, bei Mitten-
+        # terminierung, am Pfostenrand): dort ist die Modenform null.
+        wq = wq * self._membrane_mode_weight(s * self.R_body,
+                                             max(int(mode), 1))
         tot = float(np.sum(wq))
         if not np.isfinite(tot) or abs(tot) < 1e-300:
             return np.empty(0), np.empty(0)
         return u, wq / tot
 
+    def _ring_modes(self):
+        """Eigenwerte und Modenintegrale der Membran (gecacht).
+
+        OHNE Mittenterminierung sind das die bekannten J0-Nullstellen mit
+        ψ_m(r) = J0(z_m·r/a). MIT Mittenterminierung ist die Membran ein
+        RING, und die Modenform ist die Zylinderfunktions-Kombination, die
+        an BEIDEN Rändern verschwindet:
+
+            ψ_m(r) = J0(k r)·Y0(k r_i) − Y0(k r)·J0(k r_i) =: C0(k r),
+            Eigenwertgleichung  C0(k a) = 0.
+
+        Zurückgegeben wird ein dict mit
+
+            z   — z_m = k_m·a_mem,
+            I1  — ∫ψ_m dA / S_mem,
+            I2  — ∫ψ_m² dA / S_mem,
+
+        beides in GESCHLOSSENER Form. Mit C1(x) = J1(x)Y0(kr_i) −
+        Y1(x)J0(kr_i), C0(z) = 0 und der Wronski-Identität
+        C1(z·ρ) = 2/(π·z·ρ):
+
+            I1 = 2·[C1(z)/z − 2/(π z²)],
+            I2 = C1(z)² − 4/(π² z²).
+
+        Daraus folgen Modenmasse und -nachgiebigkeit exakt:
+
+            M_m = ρ_s·(I2/I1²)/S,   C_m = S·I1²·a²/(T·z²·I2),
+
+        und die Summe Σ C_m trifft die statische Nachgiebigkeit der
+        Ringmembran auf acht Stellen (Gegenprobe 45) — das ist die
+        Verallgemeinerung der Rayleigh-Summe Σ1/z⁴ = 1/32.
+        """
+        cached = getattr(self, "_ring_mode_cache", None)
+        if cached is not None:
+            return cached
+        n = max(self.membrane_modes, len(self._J0_ZEROS))
+        if self.r_post <= 0.0:
+            z = np.array(self._J0_ZEROS[:n], dtype=float)
+            j1z = _j1_mode(z)
+            self._ring_mode_cache = dict(z=z, I1=2.0 * j1z / z, I2=j1z**2)
+        else:
+            self._ring_mode_cache = self._ring_eigen(self.rho_post, n)
+        return self._ring_mode_cache
+
+    @staticmethod
+    def _ring_eigen(rho, n):
+        """Erste ``n`` Ringmoden zu rho = r_i/a: dict(z, I1, I2).
+
+        Herleitung und Bedeutung s. :meth:`_ring_modes`. Als eigene
+        Funktion, damit Gegenprobe 45 die Reihe über HUNDERTE Moden
+        summieren kann, ohne dafür eine Kapsel bauen zu müssen.
+        """
+        f = (lambda x: _besselj(0, x) * _bessely(0, x * rho)
+             - _bessely(0, x) * _besselj(0, x * rho))
+        z, x0 = [], 1e-6
+        step = 0.02 * np.pi / max(1.0 - rho, 1e-3)
+        prev = f(x0)
+        while len(z) < n and x0 < 1.0e5:
+            x1 = x0 + step
+            cur = f(x1)
+            if np.isfinite(prev) and np.isfinite(cur) and prev * cur < 0:
+                lo, hi = x0, x1
+                for _ in range(80):              # Bisektion, robust
+                    mid = 0.5 * (lo + hi)
+                    if f(lo) * f(mid) <= 0.0:
+                        hi = mid
+                    else:
+                        lo = mid
+                z.append(0.5 * (lo + hi))
+            x0, prev = x1, cur
+        if len(z) < n:
+            raise ValueError(
+                "Mittenterminierung: Ring-Eigenwerte nicht gefunden.")
+        z = np.array(z, dtype=float)
+        C1 = (_besselj(1, z) * _bessely(0, z * rho)
+              - _bessely(1, z) * _besselj(0, z * rho))
+        return dict(z=z, I1=2.0 * (C1 / z - 2.0 / (np.pi * z**2)),
+                    I2=C1**2 - 4.0 / (np.pi**2 * z**2))
+
     def _membrane_mode_weight(self, r, mode=1):
-        """Modengewicht J0(z_0m·r/a_mem), außerhalb der Membran 0.
+        """Modengewicht ψ_m(r), außerhalb der Membran 0.
 
         Gewicht der Galerkin-Projektion des Frontdrucks auf die
         (0,m)-Membranmode (s. :meth:`_cap_mode_quad`); für Flächenstücke
-        jenseits des Membranrandes null, weil dort keine Mode sitzt.
-        ``mode`` ist 1-basiert, ``mode=1`` ist die Grundmode.
+        jenseits des Membranrandes — und, bei Mittenterminierung, INNERHALB
+        des Pfostens — null, weil dort keine Mode sitzt. ``mode`` ist
+        1-basiert, ``mode=1`` ist die Grundmode. Die Normierung ist
+        beliebig: überall, wo das Gewicht auftritt, steht es in einem
+        Quotienten mit seiner eigenen Summe.
         """
         r = np.asarray(r, dtype=float)
-        x = self._J0_ZEROS[mode - 1] * np.clip(r / self.a_mem, 0.0, 1.0)
-        return _j0_mode(x)
+        if self.r_post <= 0.0:
+            x = self._J0_ZEROS[mode - 1] * np.clip(r / self.a_mem, 0.0, 1.0)
+            return _j0_mode(x)
+        z = self._ring_modes()["z"][mode - 1]
+        x = z * np.clip(r / self.a_mem, self.rho_post, 1.0)
+        return (_besselj(0, x) * _bessely(0, z * self.rho_post)
+                - _bessely(0, x) * _besselj(0, z * self.rho_post))
 
     def _diffraction_factors(self, omega, theta, mode=1):
         """Druckfaktoren an Membran und Rückeinlässen inkl. Beugung.
@@ -4264,7 +4598,7 @@ class MicrophoneCapsule:
         # hält die lochfreie Platte gegen die geschlossene Form, Gegenprobe
         # 38 die ganze Kette gegen zwei gemessene B&K-Kapseln.
         # a_bp >= a_mem -> f_in = 1, q_by = 0: Bestand.
-        Sphi_tot = max(0.5 * np.pi * self.a_mem**2, Sphi)
+        Sphi_tot = max(self.S_eff_mem, Sphi)
         f_in = Sphi / Sphi_tot
         q_by = 1.0 - f_in                                 # Umgehungsfluss
         S_out = Sphi_tot - Sphi                           # Modengewicht außen
@@ -4292,7 +4626,7 @@ class MicrophoneCapsule:
                 # über den Filmrand entleert -> Eintritt in die äußerste Zelle
                 rhs[N - 1, 0] += q_by
             if ring_open:
-                G_edge = 4.0 * np.pi * N * K_face[f, N]
+                G_edge = self._fld_gedge_geom * K_face[f, N]
                 ab[1, N - 1] += G_edge
                 ab[0, N] = -G_edge                        # Zelle N-1 <-> Rand
                 ab[2, N - 1] = -G_edge
@@ -5150,6 +5484,8 @@ class MicrophoneCapsule:
                  f"{self.S_mem * 1e6:9.2f} mm²"),
             _row(_t("akust. Masse Membran M_A:", "acoust. membrane mass M_A:"),
                  f"{self.M_A_mem:9.2f} kg/m⁴"),
+            _row(_t("Kolbenfaktor <φ²>/<φ>²:", "Piston factor <φ²>/<φ>²:"),
+                 f"{self._piston_factor:9.4f}"),
             _row(_t("akust. Nachgiebigkeit C_A:", "acoust. compliance C_A:"),
                  f"{self.C_A_mem:9.3e} m³/Pa"),
             _row(_t("  dto. effektiv (mit Bias):", "  same, effective (bias):"),
@@ -5161,6 +5497,29 @@ class MicrophoneCapsule:
                  + _t(f"(Restspalt Mitte {self.h_min_static * 1e6:.1f} µm)",
                       f"(residual center gap {self.h_min_static * 1e6:.1f} "
                       "µm)")),
+        ]
+        if self.r_post > 0.0:
+            # Ringmembran: die drei Zahlen, die den Unterschied ausmachen.
+            _md = self._ring_modes()
+            lines += [
+                _row(_t("Mittenterminierung r_i/a:",
+                        "Center termination r_i/a:"),
+                     f"{self.rho_post:9.4f} "
+                     + _t(f"(⌀{2e3 * self.r_post:.2f} mm — Ringmembran)",
+                          f"(⌀{2e3 * self.r_post:.2f} mm — annular)")),
+                _row(_t("  Nachgiebigkeitsfaktor g:",
+                        "  compliance factor g:"),
+                     f"{self._ring_g:9.4f} "
+                     + _t("(1 = Kreismembran)", "(1 = circular)")),
+                _row(_t("  Eigenwert z_1 / Maximum:",
+                        "  eigenvalue z_1 / maximum:"),
+                     f"{float(_md['z'][0]):9.4f}"
+                     + _t(f" (Kreis 2.4048), w_max bei r/a = "
+                          f"{np.sqrt(self._phi_umax):.3f}",
+                          f" (circular 2.4048), w_max at r/a = "
+                          f"{np.sqrt(self._phi_umax):.3f}")),
+            ]
+        lines += [
             _row(_t("wirksamer Frontspalt h_eff:", "effective front gap "
                     "h_eff:"),
                  f"{self.h_gap_front * 1e6:9.2f} µm "
@@ -5195,10 +5554,14 @@ class MicrophoneCapsule:
             _row(_t("Resonanz aus Vorspannung/E:", "Resonance from "
                     "tension/E:"),
                  f"{self.f_res_from_tension:9.1f} Hz"),
-            _t(f"  (exakte J0-Modalfrequenz:   {self.f_res_modal_exact:9.1f} "
-               "Hz — Lumped-Kolbenfaktor 4/3 liegt ~1.9 % darüber)",
-               f"  (exact J0 modal frequency:  {self.f_res_modal_exact:9.1f} "
-               "Hz — lumped piston factor 4/3 is ~1.9 % above)"),
+            _t(f"  (exakte Modalfrequenz:      {self.f_res_modal_exact:9.1f} "
+               f"Hz — Lumped-Kolbenfaktor {self._piston_factor:.4f} liegt "
+               f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.1f} % "
+               "darüber)",
+               f"  (exact modal frequency:     {self.f_res_modal_exact:9.1f} "
+               f"Hz — lumped piston factor {self._piston_factor:.4f} is "
+               f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.1f} % "
+               "above)"),
             _row(_t("Ruhekapazität C0 (je BP):", "Static capacitance C0/BP:"),
                  f"{self.C_elec_0 * 1e12:9.2f} pF"),
             _row(_t("Squeeze-Film-Widerst. R_gap:", "Squeeze-film res. "
@@ -6196,7 +6559,7 @@ if __name__ == "__main__":
     r_modal = sparse.f_res_modal_exact / sparse.f_res_from_tension
     assert 0.975 < r_modal < 0.99, \
         f"exakte J0-Modalfrequenz ~1.8 % unter Lumped erwartet ({r_modal:.4f})"
-    assert "J0-Modalfrequenz" in sparse.summary()
+    assert "exakte Modalfrequenz" in sparse.summary()
     print(f"Fok/Melling: K67 {k67._fok_th:.2f}, einsame Mündung "
           f"{sparse._fok_th:.3f} -> 1; lokales h(r): sag=0 == Bestand, "
           f"Korrektur zur Mittel-Näherung "
@@ -9438,5 +9801,173 @@ if __name__ == "__main__":
               f"{weg44['dual']['bem'] * 1e3:.1f} mm (F/B "
               f"{fb44d['bem'][0]:.1f} statt {fb44d['kugel'][0]:.1f} dB); "
               f"Druckempfänger unverändert  OK")
+
+    # --------- Gegenprobe 45: Mittenterminierung (Ringmembran) ------------
+    # Eine in der Mitte festgelegte Membran — Kontaktstift, Mittenbolzen —
+    # ist im Fachsinn eine RINGMEMBRAN. Das ist kein kleiner Korrekturterm,
+    # sondern eine Änderung der Randwertaufgabe, und der Unterschied ist
+    # LOGARITHMISCH: die statische Lösung von T∇²w = −p mit zwei Rändern
+    # ist w ∝ (a²−r²) + (a²−r_i²)·ln(r/a)/ln(a/r_i), und ein Logarithmus
+    # verschwindet nicht wie r_i². Schon r_i/a = 1 % nimmt 22 % der
+    # Nachgiebigkeit weg. Deshalb ist der Grenzwert ρ → 0 zwar 1, aber
+    # unbrauchbar als Prüfung — jede Verifikation muss BEI ENDLICHEM ρ
+    # stattfinden.
+    #
+    # a) r_i = 0 ist EXAKT der Bestand (die Momente werden dort analytisch
+    #    gesetzt, nicht quadriert).
+    # b) STATISCHE FORM gegen die Differentialgleichung selbst: eine
+    #    unabhängige Finite-Volumen-Lösung von (1/r)(r w')' = −4 mit
+    #    w(r_i) = w(a) = 0 muss das geschlossene Profil treffen, und der
+    #    geschlossene Nachgiebigkeitsfaktor g(ρ) seine Quadratur.
+    # c) MODENINTEGRALE: die geschlossenen Formen für ∫ψ dA und ∫ψ² dA
+    #    (Wronski-Identität) gegen numerische Quadratur der Modenform.
+    # d) RINGVARIANTE DER RAYLEIGH-SUMME: Σ C_m muss die statische
+    #    Nachgiebigkeit der RINGmembran treffen — die Verallgemeinerung
+    #    von Σ1/z⁴ = 1/32 (Gegenprobe 42), und zugleich der Beweis, dass
+    #    Eigenwerte, Modenintegrale und geschlossene Nachgiebigkeit
+    #    zueinander passen.
+    # e) MASSENSUMMENREGEL: Σ 1/M_m = S_Ring/σ — weit oberhalb aller
+    #    Resonanzen bewegt sich die Ringmembran wie ein freier Kolben der
+    #    RINGFLÄCHE.
+    # f) PULL-IN gegen J. E. Warren, JASA 58(3), 733–740 (1975): der
+    #    kritische Antriebsparameter Ā = V²a²ε₀/(2Th³) einer flachen,
+    #    LOCHFREIEN Elektrode ist 0.789 für die Kreis- und 1.548 für die
+    #    Ringmembran mit ρ = 0.1. Unser Ein-Moden-Galerkin liegt
+    #    systematisch darüber — und zwar bei der Ringmembran WENIGER
+    #    (+2.6 %) als beim Vollkreis (+5.0 %), weil das Ringprofil
+    #    formtreuer ist. Beides wird geprüft, samt der Richtung.
+    # g) GATTER: 3D-Löser, zu großer Pfosten, biegesteife Platte.
+    if _HAS_SCIPY:
+        # a) Grenzfall
+        c45o = MicrophoneCapsule()
+        assert c45o._piston_factor == 4.0 / 3.0, "ohne Pfosten exakt 4/3"
+        assert c45o.S_eff_mem == 0.5 * c45o.S_mem, "ohne Pfosten S_eff = S/2"
+        assert _ring_compliance_factor(0.0) == 1.0
+        assert c45o._k_gen == c45o.S_mem**2 / (4.0 * c45o.C_A_mem), \
+            "ohne Pfosten muss k_gen bitgleich S²/(4C_A) sein"
+
+        # b) statische Form gegen die DGL und gegen die Quadratur
+        w45, g45 = 0.0, 0.0
+        for rho45 in (0.02, 0.1, 0.3):
+            ui45 = rho45**2
+            uq45 = np.linspace(ui45, 1.0, 400001)
+            g_num = 2.0 * float(np.trapezoid(
+                _ring_static_shape(uq45, ui45), uq45))
+            g45 = max(g45, abs(g_num / _ring_compliance_factor(rho45) - 1.0))
+            n45 = 4001
+            r45 = np.linspace(rho45, 1.0, n45)
+            dr45 = r45[1] - r45[0]
+            rf45 = 0.5 * (r45[:-1] + r45[1:])
+            ab45 = np.zeros((3, n45))
+            ab45[1, 0] = ab45[1, -1] = 1.0
+            ab45[1, 1:-1] = -(rf45[:-1] + rf45[1:]) / (r45[1:-1] * dr45**2)
+            ab45[0, 2:] = rf45[1:] / (r45[1:-1] * dr45**2)
+            ab45[2, :-2] = rf45[:-1] / (r45[1:-1] * dr45**2)
+            b45 = np.full(n45, -4.0)
+            b45[0] = b45[-1] = 0.0
+            w_num = _solve_banded((1, 1), ab45, b45)
+            w_cf = _ring_static_shape(r45**2, ui45)
+            w45 = max(w45, float(np.max(np.abs(w_num - w_cf))
+                                 / np.max(np.abs(w_cf))))
+        assert g45 < 1e-8, f"g(ρ) muss die Quadratur treffen ({g45:.1e})"
+        assert w45 < 1e-5, \
+            f"die geschlossene Form muss die DGL lösen ({w45:.1e})"
+
+        # c) Modenintegrale geschlossen gegen Quadratur
+        i45 = 0.0
+        for rho45 in (0.05, 0.2):
+            md45 = MicrophoneCapsule._ring_eigen(rho45, 6)
+            rq45 = np.linspace(rho45, 1.0, 400001)
+            for m45 in range(6):
+                z45 = md45["z"][m45]
+                ps45 = (_besselj(0, z45 * rq45) * _bessely(0, z45 * rho45)
+                        - _bessely(0, z45 * rq45) * _besselj(0, z45 * rho45))
+                for got, ref in (
+                        (md45["I1"][m45],
+                         2.0 * np.trapezoid(ps45 * rq45, rq45)),
+                        (md45["I2"][m45],
+                         2.0 * np.trapezoid(ps45**2 * rq45, rq45))):
+                    i45 = max(i45, abs(got / ref - 1.0))
+        assert i45 < 1e-6, \
+            f"Modenintegrale: geschlossen gegen Quadratur ({i45:.1e})"
+
+        # d/e) Ring-Rayleigh-Summe und Massensummenregel
+        s45, p45 = 0.0, 0.0
+        for rho45 in (0.02, 0.1, 0.3):
+            md45 = MicrophoneCapsule._ring_eigen(rho45, 400)
+            Cm45 = md45["I1"]**2 / (md45["z"]**2 * md45["I2"])
+            s45 = max(s45, abs(8.0 * float(np.sum(Cm45))
+                               / _ring_compliance_factor(rho45) - 1.0))
+            # Die Massensummenregel konvergiert nur wie 1/N (die Terme
+            # gehen wie 1/z²), die Nachgiebigkeitssumme wie 1/N³. Deshalb
+            # steht hier eine Teilsummen-Aussage: von UNTEN und auf 5e-3.
+            q45 = (float(np.sum(md45["I1"]**2 / md45["I2"]))
+                   / (1.0 - rho45**2))
+            assert q45 < 1.0, \
+                f"Teilsumme Σ1/M_m muss von unten kommen ({q45:.6f})"
+            p45 = max(p45, abs(q45 - 1.0))
+        assert s45 < 1e-6, \
+            (f"Σ C_m muss die statische Ring-Nachgiebigkeit treffen "
+             f"({s45:.1e}) — Ringvariante von Σ1/z⁴ = 1/32")
+        assert p45 < 5e-3, \
+            f"Σ 1/M_m muss die RINGkolbenmasse treffen ({p45:.1e}, 400 Moden)"
+
+        # f) Pull-in gegen Warren (flache, LOCHFREIE Elektrode über der
+        #    ganzen Membran — genau Warrens Konfiguration)
+        g45w = dict(
+            membrane_resonance_hz=None, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=26e-3, backplate_thickness=4e-3,
+            bias_voltage=1.0, architecture="single", n_through_holes=0,
+            n_blind_holes=0, rear_network_enabled=False,
+            squeeze_model="1d", include_diffraction=False)
+        warren45 = {0.0: 0.789, 0.1: 1.548}          # Warren 1975
+        ab45w = {}
+        for rho45, ref45 in warren45.items():
+            cw45 = MicrophoneCapsule(
+                **dict(g45w, center_post_diameter=2.0 * rho45 * 13e-3))
+            A45 = (cw45.U_pullin**2 * cw45.a_mem**2 * EPS0
+                   / (2.0 * cw45.tension * cw45.h_gap**3))
+            ab45w[rho45] = (A45, A45 / ref45 - 1.0)
+        assert abs(ab45w[0.0][1] - 0.050) < 0.01, \
+            (f"Vollkreis: Ein-Moden-Galerkin liegt bekannt +5 % über "
+             f"Warrens 0.789 ({ab45w[0.0][0]:.4f})")
+        assert abs(ab45w[0.1][1] - 0.026) < 0.01, \
+            (f"Ringmembran ρ = 0.1: erwartet +2.6 % über Warrens 1.548 "
+             f"({ab45w[0.1][0]:.4f})")
+        assert 0.0 < ab45w[0.1][1] < ab45w[0.0][1], \
+            ("die Galerkin-Abweichung MUSS beim Ring kleiner sein als beim "
+             "Vollkreis — das Ringprofil ist formtreuer")
+        # und die Wirkung selbst: ρ = 0.1 hebt Ā um Faktor ~1.96
+        assert 1.9 < ab45w[0.1][0] / ab45w[0.0][0] < 2.0, \
+            (f"Ringmembran muss fast doppelt so stabil sein "
+             f"({ab45w[0.1][0] / ab45w[0.0][0]:.3f})")
+
+        # g) Gatter
+        for kw45, was45 in (
+                (dict(center_post_diameter=1e-3, squeeze_model="3d"),
+                 "Mittenterminierung im 3D-Löser"),
+                (dict(center_post_diameter=0.7 * 22e-3),
+                 "Pfosten über 0.6·a"),
+                (dict(center_post_diameter=1e-3, membrane_thickness=200e-6,
+                      membrane_resonance_hz=None),
+                 "biegesteife Platte mit Ringfaktor"),
+                (dict(center_post_diameter=1e-3, backplate_diameter=0.5e-3),
+                 "Pfosten deckt die Backplate ab")):
+            try:
+                MicrophoneCapsule(**kw45)
+                raise AssertionError(f"{was45} muss scheitern")
+            except ValueError:
+                pass
+        print(f"Mittenterminierung (Ringmembran): r_i = 0 bitgleich; "
+              f"geschlossene Form löst die DGL ({w45:.0e}) und trifft ihre "
+              f"Quadratur ({g45:.0e}); Modenintegrale {i45:.0e}; Ring-"
+              f"Rayleigh-Summe Σ C_m = C_A ({s45:.0e}) und Σ1/M_m = "
+              f"S_Ring/σ ({p45:.0e}); Pull-in gegen Warren 1975: "
+              f"{ab45w[0.0][0]:.3f} gegen 0.789 ({100 * ab45w[0.0][1]:+.1f} %) "
+              f"und {ab45w[0.1][0]:.3f} gegen 1.548 "
+              f"({100 * ab45w[0.1][1]:+.1f} %), Ring also fast doppelt so "
+              f"stabil ({ab45w[0.1][0] / ab45w[0.0][0]:.2f}×); Gatter "
+              f"greifen  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
