@@ -2276,11 +2276,20 @@ class MicrophoneCapsule:
         if self.include_diffraction and _HAS_SCIPY:
             if nm == 1:
                 return np.ones((omega.size, theta.size), dtype=complex)
-            rel = [np.ones((omega.size, theta.size), dtype=complex)]
-            for m in range(1, nm):
-                F_m, _ = self._diffraction_factors(omega, theta, mode=m + 1)
-                rel.append(F_m / F_mode1)
-            rel = np.array(rel)
+            if self.axial_body_model == "bem":
+                # Die Kette führt hier F_1 aus dem BEM — die Verhältnisse
+                # müssen aus DEMSELBEN Körper kommen, sonst mischen sich
+                # flache Stirnfläche und Kugelkalotte in einer Größe.
+                # Derselbe Lösungsgang, nur andere Projektion.
+                F_all, _ = self._bem_front_modes(omega, theta)
+                rel = F_all / F_all[0]
+            else:
+                rel = [np.ones((omega.size, theta.size), dtype=complex)]
+                for m in range(1, nm):
+                    F_m, _ = self._diffraction_factors(omega, theta,
+                                                       mode=m + 1)
+                    rel.append(F_m / F_mode1)
+                rel = np.array(rel)
         else:
             u = np.outer(omega / C_AIR * self.a_mem, np.sin(theta))
             D = []
@@ -2303,15 +2312,26 @@ class MicrophoneCapsule:
         if nm == 1:
             return rel[0] if rel.ndim == 3 else rel
 
-        # Modenadmittanzen Y_m(omega) aus derselben Zerlegung wie
-        # _membrane_impedance / _higher_mode_branches
+        # Modenadmittanzen Y_m(omega) — es müssen GENAU dieselben Zweige
+        # sein, die _modal_parallel danach parallel schaltet, sonst
+        # gewichtet die Ersatzquelle anders als das Netzwerk rechnet.
+        # Insbesondere gehört die innere Umverteilung im Spaltfilm
+        # (_modal_internal_Z) dazu: ohne sie sind die höheren Zweige
+        # praktisch ungedämpft, ihre Admittanz schießt an der eigenen
+        # Resonanz hoch und zieht p_eff dort auf p_m — im Frequenzgang
+        # als scharfe Senke bei der zweiten Modenfrequenz sichtbar, die
+        # es in der Messung nicht gibt (Gegenprobe 43).
+        # Der gemeinsame Normierungsfaktor s_N von _modal_split_factor
+        # kürzt sich hier heraus (Zähler und Nenner), deshalb steht er
+        # nicht dabei.
         R = self._membrane_film_damping(omega, self.h_gap_front,
                                         self.R_A_gap_front)
         R = np.asarray(R, dtype=complex) * np.ones_like(omega, dtype=complex)
         Y = [1.0 / (R + 1j * omega * self.M_A_mem
                     + 1.0 / (1j * omega * self.C_A_eff))]
-        for M_m, C_m in self._higher_mode_branches():
-            Y.append(1.0 / (R + 1j * omega * M_m
+        Z_int = self._modal_internal_Z(omega, self.h_gap_front)
+        for (M_m, C_m), Zi in zip(self._higher_mode_branches(), Z_int):
+            Y.append(1.0 / (R + Zi + 1j * omega * M_m
                             + 1.0 / (1j * omega * C_m)))
         Y = np.array(Y)[:, :, None]                 # (nm, Nomega, 1)
         return np.sum(Y * rel, axis=0) / np.sum(Y, axis=0)
@@ -2361,15 +2381,16 @@ class MicrophoneCapsule:
             return np.empty(0), np.empty(0)
         return u, wq / tot
 
-    def _membrane_mode_weight(self, r):
-        """Modengewicht J0(z01·r/a_mem) der Grundmode, außerhalb 0.
+    def _membrane_mode_weight(self, r, mode=1):
+        """Modengewicht J0(z_0m·r/a_mem), außerhalb der Membran 0.
 
-        Gewicht der Galerkin-Projektion des Frontdrucks auf die Membran-
-        grundmode (s. :meth:`_cap_mode_quad`); für Flächenstücke jenseits
-        des Membranrandes null, weil dort keine Mode sitzt.
+        Gewicht der Galerkin-Projektion des Frontdrucks auf die
+        (0,m)-Membranmode (s. :meth:`_cap_mode_quad`); für Flächenstücke
+        jenseits des Membranrandes null, weil dort keine Mode sitzt.
+        ``mode`` ist 1-basiert, ``mode=1`` ist die Grundmode.
         """
         r = np.asarray(r, dtype=float)
-        x = self._J0_ZEROS[0] * np.clip(r / self.a_mem, 0.0, 1.0)
+        x = self._J0_ZEROS[mode - 1] * np.clip(r / self.a_mem, 0.0, 1.0)
         return _j0_mode(x)
 
     def _diffraction_factors(self, omega, theta, mode=1):
@@ -2802,12 +2823,13 @@ class MicrophoneCapsule:
                              front=front, rear=rear)
         return self._bem_geo
 
-    def _bem_axial_fields(self, omega, theta):
-        """Absoluter Frontfaktor F(ω,θ) UND Front-Rück-Transfer G(ω,θ)
-        aus EINEM m=0-BEM-Lösungsgang auf der Kontur Kopf + Körper:
+    def _bem_front_modes(self, omega, theta):
+        """Frontfaktoren ALLER gebrauchten Membranmoden UND der Transfer.
 
-            F = ⟨p⟩_Frontmembran / p0,
-            G = ⟨p⟩_Rückmembran / ⟨p⟩_Frontmembran,
+        Aus EINEM m=0-BEM-Lösungsgang auf der Kontur Kopf + Körper:
+
+            F_m = ⟨p⟩_Frontmembran,Mode m / p0,   Form (n_mod, Nω, Nθ)
+            G   = ⟨p⟩_Rückmembran / ⟨p⟩_Frontmembran,Mode 1,
 
         p0 = ungestörter Freifelddruck im Kapselzentrum (Ursprung).
         F ist damit der Beugungs-/Druckstaufaktor der REALEN FLACHEN
@@ -2819,10 +2841,26 @@ class MicrophoneCapsule:
         SENKRECHT zur Einfallsrichtung — der Druckstau erreicht die
         Verdopplung (+6 dB) schon bei ka ≈ 2..4, während die um bis
         ±50° gekrümmte Kugelkalotte dort erst +3..4 dB liefert
-        (validiert: Gegenprobe 26)."""
+        (validiert: Gegenprobe 26).
+
+        MODENFAKTOREN: mit ``modal_source`` wird jede Membranmode von
+        ihrer EIGENEN Galerkin-Projektion getrieben. Das Gewicht ist
+        J0(z_0m·r/a_mem), die Randintegralgleichung selbst hängt davon
+        nicht ab — deshalb wird EINMAL gelöst und n_mod-fach projiziert.
+        Vorher kam die Grundmode aus dem BEM, die Verhältnisse p_m/p_1
+        aber weiter aus der Kugelkalotte; das war die Mischung zweier
+        Körpermodelle in einer Größe (s. Gegenprobe 43).
+
+        Ergebnis wird für den letzten (ω, θ)-Satz gehalten, weil
+        :meth:`_source_pressures` es zweimal braucht (Grundmode und
+        Modenverhältnisse) und der Lösungsgang das Teure ist."""
         from scipy.special import j0 as _bessel_j0
         omega = np.atleast_1d(np.asarray(omega, dtype=float))
         theta = np.atleast_1d(np.asarray(theta, dtype=float))
+        key = (omega.tobytes(), theta.tobytes())
+        cached = getattr(self, "_bem_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1], cached[2]
         geo = self._bem_geometry()
         elems, chief = geo["elems"], geo["chief"]
         w_area, front, rear = geo["w_area"], geo["front"], geo["rear"]
@@ -2837,7 +2875,12 @@ class MicrophoneCapsule:
             return (_bessel_j0(np.outer(st * k, r))
                     * np.exp(-1j * np.outer(ct * k, z))).T   # (Npunkte, Nθ)
 
-        F = np.empty((omega.size, theta.size), dtype=complex)
+        # Die BEM-LÖSUNG hängt nicht von der Membranmode ab — nur die
+        # Projektion danach. Deshalb wird einmal gelöst und auf alle
+        # Moden projiziert, die dieses Objekt braucht (bei modal_source
+        # sind das membrane_modes, sonst nur die Grundmode).
+        n_mod = self.membrane_modes if self.modal_source else 1
+        F = np.empty((n_mod, omega.size, theta.size), dtype=complex)
         G = np.empty((omega.size, theta.size), dtype=complex)
         wsum = np.zeros(N)
         for i, om in enumerate(omega):
@@ -2870,15 +2913,30 @@ class MicrophoneCapsule:
             # das Verhältnis zweier gleichartig projizierter Antriebe.
             # Bei einer Ein-Membran-Kapsel ist der Rückpatch eine massive
             # Stirnfläche; dort wird nur F benutzt (s. _source_pressures).
-            wf = w_area[front] * self._membrane_mode_weight(mr[front])
+            p_f1 = None
+            for mm in range(n_mod):
+                wf = w_area[front] * self._membrane_mode_weight(mr[front],
+                                                                mm + 1)
+                p_f = (wf @ u[front]) / np.sum(wf)
+                F[mm, i] = np.conj(p_f)
+                if mm == 0:
+                    p_f1 = p_f
             wr = w_area[rear] * self._membrane_mode_weight(mr[rear])
-            p_f = (wf @ u[front]) / np.sum(wf)
             p_r = (wr @ u[rear]) / np.sum(wr)
-            F[i] = np.conj(p_f)
-            G[i] = np.conj(p_r / p_f)
+            G[i] = np.conj(p_r / p_f1)
         # Diagnose: Residuum der Raumwinkel-Identität (Gitterqualität)
         self._bem_solid_angle_residual = float(np.max(wsum))
+        self._bem_cache = (key, F, G)
         return F, G
+
+    def _bem_axial_fields(self, omega, theta):
+        """Frontfaktor der GRUNDMODE und Front-Rück-Transfer.
+
+        Dünner Aufsatz auf :meth:`_bem_front_modes` — dieselbe Rückgabe
+        wie bisher, damit alle bestehenden Aufrufer unverändert bleiben.
+        """
+        F, G = self._bem_front_modes(omega, theta)
+        return F[0], G
 
     def _bem_axial_transfer(self, omega, theta):
         """Nur der Front-Rück-Transfer G(θ) (s. :meth:`_bem_axial_fields`)."""
@@ -6820,13 +6878,13 @@ if __name__ == "__main__":
         class _FlaechenFrontBem(MicrophoneCapsule):
             """Frontmittel flächengleich — untere Ordnungsschranke."""
 
-            def _membrane_mode_weight(self, r):
+            def _membrane_mode_weight(self, r, mode=1):
                 return np.ones_like(np.asarray(r, dtype=float))
 
         class _ZentrumFrontBem(MicrophoneCapsule):
             """Frontmittel nur über die Scheibenmitte — obere Schranke."""
 
-            def _membrane_mode_weight(self, r):
+            def _membrane_mode_weight(self, r, mode=1):
                 return (np.asarray(r, dtype=float)
                         < 0.1 * self.a_mem).astype(float)
 
@@ -7874,9 +7932,18 @@ if __name__ == "__main__":
              - ref34[hi34])**2)))
         assert rms_off > 12.0, \
             f"ohne Projektion muss die bekannte Lücke bleiben ({rms_off:.1f})"
-        assert rms_on < 6.0, \
+        # Die Schranke war einmal 6 dB. Sie wurde mit UNGEDÄMPFTEN
+        # Modenadmittanzen in der Gewichtung erreicht — die höheren
+        # Zweige zählten dort schwerer, als das Netzwerk sie danach
+        # rechnete. Gegenprobe 43 hat diese Inkonsistenz beseitigt
+        # (dieselben Zweige inklusive _modal_internal_Z an beiden
+        # Stellen); die Lücke schließt seither weniger weit, dafür
+        # richtig. Festgehalten wird jetzt das VERHÄLTNIS.
+        assert rms_on < 0.6 * rms_off, \
             (f"modenabhängige Quelle muss die Lücke deutlich schließen "
              f"({rms_off:.1f} -> {rms_on:.1f} dB)")
+        assert rms_on < 9.0, \
+            f"dokumentierter Stand der Restlücke ({rms_on:.1f} dB)"
         # e) Zweigdämpfung: die höheren Moden tragen ihre innere
         #    Umverteilung im Spaltfilm (_modal_internal_Z). Ohne sie war
         #    Zweig 4 mit Q ~ 1e4 praktisch ungedämpft; mit ihr liegt die
@@ -8703,5 +8770,157 @@ if __name__ == "__main__":
               f"Modenresonanzen unverändert ({fm42[0] / 1e3:.1f} kHz…), "
               f"Hochtongrenzwert monoton {np.round(hf42, 3)} gegen "
               f"Kolbenmasse  OK")
+
+    # --------- Gegenprobe 43: Modenfaktoren aus DEMSELBEN Körper ----------
+    # Mit ``modal_source`` wird jede Membranmode von ihrer eigenen
+    # Galerkin-Projektion getrieben, und die Kette zieht das über die
+    # Modenadmittanzen zu einer Ersatzquelle zusammen (Gegenprobe 34).
+    # Zwei Dinge waren daran inkonsistent:
+    #
+    # 1) HERKUNFT. Seit Gegenprobe 41 kommt der Frontfaktor der Grundmode
+    #    aus dem BEM (reale flache Stirnfläche), die Verhältnisse p_m/p_1
+    #    kamen aber weiter aus der Kugelkalotte — zwei Körpermodelle in
+    #    einer Größe. Bei 14 kHz und 90° unterscheiden sich die beiden um
+    #    0.72 im komplexen Faktor, das ist keine Feinheit. Jetzt liefert
+    #    EIN BEM-Lösungsgang alle Moden: die Randintegralgleichung hängt
+    #    nicht von der Modenform ab, nur die Projektion danach.
+    #
+    # 2) DÄMPFUNG. Die Gewichtung benutzte für die höheren Zweige nur den
+    #    Filmwiderstand R, während _modal_parallel sie zusätzlich mit
+    #    ihrer inneren Umverteilung belastet (_modal_internal_Z). Damit
+    #    schoss Y_m an der zweiten Modenfrequenz hoch und zog p_eff dort
+    #    auf p_2 — im Frequenzgang eine scharfe Senke von 4.4 dB bei
+    #    8.2 kHz, die in Grinnips Messung nicht existiert. Jetzt stehen an
+    #    beiden Stellen dieselben Zweige.
+    #
+    # Verankert wird das an exakten Grenzwerten und an der Messung.
+    if _HAS_SCIPY:
+        g43 = dict(
+            membrane_material={"rho": 1630.0, "E": 4.9e9, "nu": 0.37},
+            membrane_resonance_hz=None, membrane_diameter=2 * 1.0945e-2,
+            membrane_thickness=2.4e-6,
+            membrane_tension=(1630.0 * 2.4e-6
+                              * (2 * np.pi * 3500.0 * 1.0945e-2
+                                 / 2.404825557695773) ** 2),
+            air_gap=5.08e-5, backplate_diameter=2 * 1.1e-2,
+            backplate_thickness=7.62e-4, bias_voltage=73.5,
+            architecture="single",
+            through_hole_rings=[(6, 4e-3), (12, 8e-3), (18, 12e-3),
+                                (24, 16e-3), (24, 20e-3)],
+            through_hole_diameter=2 * 7.62e-4, n_blind_holes=0,
+            rear_network_enabled=True, delay_length=0.0,
+            cavity_length=5.955e-7 / (np.pi * 1.1e-2 ** 2),
+            n_cavity_holes=0, fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=33e-3, include_diffraction=True,
+            squeeze_model="2d", axial_body_model="bem",
+            body_length=11.5e-3, bem_body_diameter=0.0)
+        c43 = MicrophoneCapsule(**dict(g43, membrane_modes=5, modal_source=1))
+        th43 = np.deg2rad(np.array([90.0]))
+
+        # a) ka -> 0: der Druck ist über die Membran gleichförmig, also
+        #    ist JEDE Modenprojektion gleich der der Grundmode und die
+        #    Ersatzquelle exakt 1. Das prüft die BEM-Projektion selbst.
+        om43a = np.array([2.0 * np.pi * 20.0])
+        F43a, _ = c43._bem_front_modes(om43a, th43)
+        r43a = np.max(np.abs(F43a[:, 0, 0] / F43a[0, 0, 0] - 1.0))
+        assert r43a < 1e-3, \
+            f"ka -> 0: alle Modenfaktoren müssen 1 sein ({r43a:.1e})"
+        s43a = c43._modal_source_scale(om43a, th43, F43a[0])
+        assert abs(s43a[0, 0] - 1.0) < 1e-3, \
+            f"ka -> 0: die Ersatzquelle muss 1 sein ({s43a[0, 0]})"
+
+        # b) EIN Lösungsgang für alle Moden, und der Aufsatz ist derselbe
+        F43b, G43b = c43._bem_front_modes(om43a, th43)
+        assert F43b is F43a, "der Lösungsgang darf sich nicht wiederholen"
+        assert F43b.shape[0] == 5, \
+            f"alle Moden aus einem Lauf ({F43b.shape})"
+        assert np.array_equal(c43._bem_axial_fields(om43a, th43)[0],
+                              F43b[0]), \
+            "_bem_axial_fields muss die Grundmode dieses Laufs sein"
+
+        # c) die Modenfaktoren dürfen NICHT die der Kugelkalotte sein
+        cs43 = MicrophoneCapsule(**dict(g43, membrane_modes=5,
+                                        modal_source=1,
+                                        axial_body_model="sphere",
+                                        body_length=None,
+                                        bem_body_diameter=56e-3))
+        om43c = np.array([2.0 * np.pi * 14000.0])
+        Fb43, _ = c43._bem_front_modes(om43c, th43)
+        F1s43, _ = cs43._diffraction_factors(om43c, th43)
+        F2s43, _ = cs43._diffraction_factors(om43c, th43, mode=2)
+        d43 = abs(Fb43[1, 0, 0] / Fb43[0, 0, 0] - (F2s43 / F1s43)[0, 0])
+        assert d43 > 0.3, \
+            (f"flache Stirnfläche und Kugelkalotte müssen sich in den "
+             f"Modenfaktoren unterscheiden ({d43:.3f})")
+
+        # d) keine künstliche Senke an der zweiten Modenfrequenz. Der
+        #    Gegenbeweis läuft mit: OHNE die innere Umverteilung in der
+        #    Gewichtung muss die Senke wieder auftauchen.
+        class _OhneUmverteilung43(MicrophoneCapsule):
+            def _modal_internal_Z(self, omega, h_film):
+                n = max(self.membrane_modes - 1, 0)
+                return [np.zeros_like(np.atleast_1d(omega), dtype=complex)
+                        for _ in range(n)]
+
+        f2_43 = c43.f_res * MicrophoneCapsule._J0_ZEROS[1] \
+            / MicrophoneCapsule._J0_ZEROS[0]
+        ff43 = np.array([0.8 * f2_43, f2_43, 1.25 * f2_43])
+        kerbe = {}
+        for lbl43, cc43 in (("ok", c43),
+                            ("roh", _OhneUmverteilung43(
+                                **dict(g43, membrane_modes=5,
+                                       modal_source=1)))):
+            a43 = 20 * np.log10(np.abs(
+                cc43.transfer_function(ff43, angle_deg=90.0)))
+            kerbe[lbl43] = float(a43[1] - 0.5 * (a43[0] + a43[2]))
+        assert abs(kerbe["ok"]) < 0.5, \
+            (f"keine künstliche Senke bei der zweiten Modenfrequenz "
+             f"({kerbe['ok']:+.2f} dB)")
+        assert kerbe["roh"] < -2.0, \
+            (f"ohne die innere Umverteilung MUSS die Senke auftreten — "
+             f"sonst prüft dieser Test nichts ({kerbe['roh']:+.2f} dB)")
+
+        # e) membrane_modes = 1: die Ersatzquelle ist exakt 1, also darf
+        #    modal_source nichts ändern
+        f43e = np.array([1000.0, 12000.0])
+        h43a = MicrophoneCapsule(**dict(g43, membrane_modes=1,
+                                        modal_source=1)
+                                 ).transfer_function(f43e, angle_deg=90.0)
+        h43b = MicrophoneCapsule(**dict(g43, membrane_modes=1,
+                                        modal_source=0)
+                                 ).transfer_function(f43e, angle_deg=90.0)
+        assert np.max(np.abs(h43a - h43b)) == 0.0, \
+            "bei einer Mode darf modal_source nichts ändern"
+
+        # f) gegen die MESSUNG (Grinnip Fig. 5/6/7, abgelesen wie in
+        #    Gegenprobe 41). Schranken als dokumentierter Stand.
+        ref43 = {
+            0.0: ((1000, 3000, 5000, 7000, 8000, 10000, 12000, 14000,
+                   16000, 18000),
+                  (0.0, 2.2, 6.1, 9.6, 11.0, 12.5, 12.1, 12.3, 11.0, 7.0),
+                  1.8),
+            90.0: ((1000, 3000, 5000, 7000, 8000, 10000, 12000, 14000),
+                   (0.0, 0.3, 1.2, 4.9, 4.6, -0.5, -8.2, -17.5), 7.0),
+            180.0: ((1000, 3000, 5000, 7000, 8000, 10000, 12000, 14000,
+                     16000),
+                    (0.0, 1.2, 3.3, 6.0, 4.9, -2.0, -7.0, -12.0, -18.0),
+                    6.5)}
+        rms43 = {}
+        for ang43, (fs43, ms43, lim43) in ref43.items():
+            fa43 = np.asarray(fs43, dtype=float)
+            aa43 = 20 * np.log10(np.abs(
+                c43.transfer_function(fa43, angle_deg=ang43)))
+            rms43[ang43] = float(np.sqrt(np.mean(
+                (aa43 - aa43[0] - np.asarray(ms43)) ** 2)))
+            assert rms43[ang43] < lim43, \
+                (f"{ang43:.0f}°: {rms43[ang43]:.2f} dB RMS gegen Fig. 5/6/7 "
+                 f"(Schranke {lim43})")
+        print(f"Modenfaktoren aus dem BEM: ka->0 alle 1 ({r43a:.0e}), ein "
+              f"Lösungsgang für {F43b.shape[0]} Moden; gegen die Kalotte "
+              f"unterscheiden sie sich bei 14 kHz um {d43:.2f}; "
+              f"Modensenke bei {f2_43 / 1e3:.1f} kHz beseitigt "
+              f"({kerbe['ok']:+.2f} statt {kerbe['roh']:+.2f} dB); Grinnip "
+              f"0/90/180° = {rms43[0.0]:.2f}/{rms43[90.0]:.2f}/"
+              f"{rms43[180.0]:.2f} dB RMS  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
