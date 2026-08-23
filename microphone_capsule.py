@@ -1385,8 +1385,17 @@ class MicrophoneCapsule:
         # cos des Ring-Polarwinkels der rückwärtigen Einlässe; liegt die
         # Einbautiefe hinter dem Kugeläquivalent, wird auf den hinteren
         # Pol geklammert.
+        #
+        # GEMESSEN AB DEM VORDEREN EINLASS, also ab der Kalotte am
+        # vorderen Pol — und das ist d_ext, nicht d_rear_ax. Bei EINER
+        # Backplate sind beide gleich (die Membran IST der vordere
+        # Einlass); bei ZWEI symmetrischen Backplates liegt der vordere
+        # Einlass um Spalt + Plattendicke weiter vorn, und genau darum
+        # ist d_ext um diesen Betrag größer. Mit d_ext ist der Ring auch
+        # mit der beugungsfreien Rechnung konsistent, die den Rückdruck
+        # als exp(-j·k·d_ext·cosθ) ansetzt (Gegenprobe 44 g).
         self._ring_cos = float(np.clip(
-            (self.R_body - self.d_rear_ax) / self.R_body, -1.0, 1.0))
+            (self.R_body - self.d_ext) / self.R_body, -1.0, 1.0))
 
         # ------------------------------------------------------------------
         # KÖRPERMODELL FÜR DIE BEUGUNG
@@ -1430,28 +1439,30 @@ class MicrophoneCapsule:
                     )
                 self._bem_head_len = self.body_length
                 if self.rear_open:
+                    # Tiefe ab der Stirnfläche = vorderer Einlass, also
+                    # d_ext (s. _bem_rear_inlet_weights).
                     if self.cavity_hole_position == "end":
                         wo = "in die hintere Stirnfläche"
-                        stimmig = (abs(self.d_rear_ax - self.body_length)
-                                   <= 0.25 * self.d_rear_ax)
+                        stimmig = (abs(self.d_ext - self.body_length)
+                                   <= 0.25 * self.d_ext)
                         warum = ("bei 'end' münden die Löcher am "
                                  "Hohlraumende, also MUSS body_length "
-                                 "ungefähr d_rear_ax sein")
+                                 "ungefähr d_ext sein")
                     else:
                         wo = "als Bohrungskranz in den Mantel"
-                        stimmig = self.body_length > self.d_rear_ax
+                        stimmig = self.body_length > self.d_ext
                         warum = ("bei 'circumference' münden die Löcher "
                                  "radial, also MUSS body_length größer "
-                                 "als d_rear_ax sein; sonst wird der Ring "
+                                 "als d_ext sein; sonst wird der Ring "
                                  "auf die hintere Stirnfläche geklemmt")
                     hinweis = (
                         f"axial_body_model='bem' mit offener Rückseite: der "
-                        f"rückwärtige Einlass wird {wo} gelegt, bei seiner "
-                        f"axialen Einbautiefe d_rear_ax = "
-                        f"{self.d_rear_ax * 1e3:.1f} mm (Gegenprobe 44). "
-                        f"Die Kontur ist ein glatter Zylinder — Korb, "
-                        f"Kapselgitter und die endliche Lochteilung sind "
-                        f"darin nicht enthalten."
+                        f"rückwärtige Einlass wird {wo} gelegt, "
+                        f"d_ext = {self.d_ext * 1e3:.1f} mm hinter dem "
+                        f"vorderen Einlass (Gegenprobe 44). Die Kontur ist "
+                        f"ein glatter Zylinder — Korb, Kapselgitter und "
+                        f"die endliche Lochteilung sind darin nicht "
+                        f"enthalten."
                     )
                     if not stimmig:
                         hinweis += (
@@ -2863,10 +2874,18 @@ class MicrophoneCapsule:
         """Gewichte des RÜCKWÄRTIGEN EINLASSES auf der Kapselkontur.
 
         Gegenstück zum Ring der Kugelrechnung (_diffraction_factors,
-        ``_ring_cos``), aber auf der realen Kontur: der Einlass sitzt
-        ``d_rear_ax`` hinter der Membranebene, bei
+        ``_ring_cos``), aber auf der realen Kontur: bei
         ``cavity_hole_position='end'`` in der hinteren Stirnfläche, sonst
         als Bohrungskranz radial im Mantel.
+
+        TIEFE: gemessen wird ab der STIRNFLÄCHE der Kontur, und die ist
+        der vordere Schalleinlass — bei ``architecture='dual'`` also die
+        Außenseite der VORDEREN Backplate, nicht die Membranebene. Der
+        Abstand dorthin ist genau ``d_ext``, die äußere Wegdifferenz, mit
+        der das Modell ohnehin rechnet (bei einer Backplate ist sie
+        gleich ``d_rear_ax``, bei zweien um Spalt + Plattendicke größer).
+        Mit ``d_rear_ax`` gerechnet läge der Ring bei der symmetrischen
+        Bauform um genau diesen Betrag zu weit vorn.
 
         Warum ein Ring und kein Flächenmittel: die m=0-Formulierung löst
         bereits den azimutal gemittelten Oberflächendruck — genau das,
@@ -2882,7 +2901,7 @@ class MicrophoneCapsule:
         N = mr.size
         kopf = np.arange(N) < n_head
         w = np.zeros(N)
-        z_in = zf - self.d_rear_ax
+        z_in = zf - self.d_ext
         if self.cavity_hole_position == "end" or z_in <= zr + rf:
             # Hintere Stirnfläche: Flächenmittel über die Lochfläche.
             stirn = kopf & (np.abs(mz - zr) < 1e-6)
@@ -5211,13 +5230,12 @@ class MicrophoneCapsule:
                   else _t("Bohrungskranz im Mantel",
                           "ring of holes in side wall"))
             eng = self.body_length is not None and (
-                abs(self.d_rear_ax - self.body_length)
-                > 0.25 * self.d_rear_ax
+                abs(self.d_ext - self.body_length) > 0.25 * self.d_ext
                 if self.cavity_hole_position == "end"
-                else self.body_length <= self.d_rear_ax)
+                else self.body_length <= self.d_ext)
             lines.append(_row(
                 _t("BEM-Rückeinlass:", "BEM rear inlet:"),
-                f"{wo}, {self.d_rear_ax * 1e3:.2f} mm"
+                f"{wo}, {self.d_ext * 1e3:.2f} mm"
                 + (_t("  ← passt nicht zu body_length",
                       "  <- inconsistent with body_length") if eng else "")))
         if (self.architecture != "dual_diaphragm"
@@ -9153,6 +9171,17 @@ if __name__ == "__main__":
     #    Kugel, weil die externe Laufzeit länger ist.
     # f) DRUCKEMPFÄNGER UNVERÄNDERT: bei dichter Rückseite bleibt
     #    p_rear == p_front, der Rückpatch darf dort nichts tun.
+    # g) ZWEI SYMMETRISCHE BACKPLATES. Dort ist der vordere Einlass die
+    #    Außenseite der VORDEREN Backplate, nicht die Membran — der
+    #    Abstand zum Rückeinlass ist d_ext, nicht d_rear_ax. Geprüft wird
+    #    das für alle drei Wege gleichzeitig: ohne Beugung MUSS der Weg
+    #    exakt d_ext sein, der BEM-Ring sitzt d_ext hinter der
+    #    Stirnfläche, und der Kugelring misst dieselbe Tiefe ab der
+    #    Kalotte. Der letzte Punkt war eine echte Inkonsistenz:
+    #    ``_ring_cos`` rechnete mit d_rear_ax und legte den Ring bei zwei
+    #    Backplates um Spalt + Plattendicke zu weit vorn. Bei EINER
+    #    Backplate sind beide Größen identisch — dort ändert sich nichts,
+    #    und auch das wird geprüft.
     if _HAS_SCIPY:
         # a) Kugelkontur: Ringdruck absolut gegen die Morse-Reihe
         def _morse_ring44(cap, R, psi, om, th):
@@ -9317,15 +9346,97 @@ if __name__ == "__main__":
         pf44, pr44 = c44d._source_pressures(om44b, th44)
         assert np.array_equal(pf44, pr44), \
             "bei dichter Rückseite darf der Rückpatch nichts ändern"
+
+        # g) ZWEI SYMMETRISCHE BACKPLATES. Dort liegt der vordere
+        #    Schalleinlass nicht auf der Membran, sondern auf der
+        #    Außenseite der VORDEREN Backplate — die Kette führt sie als
+        #    eigenes Zweitor vor der Membran (_assemble_parts). Der
+        #    Abstand zum Rückeinlass ist damit d_ext und nicht d_rear_ax,
+        #    und zwar in JEDEM Körpermodell: die beugungsfreie Rechnung
+        #    setzt exp(-j·k·d_ext·cosθ) an, der BEM-Ring sitzt d_ext
+        #    hinter der Stirnfläche, und die Kugel misst ihren
+        #    Ringpolarwinkel ab der Kalotte am vorderen Pol. Genau das
+        #    war inkonsistent: _ring_cos rechnete mit d_rear_ax, also bei
+        #    zwei Backplates um Spalt + Plattendicke zu weit vorn. Bei
+        #    EINER Backplate sind beide Größen identisch, dort ändert
+        #    sich dadurch nichts.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            d44 = {a44: (
+                MicrophoneCapsule(**dict(g44, architecture=a44,
+                                         cavity_hole_position="circumference",
+                                         **dict(b44, body_length=24e-3))),
+                MicrophoneCapsule(**dict(g44, architecture=a44)),
+                MicrophoneCapsule(**dict(g44, architecture=a44,
+                                         include_diffraction=False)))
+                for a44 in ("single", "dual")}
+        s44, du44 = d44["single"][0], d44["dual"][0]
+        assert s44.d_ext == s44.d_rear_ax, \
+            ("bei EINER Backplate ist die Membran der vordere Einlass — "
+             "d_ext und d_rear_ax müssen gleich bleiben")
+        assert abs((du44.d_ext - du44.d_rear_ax)
+                   - (du44.h_gap + du44.t_bp)) < 1e-12, \
+            (f"bei ZWEI Backplates muss d_ext um Spalt + Plattendicke "
+             f"größer sein ({(du44.d_ext - du44.d_rear_ax) * 1e3:.3f} statt "
+             f"{(du44.h_gap + du44.t_bp) * 1e3:.3f} mm)")
+        weg44 = {}
+        for a44, (cb44, ck44, cn44) in d44.items():
+            # der Rückpatch des BEM sitzt bei d_ext
+            gb44 = cb44._bem_geometry()
+            nz44 = gb44["w_rear"] != 0
+            z_p44 = float(gb44["w_rear"][nz44]
+                          @ gb44["elems"]["mid_z"][nz44]
+                          / np.sum(gb44["w_rear"][nz44]))
+            assert abs(z_p44 - (0.5 * cb44._bem_head_len - cb44.d_ext)) < 1e-9, \
+                f"{a44}: der BEM-Ring muss d_ext hinter der Stirnfläche sitzen"
+            # die Kugel misst dieselbe Tiefe
+            assert abs(ck44._ring_cos
+                       - (ck44.R_body - ck44.d_ext) / ck44.R_body) < 1e-12, \
+                f"{a44}: der Kugelring muss d_ext hinter dem Pol sitzen"
+            # und ohne Beugung ist der Weg exakt d_ext
+            pf, pr = cn44._source_pressures(om44a, th44a)
+            w44 = {"ohne": float(np.angle((pr / pf)[0, 0])) / kk44,
+                   "kugel": float(np.angle(
+                       (lambda F: F[1] / F[0])(
+                           ck44._diffraction_factors(om44a, th44a))[0, 0]))
+                   / kk44,
+                   "bem": float(np.angle(
+                       cb44._bem_front_modes(om44a, th44a)[1][0, 0])) / kk44}
+            assert abs(w44["ohne"] - cn44.d_ext) < 1e-9, \
+                (f"{a44}: ohne Beugung MUSS der Weg exakt d_ext sein "
+                 f"({w44['ohne'] * 1e3:.3f} statt {cn44.d_ext * 1e3:.3f} mm)")
+            assert cb44.d_ext < w44["kugel"] < w44["bem"], \
+                (f"{a44}: geometrisch < Kugel < BEM erwartet "
+                 f"({cb44.d_ext * 1e3:.1f}/{w44['kugel'] * 1e3:.1f}/"
+                 f"{w44['bem'] * 1e3:.1f} mm)")
+            weg44[a44] = w44
+        for mod44 in ("ohne", "kugel", "bem"):
+            assert (weg44["dual"][mod44]
+                    > weg44["single"][mod44] + 0.5 * (du44.h_gap + du44.t_bp)), \
+                (f"die vordere Backplate MUSS den Außenweg verlängern "
+                 f"({mod44}: {weg44['single'][mod44] * 1e3:.1f} -> "
+                 f"{weg44['dual'][mod44] * 1e3:.1f} mm)")
+        fb44d = {}
+        for lbl44, cc44 in (("bem", d44["dual"][0]), ("kugel", d44["dual"][1])):
+            rr44 = cc44.angle_responses(f44p, angles_deg=(0.0, 180.0))
+            fb44d[lbl44] = (20 * np.log10(np.abs(rr44["H"][0.0]))
+                            - 20 * np.log10(np.abs(rr44["H"][180.0])))
+        assert np.all(fb44d["bem"] > fb44d["kugel"]), \
+            (f"auch bei zwei Backplates muss der längere Außenweg des BEM "
+             f"hinten mehr dämpfen ({np.round(fb44d['bem'], 1)} gegen "
+             f"{np.round(fb44d['kugel'], 1)} dB)")
         print(f"Rückpatch (Gradientenempfänger): Ringdruck trifft die "
               f"Morse-Reihe absolut an fünf Ringwinkeln ({worst44:.0e}); "
               f"gitterunabhängig ({n44g}->{n44f} Elemente: {d44g:.1e}); "
-              f"Ring sitzt bei d_rear_ax = {c44.d_rear_ax * 1e3:.1f} mm im "
-              f"Mantel, 'end' in der Stirnfläche, zu kurzer Kopf geklemmt "
-              f"(mit Warnung); Außenweg geometrisch "
-              f"{c44.d_rear_ax * 1e3:.1f} < Kugel {d44k * 1e3:.1f} < BEM "
-              f"{d44b * 1e3:.1f} mm, F/B damit "
+              f"Ring sitzt d_ext hinter dem vorderen Einlass, 'end' in der "
+              f"Stirnfläche, zu kurzer Kopf geklemmt (mit Warnung); "
+              f"Außenweg 1 Backplate {c44.d_ext * 1e3:.1f} < Kugel "
+              f"{d44k * 1e3:.1f} < BEM {d44b * 1e3:.1f} mm (F/B "
               f"{fb44['bem'][0]:.1f} statt {fb44['kugel'][0]:.1f} dB bei "
-              f"125 Hz; Druckempfänger unverändert  OK")
+              f"125 Hz), 2 Backplates {du44.d_ext * 1e3:.1f} < "
+              f"{weg44['dual']['kugel'] * 1e3:.1f} < "
+              f"{weg44['dual']['bem'] * 1e3:.1f} mm (F/B "
+              f"{fb44d['bem'][0]:.1f} statt {fb44d['kugel'][0]:.1f} dB); "
+              f"Druckempfänger unverändert  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

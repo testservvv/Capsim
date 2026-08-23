@@ -1296,7 +1296,7 @@ st.caption(tr("app_caption"))
 # glatten Zylinderkontur (s. Gegenprobe 44).
 if capsule.axial_body_model == "bem" and capsule.rear_open \
         and capsule.architecture != "dual_diaphragm":
-    st.warning(tr("warn_bem_gradient", d=capsule.d_rear_ax * 1e3,
+    st.warning(tr("warn_bem_gradient", d=capsule.d_ext * 1e3,
                   wo=tr("warn_bem_end"
                         if capsule.cavity_hole_position == "end"
                         else "warn_bem_circ")))
