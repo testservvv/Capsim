@@ -33,6 +33,7 @@ Konventionen der Kettenmatrix:  [p_in; q_in] = T * [p_out; q_out]
 Alle Größen in SI-Einheiten, sofern nicht anders angegeben.
 """
 
+import warnings
 from functools import reduce
 
 import numpy as np
@@ -1393,9 +1394,11 @@ class MicrophoneCapsule:
         # AXIALEN Front-Rück-Transfer der Doppelmembran-Bauform. 'bem'
         # rechnet dagegen die reale Kontur und liefert damit auch den
         # absoluten FRONTFAKTOR der flachen Stirnfläche — der ist auch für
-        # eine Ein-Membran-Kapsel (Druckempfänger) die eigentlich
-        # interessante Größe, weil die Kugelkalotte dort systematisch
-        # falsch liegt (s. _bem_axial_fields und Gegenprobe 41).
+        # eine Ein-Membran-Kapsel die eigentlich interessante Größe, weil
+        # die Kugelkalotte dort systematisch falsch liegt
+        # (s. _bem_axial_fields und Gegenprobe 41). Ist die Kapsel
+        # rückseitig offen, kommt der Druck am Rückeinlass aus demselben
+        # Lösungsgang (_bem_rear_inlet_weights, Gegenprobe 44).
         # Kopflänge: bei der Doppelmembran spannen die beiden Membranen
         # die Stirnflächen auf, also d_ext; sonst ist sie eine eigene
         # Geometrieangabe (body_length).
@@ -1411,19 +1414,14 @@ class MicrophoneCapsule:
                 )
         elif self.axial_body_model == "bem":
             if self.architecture != "dual_diaphragm":
-                # DRUCKEMPFÄNGER: der BEM liefert hier NUR den Frontfaktor.
-                # Der rückwärtige Einlass hätte einen eigenen Patch auf der
-                # Kontur nötig (Stirnfläche oder Mantel, je nach
-                # cavity_hole_position) — das ist nicht gebaut, deshalb
-                # bleibt der Gradientenfall gesperrt statt still falsch.
-                if self.rear_open:
-                    raise ValueError(
-                        "axial_body_model='bem' liefert für Ein-Membran-"
-                        "Bauformen nur den FRONTFAKTOR und setzt deshalb "
-                        "eine dichte Rückseite voraus (Druckempfänger). "
-                        "Diese Kapsel ist rückseitig offen — für den "
-                        "Gradientenfall 'sphere' nehmen."
-                    )
+                # GRADIENTENEMPFÄNGER: der rückwärtige Einlass hat seit
+                # Gegenprobe 44 einen eigenen Patch auf der Kontur
+                # (Stirnfläche oder Mantel, je nach cavity_hole_position).
+                # Der Fall ist damit gerechnet statt gesperrt — was bleibt,
+                # ist eine Modellgrenze und deshalb eine Warnung: die
+                # Kontur ist ein glatter Zylinder, sie kennt weder Korb
+                # noch Kapselgitter, und der Bohrungskranz wird als
+                # idealer Ring bei seiner Einbautiefe angesetzt.
                 if self.body_length is None:
                     raise ValueError(
                         "axial_body_model='bem' braucht die axiale "
@@ -1431,6 +1429,37 @@ class MicrophoneCapsule:
                         "nur body_diameter)."
                     )
                 self._bem_head_len = self.body_length
+                if self.rear_open:
+                    if self.cavity_hole_position == "end":
+                        wo = "in die hintere Stirnfläche"
+                        stimmig = (abs(self.d_rear_ax - self.body_length)
+                                   <= 0.25 * self.d_rear_ax)
+                        warum = ("bei 'end' münden die Löcher am "
+                                 "Hohlraumende, also MUSS body_length "
+                                 "ungefähr d_rear_ax sein")
+                    else:
+                        wo = "als Bohrungskranz in den Mantel"
+                        stimmig = self.body_length > self.d_rear_ax
+                        warum = ("bei 'circumference' münden die Löcher "
+                                 "radial, also MUSS body_length größer "
+                                 "als d_rear_ax sein; sonst wird der Ring "
+                                 "auf die hintere Stirnfläche geklemmt")
+                    hinweis = (
+                        f"axial_body_model='bem' mit offener Rückseite: der "
+                        f"rückwärtige Einlass wird {wo} gelegt, bei seiner "
+                        f"axialen Einbautiefe d_rear_ax = "
+                        f"{self.d_rear_ax * 1e3:.1f} mm (Gegenprobe 44). "
+                        f"Die Kontur ist ein glatter Zylinder — Korb, "
+                        f"Kapselgitter und die endliche Lochteilung sind "
+                        f"darin nicht enthalten."
+                    )
+                    if not stimmig:
+                        hinweis += (
+                            f" ACHTUNG: body_length = "
+                            f"{self.body_length * 1e3:.1f} mm passt nicht "
+                            f"dazu ({warum})."
+                        )
+                    warnings.warn(hinweis, UserWarning, stacklevel=2)
             elif self.body_length is not None:
                 raise ValueError(
                     "body_length gilt nicht für die Doppelmembran-Bauform "
@@ -2817,11 +2846,67 @@ class MicrophoneCapsule:
         mr, mz = elems["mid_r"], elems["mid_z"]
         w_area = 2.0 * np.pi * mr * elems["L"]
         front = (np.abs(mz - zf) < 1e-6) & (mr <= self.a_mem)
-        rear = ((np.abs(mz - zr) < 1e-6) & (mr <= self.a_mem)
-                & (np.arange(mr.size) < n_head))
+        if self.architecture == "dual_diaphragm":
+            # Rückseite ist die zweite MEMBRAN: Galerkin-Projektion mit
+            # demselben Modengewicht wie vorn, sonst wäre G nicht das
+            # Verhältnis zweier gleichartiger Antriebe.
+            rear = ((np.abs(mz - zr) < 1e-6) & (mr <= self.a_mem)
+                    & (np.arange(mr.size) < n_head))
+            w_rear = w_area * rear * self._membrane_mode_weight(mr)
+        else:
+            w_rear = self._bem_rear_inlet_weights(elems, n_head, zf, zr, rf)
         self._bem_geo = dict(elems=elems, chief=chief, w_area=w_area,
-                             front=front, rear=rear)
+                             front=front, w_rear=w_rear)
         return self._bem_geo
+
+    def _bem_rear_inlet_weights(self, elems, n_head, zf, zr, rf):
+        """Gewichte des RÜCKWÄRTIGEN EINLASSES auf der Kapselkontur.
+
+        Gegenstück zum Ring der Kugelrechnung (_diffraction_factors,
+        ``_ring_cos``), aber auf der realen Kontur: der Einlass sitzt
+        ``d_rear_ax`` hinter der Membranebene, bei
+        ``cavity_hole_position='end'`` in der hinteren Stirnfläche, sonst
+        als Bohrungskranz radial im Mantel.
+
+        Warum ein Ring und kein Flächenmittel: die m=0-Formulierung löst
+        bereits den azimutal gemittelten Oberflächendruck — genau das,
+        was ein Kranz gleichmäßig verteilter Bohrungen akustisch
+        abgreift. Am Mantel wird zwischen den beiden benachbarten
+        Elementringen LINEAR in z interpoliert, damit das Ergebnis nicht
+        an der Elementteilung hängt (Gegenprobe 44). Kein Modengewicht:
+        dort sitzt keine Membran, sondern Löcher.
+
+        Rückgabe: Gewichtsvektor über ALLE Elemente (Summe > 0).
+        """
+        mr, mz = elems["mid_r"], elems["mid_z"]
+        N = mr.size
+        kopf = np.arange(N) < n_head
+        w = np.zeros(N)
+        z_in = zf - self.d_rear_ax
+        if self.cavity_hole_position == "end" or z_in <= zr + rf:
+            # Hintere Stirnfläche: Flächenmittel über die Lochfläche.
+            stirn = kopf & (np.abs(mz - zr) < 1e-6)
+            sel = stirn & (mr <= self.a_bp)
+            if not np.any(sel):
+                sel = stirn
+            w[sel] = 2.0 * np.pi * mr[sel] * elems["L"][sel]
+            return w
+        # Mantel: linear in z zwischen den beiden Nachbarringen
+        wand = np.where(kopf & (mr > 0.9 * self.R_body)
+                        & (mz < zf - 1e-9) & (mz > zr + 1e-9))[0]
+        zs = mz[wand]
+        o = np.argsort(zs)
+        wand, zs = wand[o], zs[o]
+        j = int(np.searchsorted(zs, z_in))
+        if j == 0:
+            w[wand[0]] = 1.0
+        elif j >= zs.size:
+            w[wand[-1]] = 1.0
+        else:
+            t = (z_in - zs[j - 1]) / (zs[j] - zs[j - 1])
+            w[wand[j - 1]] = 1.0 - t
+            w[wand[j]] = t
+        return w
 
     def _bem_front_modes(self, omega, theta):
         """Frontfaktoren ALLER gebrauchten Membranmoden UND der Transfer.
@@ -2829,7 +2914,11 @@ class MicrophoneCapsule:
         Aus EINEM m=0-BEM-Lösungsgang auf der Kontur Kopf + Körper:
 
             F_m = ⟨p⟩_Frontmembran,Mode m / p0,   Form (n_mod, Nω, Nθ)
-            G   = ⟨p⟩_Rückmembran / ⟨p⟩_Frontmembran,Mode 1,
+            G   = ⟨p⟩_Rückeinlass / ⟨p⟩_Frontmembran,Mode 1,
+
+        wobei der Rückeinlass bei der Doppelmembran-Bauform die zweite
+        MEMBRAN ist und bei einer Ein-Membran-Kapsel der Bohrungskranz
+        des rückwärtigen Einlasses (s. :meth:`_bem_rear_inlet_weights`).
 
         p0 = ungestörter Freifelddruck im Kapselzentrum (Ursprung).
         F ist damit der Beugungs-/Druckstaufaktor der REALEN FLACHEN
@@ -2863,7 +2952,7 @@ class MicrophoneCapsule:
             return cached[1], cached[2]
         geo = self._bem_geometry()
         elems, chief = geo["elems"], geo["chief"]
-        w_area, front, rear = geo["w_area"], geo["front"], geo["rear"]
+        w_area, front, w_rear = geo["w_area"], geo["front"], geo["w_rear"]
         N = elems["L"].size
         cphi, wphi = self._bem_phi_quad()
         mr, mz = elems["mid_r"], elems["mid_z"]
@@ -2906,13 +2995,13 @@ class MicrophoneCapsule:
             A = np.vstack([A, -K_c])
             b = np.vstack([b, _pinc(k, cr, cz)])
             u, *_ = np.linalg.lstsq(A, b, rcond=None)
-            # BEIDE Membranmittel MODENGEWICHTET (Galerkin-Projektion auf
-            # die Grundmode, s. _cap_mode_quad). Front- und Rückpatch sind
-            # bei der Doppelmembran-Bauform beide Membranscheiben
-            # (r <= a_mem) — nur mit gleichem Gewicht bleibt der Transfer G
-            # das Verhältnis zweier gleichartig projizierter Antriebe.
-            # Bei einer Ein-Membran-Kapsel ist der Rückpatch eine massive
-            # Stirnfläche; dort wird nur F benutzt (s. _source_pressures).
+            # FRONT: Galerkin-Projektion auf die Membranmode (Fläche ×
+            # Modengewicht, s. _cap_mode_quad). RÜCK: was dort steht,
+            # entscheidet die Geometrie — bei der Doppelmembran dieselbe
+            # Projektion auf der zweiten Membran, bei einer Ein-Membran-
+            # Kapsel der Bohrungskranz des Rückeinlasses
+            # (s. _bem_rear_inlet_weights). Nur so ist G das Verhältnis
+            # der beiden Antriebe, die die Kette wirklich sieht.
             p_f1 = None
             for mm in range(n_mod):
                 wf = w_area[front] * self._membrane_mode_weight(mr[front],
@@ -2921,8 +3010,7 @@ class MicrophoneCapsule:
                 F[mm, i] = np.conj(p_f)
                 if mm == 0:
                     p_f1 = p_f
-            wr = w_area[rear] * self._membrane_mode_weight(mr[rear])
-            p_r = (wr @ u[rear]) / np.sum(wr)
+            p_r = (w_rear @ u) / np.sum(w_rear)
             G[i] = np.conj(p_r / p_f1)
         # Diagnose: Residuum der Raumwinkel-Identität (Gitterqualität)
         self._bem_solid_angle_residual = float(np.max(wsum))
@@ -3771,14 +3859,19 @@ class MicrophoneCapsule:
                     G_ax = self._axial_body_transfer(omega, theta)
                 return F_f, F_f * G_ax
             if self.axial_body_model == "bem":
-                # EIN-MEMBRAN-KAPSEL (Druckempfänger): der Frontfaktor
-                # kommt aus derselben BEM-Lösung, jetzt aber auf der
-                # REALEN flachen Stirnfläche statt auf einer Kugelkalotte.
-                # Die Rückseite ist per Gatter dicht — p_rear wird von
-                # _membrane_volume_velocity dann gar nicht gelesen; wir
-                # geben denselben Faktor zurück, damit keine stille
-                # Mischung zweier Körpermodelle entsteht.
-                F_bem, _ = self._bem_axial_fields(omega, theta)
+                # EIN-MEMBRAN-KAPSEL: der Frontfaktor kommt aus derselben
+                # BEM-Lösung, jetzt aber auf der REALEN flachen
+                # Stirnfläche statt auf einer Kugelkalotte. Bei DICHTER
+                # Rückseite liest _membrane_volume_velocity p_rear gar
+                # nicht; dort wird derselbe Faktor zurückgegeben, damit
+                # keine stille Mischung zweier Körpermodelle entsteht.
+                # Bei OFFENER Rückseite (Gradientenempfänger) kommt der
+                # rückwärtige Druck aus demselben Lösungsgang — der
+                # Bohrungskranz liegt als Ring auf der Kontur
+                # (s. _bem_rear_inlet_weights, Gegenprobe 44).
+                F_bem, G_bem = self._bem_axial_fields(omega, theta)
+                if self.rear_open:
+                    return F_bem, F_bem * G_bem
                 return F_bem, F_bem
             return self._diffraction_factors(omega, theta)
         p_front = np.ones((omega.size, theta.size), dtype=complex)
@@ -5107,6 +5200,26 @@ class MicrophoneCapsule:
             _row(_t("Beugung am Gehäuse:", "Diffraction at body:"),
                  f"{self.include_diffraction and _HAS_SCIPY}"),
         ]
+        if (self.include_diffraction and _HAS_SCIPY
+                and self.axial_body_model == "bem"
+                and self.architecture != "dual_diaphragm"
+                and self.rear_open):
+            # Wo der BEM den Rückeinlass auf die Kontur legt
+            # (s. _bem_rear_inlet_weights, Gegenprobe 44).
+            wo = (_t("hintere Stirnfläche", "rear end face")
+                  if self.cavity_hole_position == "end"
+                  else _t("Bohrungskranz im Mantel",
+                          "ring of holes in side wall"))
+            eng = self.body_length is not None and (
+                abs(self.d_rear_ax - self.body_length)
+                > 0.25 * self.d_rear_ax
+                if self.cavity_hole_position == "end"
+                else self.body_length <= self.d_rear_ax)
+            lines.append(_row(
+                _t("BEM-Rückeinlass:", "BEM rear inlet:"),
+                f"{wo}, {self.d_rear_ax * 1e3:.2f} mm"
+                + (_t("  ← passt nicht zu body_length",
+                      "  <- inconsistent with body_length") if eng else "")))
         if (self.architecture != "dual_diaphragm"
                 and self.rear_network_enabled
                 and (self.h_sp > 0.0 or self.t_rp > 0.0)):
@@ -6170,17 +6283,17 @@ if __name__ == "__main__":
             squeeze_model="2d", axial_body_model="bem")
         th21 = np.deg2rad(np.array([0.0, 60.0, 120.0, 180.0]))
 
-        def _inject(pts):
+        def _inject(pts, i_rear=-1):
             el = MicrophoneCapsule._bem_elems(pts)
             n_el = el["L"].size
             fr_m = np.zeros(n_el, bool)
             fr_m[0] = True
-            re_m = np.zeros(n_el, bool)
-            re_m[-1] = True
+            re_w = np.zeros(n_el)
+            re_w[i_rear] = 1.0
             k67_bem._bem_geo = dict(
                 elems=el, chief=[(0.0, 0.0)],
                 w_area=2.0 * np.pi * el["mid_r"] * el["L"],
-                front=fr_m, rear=re_m)
+                front=fr_m, w_rear=re_w)
 
         psi21 = np.linspace(0.0, np.pi, 121)
         R21 = 9e-3
@@ -6241,15 +6354,14 @@ if __name__ == "__main__":
         assert abs(abs(G_mnt) - 1.0) < 0.02, "BEM: |G| ~ 1 im Tiefband"
         # d) Gatter. 'spheroid' ist ein reines Front-Rück-Transfermodell und
         #    bleibt der Doppelmembran vorbehalten; 'bem' gilt auch für
-        #    Ein-Membran-Kapseln, dort aber NUR mit dichter Rückseite und
-        #    mit angegebener Körperlänge (s. Gegenprobe 41).
+        #    Ein-Membran-Kapseln und seit Gegenprobe 44 auch bei offener
+        #    Rückseite (dort nur noch eine Warnung), braucht aber immer
+        #    eine angegebene, hinreichend lange Körperlänge.
         _g21 = dict(membrane_resonance_hz=8000.0, architecture="single")
         _dicht = dict(_g21, n_cavity_holes=0, rear_network_enabled=True)
         for kw, was in (
                 (dict(_g21, axial_body_model="spheroid"),
                  "spheroid ohne dual_diaphragm"),
-                (dict(_g21, axial_body_model="bem", body_length=20e-3),
-                 "BEM bei offener Rückseite"),
                 (dict(_dicht, axial_body_model="bem"),
                  "BEM ohne body_length"),
                 (dict(_dicht, axial_body_model="bem", body_length=1e-3),
@@ -6793,7 +6905,10 @@ if __name__ == "__main__":
         k67f26._bem_geo = dict(
             elems=el26, chief=[(0.0, 0.0)],
             w_area=2.0 * np.pi * el26["mid_r"] * el26["L"],
-            front=ps_m < psi_c, rear=ps_m > np.pi - psi_c)
+            front=ps_m < psi_c,
+            w_rear=((2.0 * np.pi * el26["mid_r"] * el26["L"])
+                    * (ps_m > np.pi - psi_c)
+                    * k67f26._membrane_mode_weight(el26["mid_r"])))
         th26 = np.deg2rad(np.array([0.0, 60.0, 120.0]))
         worst_f26 = 0.0
         for f26 in (1000.0, 7000.0):
@@ -6816,7 +6931,10 @@ if __name__ == "__main__":
         k67f26._bem_geo = dict(
             elems=el_s, chief=[(0.0, 0.0)],
             w_area=2.0 * np.pi * mrs * el_s["L"],
-            front=fr_s, rear=(mzs < 0) & (mrs <= 13e-3))
+            front=fr_s,
+            w_rear=((2.0 * np.pi * mrs * el_s["L"])
+                    * ((mzs < 0) & (mrs <= 13e-3))
+                    * k67f26._membrane_mode_weight(mrs)))
         # Referenzmittel MIT DEMSELBEN Operator wie das BEM-Frontmittel:
         # Fläche × Membran-Modengewicht (s. _cap_mode_quad). Sonst
         # verglichen man zwei verschiedene Mittelungen miteinander.
@@ -9001,5 +9119,213 @@ if __name__ == "__main__":
               f"der modenweise Antrieb bringt "
               f"{gew43[0.0]:+.2f}/{gew43[90.0]:+.2f}/{gew43[180.0]:+.2f} dB"
               f"  OK")
+
+    # --------- Gegenprobe 44: Rückpatch des Gradientenempfängers ----------
+    # Bis hierher lieferte der BEM bei einer Ein-Membran-Kapsel NUR den
+    # Frontfaktor: der rückwärtige Einlass hatte keinen Patch auf der
+    # Kontur, deshalb war der Gradientenfall gesperrt statt still falsch.
+    # Jetzt sitzt der Bohrungskranz dort, wo er wirklich sitzt — bei
+    # seiner axialen Einbautiefe d_rear_ax, radial im Mantel oder (bei
+    # cavity_hole_position='end') in der hinteren Stirnfläche.
+    #
+    # WARUM EIN RING und kein Flächenmittel: die m=0-Formulierung löst
+    # bereits den azimutal gemittelten Oberflächendruck. Genau das greift
+    # ein gleichmäßig verteilter Lochkranz ab — und es ist das direkte
+    # Gegenstück zum Ring der Kugelrechnung (_ring_cos), nur eben auf der
+    # realen Kontur statt auf einer Ersatzkugel.
+    #
+    # a) ABSOLUTPROBE gegen Morse. Gegenprobe 21 prüft auf der Kugel-
+    #    kontur das VERHÄLTNIS Pol/Pol. Hier wird der Ringdruck selbst
+    #    geprüft, absolut und an fünf Ringwinkeln von 30° bis 180° —
+    #    denn der Rückpatch ist genau der Ring, und nur so ist er
+    #    verankert und nicht bloß plausibel.
+    # b) UNABHÄNGIG VON DER ELEMENTTEILUNG: am Mantel wird linear in z
+    #    interpoliert; ein dreifach feineres Gitter darf G kaum ändern.
+    # c) GEOMETRIE: der Ring sitzt bei d_rear_ax; 'end' legt ihn in die
+    #    hintere Stirnfläche; ein zu kurzer Kopf klemmt ihn dorthin und
+    #    sagt es in der Warnung.
+    # d) PHYSIK: |G| -> 1 für ka -> 0, und der effektive Außenweg ist
+    #    länger als der geometrische (der Schall muss um die Frontkante)
+    #    UND länger als bei der Ersatzkugel, deren Ring am Äquator sitzt.
+    #    Der flache Kopf mit scharfer Kante zwingt den längeren Weg.
+    # e) Das Gatter ist nur noch eine Warnung, der Fall rechnet, und die
+    #    Kapsel bleibt eine Niere — mit MEHR Rückdämpfung als mit der
+    #    Kugel, weil die externe Laufzeit länger ist.
+    # f) DRUCKEMPFÄNGER UNVERÄNDERT: bei dichter Rückseite bleibt
+    #    p_rear == p_front, der Rückpatch darf dort nichts tun.
+    if _HAS_SCIPY:
+        # a) Kugelkontur: Ringdruck absolut gegen die Morse-Reihe
+        def _morse_ring44(cap, R, psi, om, th):
+            """Morse-Ringmittel bei Polarwinkel psi auf einer R-Kugel."""
+            R0, rc0 = cap.R_body, cap._ring_cos
+            cap.R_body, cap._ring_cos = R, float(np.cos(psi))
+            try:
+                return cap._diffraction_factors(om, th)[1]
+            finally:
+                cap.R_body, cap._ring_cos = R0, rc0
+
+        R44 = 9e-3
+        psi44 = np.linspace(0.0, np.pi, 121)
+        el44 = MicrophoneCapsule._bem_elems(
+            np.stack([R44 * np.sin(psi44), R44 * np.cos(psi44)], 1))
+        psm44 = np.arctan2(el44["mid_r"], el44["mid_z"])
+        th44 = np.deg2rad(np.array([0.0, 60.0, 120.0, 180.0]))
+        fr44 = np.zeros(el44["L"].size, bool)
+        fr44[0] = True
+        worst44 = 0.0
+        for i44 in (20, 40, 60, 90, 119):
+            w44 = np.zeros(el44["L"].size)
+            w44[i44] = 1.0
+            k67_bem._bem_geo = dict(
+                elems=el44, chief=[(0.0, 0.0)],
+                w_area=2.0 * np.pi * el44["mid_r"] * el44["L"],
+                front=fr44, w_rear=w44)
+            k67_bem._bem_cache = None
+            for f44 in (100.0, 1000.0, 5000.0):
+                om44 = np.array([2.0 * np.pi * f44])
+                F44, G44 = k67_bem._bem_front_modes(om44, th44)
+                for got, psi in ((F44[0], psm44[0]),
+                                 (F44[0] * G44, psm44[i44])):
+                    ref = _morse_ring44(k67_bem, R44, psi, om44, th44)
+                    worst44 = max(worst44, float(np.max(
+                        np.abs(got - ref) / np.abs(ref))))
+        assert worst44 < 2e-4, \
+            (f"BEM-Ringdruck muss die Morse-Reihe absolut treffen "
+             f"({worst44:.1e})")
+        k67_bem._bem_geo = None
+        k67_bem._bem_cache = None
+
+        # Ein Gradientenempfänger als Prüfling (die Beispielkapsel aus
+        # dem Kopf dieses Testlaufs, Lochkranz am Umfang bei 6 mm).
+        g44 = dict(
+            membrane_material="PET", membrane_resonance_hz=8000.0,
+            membrane_diameter=22e-3, membrane_thickness=6e-6,
+            membrane_tension=400.0, air_gap=40e-6,
+            backplate_diameter=20e-3, backplate_thickness=3e-3,
+            bias_voltage=60.0, architecture="single", n_through_holes=60,
+            through_hole_diameter=1.0e-3, n_blind_holes=30,
+            blind_hole_diameter=1.2e-3, blind_hole_depth=1.5e-3,
+            delay_length=3e-3, cavity_length=12e-3,
+            cavity_wall_thickness=1.5e-3, n_cavity_holes=200,
+            cavity_hole_diameter=0.2e-3, cavity_hole_axial_position=6e-3,
+            fabric_front_rayl=10.0, fabric_rear_rayl=25.0,
+            body_diameter=24e-3)
+        b44 = dict(axial_body_model="bem", bem_body_diameter=0.0,
+                   body_length=20e-3)
+
+        def _bau44(**kw):
+            """Baut den Prüfling und liefert (Kapsel, Warnungstexte)."""
+            with warnings.catch_warnings(record=True) as rec:
+                warnings.simplefilter("always")
+                cc = MicrophoneCapsule(**{**g44, **kw})
+            return cc, [str(r.message) for r in rec
+                        if issubclass(r.category, UserWarning)]
+
+        c44, warn44 = _bau44(cavity_hole_position="circumference", **b44)
+        assert len(warn44) == 1 and "offener Rückseite" in warn44[0], \
+            f"das Gatter muss WARNEN statt zu sperren ({warn44})"
+        assert "ACHTUNG" not in warn44[0], \
+            f"stimmige Geometrie darf keine Zusatzwarnung geben ({warn44[0]})"
+
+        # b) Elementteilung: dreifach feiner darf G kaum ändern
+        class _Fein44(MicrophoneCapsule):
+            _BEM_H_MAX = MicrophoneCapsule._BEM_H_MAX / 3.0
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            f44c = _Fein44(**{**g44, "cavity_hole_position": "circumference",
+                              **b44})
+        om44b = 2.0 * np.pi * np.array([50.0, 1000.0, 5000.0, 10000.0])
+        G44g = c44._bem_front_modes(om44b, th44)[1]
+        G44f = f44c._bem_front_modes(om44b, th44)[1]
+        d44g = float(np.max(np.abs(G44g - G44f) / np.abs(G44f)))
+        n44g = c44._bem_geometry()["elems"]["L"].size
+        n44f = f44c._bem_geometry()["elems"]["L"].size
+        assert n44f > 2.0 * n44g, "feineres Gitter muss feiner sein"
+        assert d44g < 0.02, \
+            (f"der Ring darf nicht an der Elementteilung hängen "
+             f"({n44g} -> {n44f} Elemente ändern G um {d44g:.1e})")
+
+        # c) Geometrie des Patches
+        def _patch44(cc):
+            gg = cc._bem_geometry()
+            ww, ee = gg["w_rear"], gg["elems"]
+            nz = ww != 0
+            return (float(ww[nz] @ ee["mid_z"][nz] / np.sum(ww[nz])),
+                    ee["mid_r"][nz], ee["mid_z"][nz],
+                    0.5 * cc._bem_head_len)
+        z44, r44m, _, zf44 = _patch44(c44)
+        assert abs(z44 - (zf44 - c44.d_rear_ax)) < 1e-9, \
+            (f"der Ring muss bei d_rear_ax sitzen ({z44 * 1e3:.3f} statt "
+             f"{(zf44 - c44.d_rear_ax) * 1e3:.3f} mm)")
+        assert np.all(np.abs(r44m - c44.R_body) < 1e-9), \
+            "bei 'circumference' muss der Ring im Mantel liegen"
+        c44e, _ = _bau44(cavity_hole_position="end",
+                         **dict(b44, body_length=19.5e-3))
+        z44e, r44e, mz44e, zf44e = _patch44(c44e)
+        assert np.all(np.abs(mz44e + zf44e) < 1e-9), \
+            "bei 'end' muss der Ring in der hinteren Stirnfläche liegen"
+        assert r44e.max() <= c44e.a_bp + 1e-9, \
+            "die Endlöcher münden innerhalb des Hohlraumradius"
+        c44k, warn44k = _bau44(cavity_hole_position="circumference",
+                               **dict(b44, body_length=8e-3))
+        _, r44k, mz44k, zf44k = _patch44(c44k)
+        assert np.all(np.abs(mz44k + zf44k) < 1e-9), \
+            "ein zu kurzer Kopf muss den Ring auf die Stirnfläche klemmen"
+        assert "ACHTUNG" in warn44k[0], \
+            f"und das muss in der Warnung stehen ({warn44k})"
+
+        # d) ka -> 0: |G| = 1, und der Außenweg ist länger als geometrisch
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            k44 = MicrophoneCapsule(**dict(
+                g44, cavity_hole_position="circumference"))   # Ersatzkugel
+        om44a = np.array([2.0 * np.pi * 50.0])
+        th44a = np.array([np.pi])
+        kk44 = om44a[0] / C_AIR
+        G44b = c44._bem_front_modes(om44a, th44a)[1][0, 0]
+        Ff44, Fr44 = k44._diffraction_factors(om44a, th44a)
+        G44k = (Fr44 / Ff44)[0, 0]
+        assert abs(abs(G44b) - 1.0) < 0.02, \
+            f"|G| muss für ka -> 0 gegen 1 gehen ({abs(G44b):.4f})"
+        d44b = float(np.angle(G44b)) / kk44
+        d44k = float(np.angle(G44k)) / kk44
+        assert c44.d_rear_ax < d44k < d44b < 2.5 * c44.d_rear_ax, \
+            (f"Außenweg: geometrisch {c44.d_rear_ax * 1e3:.1f} < Kugel "
+             f"{d44k * 1e3:.1f} < BEM {d44b * 1e3:.1f} mm erwartet")
+
+        # e) der Fall rechnet, und die Niere wird durch den längeren
+        #    Außenweg hinten dichter als mit der Ersatzkugel
+        f44p = np.array([125.0, 1000.0])
+        fb44 = {}
+        for lbl44, cc44 in (("bem", c44), ("kugel", k44)):
+            rr44 = cc44.angle_responses(f44p, angles_deg=(0.0, 180.0))
+            fb44[lbl44] = (20 * np.log10(np.abs(rr44["H"][0.0]))
+                           - 20 * np.log10(np.abs(rr44["H"][180.0])))
+        assert np.all(fb44["bem"] > 3.0), \
+            f"die Kapsel muss gerichtet bleiben ({np.round(fb44['bem'], 1)})"
+        assert np.all(fb44["bem"] > fb44["kugel"] + 1.0), \
+            (f"der längere Außenweg muss hinten mehr dämpfen "
+             f"({np.round(fb44['bem'], 1)} gegen "
+             f"{np.round(fb44['kugel'], 1)} dB)")
+
+        # f) Druckempfänger unverändert: dichte Rückseite -> p_r == p_f
+        c44d = MicrophoneCapsule(**dict(
+            g44, n_cavity_holes=0, cavity_length=0.0, delay_length=0.0,
+            **b44))
+        assert not c44d.rear_open
+        pf44, pr44 = c44d._source_pressures(om44b, th44)
+        assert np.array_equal(pf44, pr44), \
+            "bei dichter Rückseite darf der Rückpatch nichts ändern"
+        print(f"Rückpatch (Gradientenempfänger): Ringdruck trifft die "
+              f"Morse-Reihe absolut an fünf Ringwinkeln ({worst44:.0e}); "
+              f"gitterunabhängig ({n44g}->{n44f} Elemente: {d44g:.1e}); "
+              f"Ring sitzt bei d_rear_ax = {c44.d_rear_ax * 1e3:.1f} mm im "
+              f"Mantel, 'end' in der Stirnfläche, zu kurzer Kopf geklemmt "
+              f"(mit Warnung); Außenweg geometrisch "
+              f"{c44.d_rear_ax * 1e3:.1f} < Kugel {d44k * 1e3:.1f} < BEM "
+              f"{d44b * 1e3:.1f} mm, F/B damit "
+              f"{fb44['bem'][0]:.1f} statt {fb44['kugel'][0]:.1f} dB bei "
+              f"125 Hz; Druckempfänger unverändert  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

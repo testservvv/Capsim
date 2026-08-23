@@ -1291,6 +1291,16 @@ summary_text = get_summary(_cache_key, capsule, _lang())
 st.title(tr("app_title"))
 st.caption(tr("app_caption"))
 
+# BEM mit offenem Rückeinlass: gerechnet, aber mit Modellgrenze — der
+# Bohrungskranz sitzt als idealer Ring bei seiner Einbautiefe auf einer
+# glatten Zylinderkontur (s. Gegenprobe 44).
+if capsule.axial_body_model == "bem" and capsule.rear_open \
+        and capsule.architecture != "dual_diaphragm":
+    st.warning(tr("warn_bem_gradient", d=capsule.d_rear_ax * 1e3,
+                  wo=tr("warn_bem_end"
+                        if capsule.cavity_hole_position == "end"
+                        else "warn_bem_circ")))
+
 m1, m2, m3, m4 = st.columns(4)
 m1.metric(tr("met_sens"), f"{sens_1k * 1e3:.1f} mV/Pa",
           help=tr("help_met_sens", db=20 * np.log10(max(sens_1k, 1e-12))))

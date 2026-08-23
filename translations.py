@@ -835,9 +835,12 @@ TR = {
               "instead of +5 dB at ka ≈ 3, because the rim waves focus "
               "on the axis). The sphere model does not need this value, "
               "which is why it is separate from the body diameter. "
-              "Single-membrane capsules only, and only with a sealed "
-              "back: the rear inlets of a gradient capsule would need "
-              "their own patch on the contour, which is not built.",
+              "Single-membrane capsules only. A gradient capsule works "
+              "too: its rear inlets get their own patch on the contour "
+              "— a ring of holes in the side wall at their axial depth, "
+              "or the rear end face for end holes (Gegenprobe 44). Make "
+              "the body LONGER than that depth, otherwise the ring is "
+              "clamped to the rear face and you get a warning.",
         "de": "Axiale Länge des Kapselkörpers. Die BEM-Kontur ist ein "
               "verrundeter Zylinder aus Körper-Ø × dieser Länge, die "
               "Membran liegt auf seiner FLACHEN Stirnfläche — und genau "
@@ -846,10 +849,13 @@ TR = {
               "+9 dB statt +5 dB bei ka ≈ 3, weil die Randwellen auf die "
               "Achse fokussieren). Die Kugelrechnung braucht den Wert "
               "nicht, deshalb steht er getrennt vom Körperdurchmesser. "
-              "Nur für Ein-Membran-Bauformen und nur bei dichter "
-              "Rückseite: die rückwärtigen Einlässe eines Gradienten"
-              "empfängers bräuchten einen eigenen Patch auf der Kontur, "
-              "der nicht gebaut ist.",
+              "Nur für Ein-Membran-Bauformen. Der Gradientenempfänger "
+              "geht ebenfalls: seine rückwärtigen Einlässe bekommen "
+              "einen eigenen Patch auf der Kontur — einen Bohrungskranz "
+              "im Mantel bei ihrer Einbautiefe, bei Endlöchern die "
+              "hintere Stirnfläche (Gegenprobe 44). Den Körper LÄNGER "
+              "wählen als diese Tiefe, sonst wird der Ring auf die "
+              "Stirnfläche geklemmt und es gibt eine Warnung.",
     },
     "cap_bem_front": {
         "en": "⏳ BEM solves a boundary-element system per frequency "
@@ -870,6 +876,34 @@ TR = {
               "3,2 dB liefert. Off-axis bleibt oberhalb ~10 kHz ein "
               "kleinerer Fehler — der modenabhängige Quelldruck mit "
               "mehreren Membranmoden nimmt davon etwa die Hälfte weg.",
+    },
+    "warn_bem_gradient": {
+        "en": "**BEM with an open rear inlet.** The inlet is placed {wo} "
+              "at its axial depth of {d:.1f} mm on the real contour, and "
+              "its ring pressure matches the exact Morse series on a "
+              "sphere contour to 2e-4. What the contour does NOT know: "
+              "the basket, the capsule grille, and the finite hole "
+              "spacing — it is a smooth cylinder. It also gives a longer "
+              "external path than the equivalent sphere (the wave has to "
+              "round the sharp front edge), so the rear rejection comes "
+              "out higher than with 'sphere'.",
+        "de": "**BEM mit offenem Rückeinlass.** Der Einlass sitzt {wo} "
+              "bei seiner axialen Einbautiefe von {d:.1f} mm auf der "
+              "realen Kontur; sein Ringdruck trifft auf einer Kugelkontur "
+              "die exakte Morse-Reihe auf 2e-4. Was die Kontur NICHT "
+              "kennt: Korb, Kapselgitter und die endliche Lochteilung — "
+              "sie ist ein glatter Zylinder. Sie liefert außerdem einen "
+              "längeren Außenweg als die Ersatzkugel (der Schall muss um "
+              "die scharfe Frontkante), die Rückdämpfung fällt also höher "
+              "aus als mit 'Kugel'.",
+    },
+    "warn_bem_circ": {
+        "en": "as a ring of holes in the side wall",
+        "de": "als Bohrungskranz im Mantel",
+    },
+    "warn_bem_end": {
+        "en": "in the rear end face",
+        "de": "in der hinteren Stirnfläche",
     },
     "lbl_bem_dia": {
         "en": "BEM: body Ø [mm]",
