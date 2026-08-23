@@ -7860,15 +7860,16 @@ if __name__ == "__main__":
     #    die Kette die Projektion bereits (Gegenprobe 33), doppelt wäre
     #    falsch.
     # d) WIRKUNG: gegen die COMSOL-Referenz sinkt die RMS-Abweichung ab
-    #    5 kHz von 14.1 dB auf unter 6 dB.
-    # e) DOKUMENTIERTE GRENZE: die Konvergenz über die Modenzahl ist NICHT
-    #    monoton. Die Zweige der Modenzerlegung tragen seit Gegenprobe 31
-    #    nur noch die Materialdämpfung (der Spaltfilm sitzt im Ketten-
-    #    Zweitor), sind also praktisch ungedämpft — Mode 4 resoniert bei
-    #    5.1 kHz mit Q ~ 1e4 und bekommt dort zu viel Gewicht. Das ist
-    #    eine Eigenschaft der Zerlegung, die der Schalter nur SICHTBAR
-    #    macht; sie gehört dokumentiert, nicht wegkalibriert. Deshalb
-    #    steht hier die Zweigresonanz als Strukturaussage.
+    #    5 kHz deutlich unter die 14.1 dB der uniformen Anregung.
+    # e) KONVERGENZ über die Modenzahl. Hier stand lange, sie sei NICHT
+    #    monoton (fünf Moden schlechter als drei). Das war eine Folge der
+    #    inkonsistenten Gewichtung: die Zweige trugen in der Gewichtung
+    #    nur die Materialdämpfung, waren also praktisch ungedämpft, und
+    #    Zweig 4 bei 5.1 kHz mit Q ~ 1e4 bekam dort zu viel Gewicht.
+    #    Seit Gegenprobe 43 stehen an beiden Stellen dieselben Zweige
+    #    inklusive innerer Umverteilung; die Reihe fällt seither monoton
+    #    (1..5 Moden). Das wird jetzt GEPRÜFT statt behauptet — und die
+    #    Zweigresonanz bleibt als Strukturaussage daneben stehen.
     if _HAS_SCIPY:
         from scipy.special import j0 as _j0_34
         z34 = MicrophoneCapsule._J0_ZEROS
@@ -7927,9 +7928,10 @@ if __name__ == "__main__":
         hi34 = f34 >= 5000.0
         rms_off = float(np.sqrt(np.mean(
             (_graz34(modal_source=0)[hi34] - ref34[hi34])**2)))
-        rms_on = float(np.sqrt(np.mean(
-            (_graz34(modal_source=1, membrane_modes=3)[hi34]
-             - ref34[hi34])**2)))
+        reihe34 = [float(np.sqrt(np.mean(
+            (_graz34(modal_source=1, membrane_modes=n)[hi34]
+             - ref34[hi34])**2))) for n in range(1, 6)]
+        rms_on = reihe34[2]                            # drei Moden
         assert rms_off > 12.0, \
             f"ohne Projektion muss die bekannte Lücke bleiben ({rms_off:.1f})"
         # Die Schranke war einmal 6 dB. Sie wurde mit UNGEDÄMPFTEN
@@ -7944,13 +7946,16 @@ if __name__ == "__main__":
              f"({rms_off:.1f} -> {rms_on:.1f} dB)")
         assert rms_on < 9.0, \
             f"dokumentierter Stand der Restlücke ({rms_on:.1f} dB)"
+        # KONVERGENZ: jede weitere Mode muss die Abweichung verkleinern.
+        assert all(b < a for a, b in zip(reihe34, reihe34[1:])), \
+            (f"die Reihe über die Modenzahl muss monoton fallen "
+             f"({np.round(reihe34, 2)})")
         # e) Zweigdämpfung: die höheren Moden tragen ihre innere
-        #    Umverteilung im Spaltfilm (_modal_internal_Z). Ohne sie war
+        #    Umverteilung im Spaltfilm (_modal_internal_Z). Ohne sie wäre
         #    Zweig 4 mit Q ~ 1e4 praktisch ungedämpft; mit ihr liegt die
-        #    Güte in der Größenordnung 10. Die verbleibende Grenze bleibt
-        #    festgehalten: die Konvergenz über die Modenzahl ist damit
-        #    besser, aber immer noch nicht monoton — Zweig 4 sitzt nahe
-        #    5 kHz und bleibt dort sichtbar.
+        #    Güte in der Größenordnung 10. Genau daran hing die Monotonie
+        #    oben — die Zweigresonanz bleibt hier als Strukturaussage
+        #    stehen, damit sichtbar ist, WORAN sie hängt.
         c34m = MicrophoneCapsule(modal_source=1, membrane_modes=5, **par34)
         M4, C4 = c34m._higher_mode_branches()[2]
         f4_0 = 1.0 / (2.0 * np.pi * np.sqrt(M4 * C4))
@@ -7975,8 +7980,9 @@ if __name__ == "__main__":
               f"mit Beugung Faktor 1; streifend gegen COMSOL ab 5 kHz "
               f"{rms_off:.1f} -> {rms_on:.1f} dB (3 Moden); Zweig 4 durch "
               f"die innere Umverteilung von Q = {Q4_0:.0f} auf {Q4:.1f} "
-              f"bedämpft ({f4_0:.0f} -> {f4:.0f} Hz). GRENZE: Konvergenz "
-              f"über die Modenzahl weiterhin nicht monoton  OK")
+              f"bedämpft ({f4_0:.0f} -> {f4:.0f} Hz); Konvergenz über die "
+              f"Modenzahl monoton "
+              f"({'->'.join(f'{x:.1f}' for x in reihe34)} dB)  OK")
 
     # --------- Gegenprobe 35: Filmträgheit Φ(ω) gegen die Literatur -------
     # Die Frequenzkorrektur des Spaltfilms (:meth:`_film_R_dynamic`) haben
@@ -8478,6 +8484,56 @@ if __name__ == "__main__":
           f"Feder-Erweichung beide exakt ×2 — der Faktor 2 im Pull-in "
           f"gälte nur bei geteilter Versorgung  OK")
 
+    # --------- Messanker Grinnip 2006, Fig. 5/6/7 -------------------------
+    # R. S. Grinnip III, "Advanced Simulation of a Condenser Microphone
+    # Capsule", J. Audio Eng. Soc. 54(3), 157–167 (2006), Fig. 5 (0°),
+    # Fig. 6 (90°), Fig. 7 (180°). Die Kurven sind aus dem PDF
+    # DIGITALISIERT, nicht geschätzt; die Kalibrierung prüft sich selbst:
+    #
+    #   * dB-Achse aus den waagerechten Gitterlinien +20/+10/0/−10/−20;
+    #     Ausgleichsgerade auf 1.1 px genau, die elf Achsenbeschriftungen
+    #     liegen darauf innerhalb von 0.27 dB.
+    #   * Frequenzachse aus den senkrechten Gitterlinien, die auf
+    #     n·10^k fallen müssen; Ausgleichsgerade auf 0.5 px (0.1 %).
+    #   * Nullprobe: der flache Ast 150…1200 Hz liegt danach auf 0.0 dB.
+    #
+    # Getrennt werden die Kurven über ihre Graustufe: VC (Grinnips
+    # gekoppelte FE/BE-Rechnung) ist dick und grau, EXP (die Messung) und
+    # LE (Ersatzschaltbild) sind dünn. VC und EXP decken sich bis 7 kHz;
+    # darüber nennt Grinnip selbst bis ~5 dB Abweichung. Auf Achse ist
+    # EXP nur zwischen 8 und 15 kHz von VC zu trennen und liegt dort
+    # 2…4 dB darunter; bei 180° ist EXP laut Grinnip oberhalb 10 kHz
+    # durch die Messvorrichtung verfälscht und wird nicht benutzt.
+    # Alle Werte sind dS gegen den flachen Ast, den das Diagramm auf 0 dB
+    # legt; das Modell wird dafür auf 100 Hz normiert.
+    f_grin = np.array([1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0,
+                       7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0,
+                       16000.0, 18000.0])
+    vc_grin = {
+        0.0: np.array([0.3, 1.8, 4.8, 7.3, 10.2, 12.2, 13.3, 12.9, 12.6,
+                       13.1, 12.7, 11.6, 9.4, 5.2]),
+        90.0: np.array([0.2, 0.4, 0.6, 1.5, 3.4, 5.0, 6.1, 4.2, 2.7, 1.2,
+                        -2.4, -5.7, -11.1, -18.6]),
+        180.0: np.array([0.3, 1.1, 2.9, 3.7, 6.2, 6.3, 6.5, 4.0, 1.9, 0.9,
+                         -1.6, -4.2, -8.4, -14.3])}
+    # Messung: bei 90° über das ganze Band, auf Achse nur im Fenster, in
+    # dem EXP von VC zu trennen ist.
+    f_exp90 = np.array([1000.0, 3000.0, 5000.0, 7000.0, 8000.0, 9000.0,
+                        10000.0, 12000.0, 14000.0, 16000.0])
+    exp90_grin = np.array([0.0, 0.0, 3.9, 5.7, 4.1, 2.4, 0.1, -5.2, -9.1,
+                           -11.3])
+    f_exp0 = np.array([9000.0, 10000.0, 12000.0, 14000.0, 15000.0])
+    exp0_grin = np.array([10.5, 10.2, 8.8, 8.5, 7.5])
+
+    def _grin_rms(cap, ang, f_ref=None, a_ref=None):
+        """Frequenzgang gegen die digitalisierte Kurve, LF-normiert."""
+        f_ref = f_grin if f_ref is None else f_ref
+        a_ref = vc_grin[ang] if a_ref is None else a_ref
+        aa = 20 * np.log10(np.abs(cap.transfer_function(
+            np.concatenate([[100.0], f_ref]), angle_deg=ang)))
+        d = (aa[1:] - aa[0]) - a_ref
+        return float(np.sqrt(np.mean(d ** 2))), d
+
     # --------- Gegenprobe 41: BEM-Frontfaktor der flachen Stirnfläche -----
     # Eine Ein-Membran-Kapsel ist kein Ball. Die Kugelkalotte
     # (_diffraction_factors) legt die Membran auf eine um ±40..50°
@@ -8501,22 +8557,24 @@ if __name__ == "__main__":
     # mehrdeutig. Als Kammerhöhe gelesen (4.921 mm, V = 1.87 cm³) liegt
     # unser Modell 10.4 dB RMS daneben, als Volumen (V = 5.955e-7 m³,
     # h_c = 1.567 mm) 1.6 dB — die Physik entscheidet eindeutig für die
-    # zweite. Die Kurvenpunkte unten sind von Fig. 5 abgelesen (±1 dB).
+    # zweite. Die Kurvenpunkte stehen oben (digitalisiert, nicht
+    # geschätzt).
     #
     # WAS DIE PROBE ZEIGT — und was NICHT. Auf Achse braucht die Messung
-    # einen Frontfaktor von +6.5…+8.6 dB im Band 8…16 kHz. Eine starre
+    # einen Frontfaktor von +6.9…+9.6 dB im Band 5…16 kHz. Eine starre
     # 33-mm-KUGEL kann das prinzipiell nicht: ihre Kalottenmittelung
-    # sättigt bei ~+5 dB. Die flache Stirnfläche erreicht +8.9 dB. Das
+    # sättigt bei ~+5 dB. Die flache Stirnfläche erreicht +8.9 dB und
+    # trifft Fig. 5 damit auf 1.0 dB RMS statt 3.1 dB mit der Kugel. Das
     # ist der eigentliche Befund und wird unten beidseitig geprüft.
-    # OFF-AXIS bleibt der Fehler dagegen bestehen (90°/14 kHz: ~17 dB) —
-    # er ist NICHT die Körperform: nötig wäre dort ein Frontfaktor von
-    # −22 dB, den kein starrer konvexer Körper dieser Größe bei ka ≈ 4
-    # liefert (Kugel −4.9, BEM −5.1 dB). Die Ursache liegt woanders
-    # (Grinnip rechnet fünf Membranmoden mit modenweise projiziertem
-    # Antrieb und gibt das FLÄCHENMITTEL der Auslenkung aus; bei
-    # Streifeinfall ist der Antrieb über die Membran stark
-    # ungleichförmig). Die Schranke unten hält den Restfehler fest,
-    # damit er nur kleiner werden kann.
+    # OFF-AXIS bleibt ein Rest, aber ein viel kleinerer, als hier früher
+    # stand: mit EINER Mode fehlen bei 90° 4.9 dB bei 14 kHz und 9.7 dB
+    # bei 18 kHz (3.7 dB RMS über das Band), bei 180° 2.9 dB RMS. Der
+    # frühere Eintrag "~17 dB bei 90°/14 kHz" war ein Ablesefehler in
+    # Fig. 6 und ist mit der digitalisierten Kurve gegenstandslos.
+    # Einen Teil des Restes trägt der modenweise projizierte Antrieb,
+    # den Grinnip mitrechnet (Gegenprobe 43: 3.7 -> 2.4 dB RMS bei 90°,
+    # 3.0 -> 1.7 dB bei 180°); der Rest ist offen. Die Schranken unten
+    # halten den Stand fest, damit er nur kleiner werden kann.
     if _HAS_SCIPY:
         g41 = dict(
             membrane_material={"rho": 1630.0, "E": 4.9e9, "nu": 0.37},
@@ -8595,46 +8653,47 @@ if __name__ == "__main__":
         assert d41c < 0.2, \
             (f"BEM-Frontfaktor muss gitterkonvergent sein ({n_grob} -> "
              f"{n_fein} Elemente ändern {d41c:.3f} dB)")
-        # c) gemessener Frequenzgang auf Achse (Fig. 5, ±1 dB abgelesen)
-        f41r = np.array([100.0, 1000.0, 2000.0, 3000.0, 5000.0, 7000.0,
-                         8000.0, 10000.0, 12000.0, 14000.0, 16000.0,
-                         18000.0])
-        a41r = np.array([0.0, 0.0, 0.5, 2.2, 6.1, 9.6, 11.0, 12.5, 12.1,
-                         12.3, 11.0, 7.0])
-
-        def _rms41(cap, ang):
-            aa = 20 * np.log10(np.abs(
-                cap.transfer_function(f41r, angle_deg=ang)))
-            return aa - aa[1], float(np.sqrt(np.mean(
-                (aa - aa[1] - a41r) ** 2)))
-
-        _, r41b = _rms41(c41b, 0.0)
-        _, r41s = _rms41(c41s, 0.0)
-        assert r41b < 2.0, \
-            f"BEM auf Achse muss Fig. 5 auf < 2 dB treffen ({r41b:.2f})"
-        assert r41b < r41s, \
-            (f"der BEM-Frontfaktor muss die Kugel schlagen "
+        # c) Frequenzgang auf Achse gegen Fig. 5 (VC, digitalisiert)
+        r41b, _ = _grin_rms(c41b, 0.0)
+        r41s, _ = _grin_rms(c41s, 0.0)
+        assert r41b < 1.5, \
+            f"BEM auf Achse muss Fig. 5 auf < 1.5 dB treffen ({r41b:.2f})"
+        assert r41b < r41s - 1.0, \
+            (f"der BEM-Frontfaktor muss die Kugel deutlich schlagen "
              f"({r41b:.2f} gegen {r41s:.2f} dB)")
-        # d) dokumentierte Grenze off-axis: KEIN Körpermodell schließt sie
-        a41_90 = np.array([0.0, 0.3, 1.2, 4.9, 4.6, -0.5, -8.2, -17.5])
-        f41_90 = np.array([1000.0, 3000.0, 5000.0, 7000.0, 8000.0,
-                           10000.0, 12000.0, 14000.0])
-        aa90 = 20 * np.log10(np.abs(
-            c41b.transfer_function(f41_90, angle_deg=90.0)))
-        d41 = float((aa90 - aa90[0] - a41_90)[-1])
-        assert 8.0 < d41 < 20.0, \
-            (f"dokumentierte Off-Axis-Grenze bei 90°/14 kHz "
-             f"({d41:+.1f} dB) — Schranke, damit sie nur kleiner wird")
+        # c2) und gegen die MESSUNG dort, wo EXP von VC zu trennen ist.
+        #     Beide Rechnungen liegen im Fenster 9…15 kHz über der
+        #     Messung — Grinnip nennt für seine eigene bis ~5 dB.
+        r41e, d41e = _grin_rms(c41b, 0.0, f_exp0, exp0_grin)
+        r41ve = float(np.sqrt(np.mean(
+            (np.interp(f_exp0, f_grin, vc_grin[0.0]) - exp0_grin) ** 2)))
+        assert r41e < 5.0, \
+            (f"auf Achse gegen die Messung im Fenster 9…15 kHz: "
+             f"{r41e:.2f} dB RMS (Grinnips eigene Rechnung {r41ve:.2f})")
+        assert np.all(d41e > 0.0), \
+            (f"beide Rechnungen liegen dort ÜBER der Messung "
+             f"({np.round(d41e, 1)})")
+        # d) dokumentierter Rest off-axis bei EINER Mode
+        r41_90, d41_90 = _grin_rms(c41b, 90.0)
+        d41 = float(d41_90[f_grin == 14000.0][0])
+        assert r41_90 < 4.5, \
+            (f"90° mit einer Mode: {r41_90:.2f} dB RMS gegen Fig. 6 — "
+             f"Schranke, damit der Rest nur kleiner wird")
+        assert 2.0 < d41 < 6.5, \
+            (f"dokumentierter Off-Axis-Rest bei 90°/14 kHz "
+             f"({d41:+.1f} dB) — Schranke, damit er nur kleiner wird")
         print(f"BEM-Frontfaktor (Grinnip 2006, Shure-Prototyp): "
               f"|F|(ka->0) = 1 ({np.max(np.abs(np.abs(F0) - 1.0)):.0e}), "
               f"akust. Mittelpunkt {d_ac * 1e3:.1f} mm bei "
               f"R_body {c41b.R_body * 1e3:.1f} mm; flache "
               f"Stirnfläche staut bis {Fb.max():+.1f} dB, die Kugelkalotte "
-              f"sättigt bei {Fs.max():+.1f} dB (gemessen nötig +6.5…+8.6); "
+              f"sättigt bei {Fs.max():+.1f} dB (gemessen nötig +6.9…+9.6); "
               f"Fig. 5 auf Achse {r41b:.2f} dB RMS gegen {r41s:.2f} dB mit "
-              f"Kugel; gitterkonvergent ({n_grob}->{n_fein} Elemente: "
-              f"{d41c:.3f} dB); off-axis bleibt {d41:+.0f} dB bei "
-              f"90°/14 kHz — nicht die Körperform, dokumentiert  OK")
+              f"Kugel, gegen die Messung {r41e:.2f} dB (Grinnip selbst "
+              f"{r41ve:.2f}); gitterkonvergent ({n_grob}->{n_fein} "
+              f"Elemente: {d41c:.3f} dB); off-axis bleiben mit einer Mode "
+              f"{r41_90:.2f} dB RMS bei 90° ({d41:+.1f} dB bei 14 kHz), "
+              f"dokumentiert  OK")
 
     # --------- Gegenprobe 42: Flächenmittel der Modenreihe ----------------
     # Grinnip (JAES 54(3), 2006, Gl. 54/55) gibt als Signal das
@@ -8793,6 +8852,14 @@ if __name__ == "__main__":
     #    8.2 kHz, die in Grinnips Messung nicht existiert. Jetzt stehen an
     #    beiden Stellen dieselben Zweige.
     #
+    # 3) WOFÜR DAS GANZE. Der modenweise projizierte Antrieb ist Grinnips
+    #    eigentliche Lehre und muss sich messbar auszahlen: bei
+    #    Streifeinfall ist der Druck über die Membran stark
+    #    ungleichförmig, die höheren Moden bekommen Amplitude, und ihr
+    #    Flächenmittel 2·J1(z_m)/z_m ist klein. Genau dieser Hochtonabfall
+    #    fehlt der Einmoden-Rechnung. Teil f/g prüft beides gegen die
+    #    digitalisierten Kurven.
+    #
     # Verankert wird das an exakten Grenzwerten und an der Messung.
     if _HAS_SCIPY:
         g43 = dict(
@@ -8892,35 +8959,47 @@ if __name__ == "__main__":
         assert np.max(np.abs(h43a - h43b)) == 0.0, \
             "bei einer Mode darf modal_source nichts ändern"
 
-        # f) gegen die MESSUNG (Grinnip Fig. 5/6/7, abgelesen wie in
-        #    Gegenprobe 41). Schranken als dokumentierter Stand.
-        ref43 = {
-            0.0: ((1000, 3000, 5000, 7000, 8000, 10000, 12000, 14000,
-                   16000, 18000),
-                  (0.0, 2.2, 6.1, 9.6, 11.0, 12.5, 12.1, 12.3, 11.0, 7.0),
-                  1.8),
-            90.0: ((1000, 3000, 5000, 7000, 8000, 10000, 12000, 14000),
-                   (0.0, 0.3, 1.2, 4.9, 4.6, -0.5, -8.2, -17.5), 7.0),
-            180.0: ((1000, 3000, 5000, 7000, 8000, 10000, 12000, 14000,
-                     16000),
-                    (0.0, 1.2, 3.3, 6.0, 4.9, -2.0, -7.0, -12.0, -18.0),
-                    6.5)}
+        # f) gegen Grinnip Fig. 5/6/7 (digitalisiert, s. Messanker oben).
+        #    Schranken als dokumentierter Stand.
         rms43 = {}
-        for ang43, (fs43, ms43, lim43) in ref43.items():
-            fa43 = np.asarray(fs43, dtype=float)
-            aa43 = 20 * np.log10(np.abs(
-                c43.transfer_function(fa43, angle_deg=ang43)))
-            rms43[ang43] = float(np.sqrt(np.mean(
-                (aa43 - aa43[0] - np.asarray(ms43)) ** 2)))
+        for ang43, lim43 in ((0.0, 1.5), (90.0, 3.0), (180.0, 2.3)):
+            rms43[ang43], _ = _grin_rms(c43, ang43)
             assert rms43[ang43] < lim43, \
                 (f"{ang43:.0f}°: {rms43[ang43]:.2f} dB RMS gegen Fig. 5/6/7 "
                  f"(Schranke {lim43})")
+        r43e, _ = _grin_rms(c43, 90.0, f_exp90, exp90_grin)
+        assert r43e < 3.5, \
+            f"90° gegen die MESSUNG: {r43e:.2f} dB RMS (Schranke 3.5)"
+
+        # g) DIE EIGENTLICHE LEHRE aus Grinnip: der modenweise projizierte
+        #    Antrieb muss die Streifeinfall-Rechnung messbar verbessern,
+        #    ohne die Achse zu verschlechtern. Bei 90° und 180° ist der
+        #    Antrieb über die Membran stark ungleichförmig, die höheren
+        #    Moden bekommen dort Amplitude, und ihr Flächenmittel
+        #    2·J1(z_m)/z_m ist klein — genau das fehlt der Einmoden-
+        #    Rechnung als Hochtonabfall. Ohne diese Probe wäre
+        #    ``modal_source`` eine Behauptung.
+        c43e = MicrophoneCapsule(**dict(g43, membrane_modes=1,
+                                        modal_source=0))
+        gew43 = {}
+        for ang43 in (0.0, 90.0, 180.0):
+            e43, _ = _grin_rms(c43e, ang43)
+            gew43[ang43] = e43 - rms43[ang43]
+        assert gew43[90.0] > 1.0 and gew43[180.0] > 1.0, \
+            (f"der modenweise Antrieb muss off-axis mindestens 1 dB RMS "
+             f"bringen (90°: {gew43[90.0]:+.2f}, 180°: {gew43[180.0]:+.2f})")
+        assert gew43[0.0] > -0.2, \
+            (f"und darf die Achse nicht verschlechtern "
+             f"({gew43[0.0]:+.2f} dB RMS)")
         print(f"Modenfaktoren aus dem BEM: ka->0 alle 1 ({r43a:.0e}), ein "
               f"Lösungsgang für {F43b.shape[0]} Moden; gegen die Kalotte "
               f"unterscheiden sie sich bei 14 kHz um {d43:.2f}; "
               f"Modensenke bei {f2_43 / 1e3:.1f} kHz beseitigt "
               f"({kerbe['ok']:+.2f} statt {kerbe['roh']:+.2f} dB); Grinnip "
-              f"0/90/180° = {rms43[0.0]:.2f}/{rms43[90.0]:.2f}/"
-              f"{rms43[180.0]:.2f} dB RMS  OK")
+              f"VC 0/90/180° = {rms43[0.0]:.2f}/{rms43[90.0]:.2f}/"
+              f"{rms43[180.0]:.2f} dB RMS (Messung bei 90°: {r43e:.2f}), "
+              f"der modenweise Antrieb bringt "
+              f"{gew43[0.0]:+.2f}/{gew43[90.0]:+.2f}/{gew43[180.0]:+.2f} dB"
+              f"  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
