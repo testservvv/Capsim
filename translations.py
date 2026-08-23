@@ -798,6 +798,51 @@ TR = {
               "Referenz. DEUTLICH langsamer (~1-2 s je "
               "Frequenzpunkt), Ergebnisse werden gecacht.",
     },
+    "lbl_body_len": {
+        "en": "BEM: capsule length [mm]",
+        "de": "BEM: Kapsellänge [mm]",
+    },
+    "help_body_len": {
+        "en": "Axial length of the capsule body. The BEM contour is a "
+              "rounded cylinder of body Ø × this length, with the "
+              "membrane on its FLAT front face — that is the whole point "
+              "of the model: a flat face piles the pressure up much more "
+              "than a sphere cap of the same diameter (up to +9 dB "
+              "instead of +5 dB at ka ≈ 3, because the rim waves focus "
+              "on the axis). The sphere model does not need this value, "
+              "which is why it is separate from the body diameter. "
+              "Single-membrane capsules only, and only with a sealed "
+              "back: the rear inlets of a gradient capsule would need "
+              "their own patch on the contour, which is not built.",
+        "de": "Axiale Länge des Kapselkörpers. Die BEM-Kontur ist ein "
+              "verrundeter Zylinder aus Körper-Ø × dieser Länge, die "
+              "Membran liegt auf seiner FLACHEN Stirnfläche — und genau "
+              "darum geht es: eine flache Fläche staut den Druck viel "
+              "stärker als eine Kugelkalotte gleichen Durchmessers (bis "
+              "+9 dB statt +5 dB bei ka ≈ 3, weil die Randwellen auf die "
+              "Achse fokussieren). Die Kugelrechnung braucht den Wert "
+              "nicht, deshalb steht er getrennt vom Körperdurchmesser. "
+              "Nur für Ein-Membran-Bauformen und nur bei dichter "
+              "Rückseite: die rückwärtigen Einlässe eines Gradienten"
+              "empfängers bräuchten einen eigenen Patch auf der Kontur, "
+              "der nicht gebaut ist.",
+    },
+    "cap_bem_front": {
+        "en": "⏳ BEM solves a boundary-element system per frequency "
+              "point — fast for a bare capsule (body Ø 0), much slower "
+              "with a microphone body attached. It replaces the sphere "
+              "cap by the real flat front face and is verified on axis "
+              "against a measured prototype (Grinnip 2006, JAES 54(3)). "
+              "Off axis above ~10 kHz a known error remains that is NOT "
+              "the body shape.",
+        "de": "⏳ BEM rechnet je Frequenzpunkt ein Randelementsystem — "
+              "schnell für die nackte Kapsel (Körper-Ø 0), deutlich "
+              "langsamer mit Mikrofonkörper dahinter. Es ersetzt die "
+              "Kugelkalotte durch die reale flache Stirnfläche und ist "
+              "auf Achse gegen einen gemessenen Prototyp verifiziert "
+              "(Grinnip 2006, JAES 54(3)). Off-axis oberhalb ~10 kHz "
+              "bleibt ein bekannter Fehler, der NICHT die Körperform ist.",
+    },
     "lbl_bem_dia": {
         "en": "BEM: body Ø [mm]",
         "de": "BEM: Körper-Ø [mm]",

@@ -221,6 +221,9 @@ DEFAULTS = {
     # stehende Scheibe (Referenzfall, Gegenprobe 20); BEM = montagetreue
     # Kontur Kopf + Mikrofonkörper (Gegenprobe 21).
     "axial_body": "Kugel (d_ext, montiert)",
+    # Axiale Körperlänge — nur für BEM bei EIN-Membran-Bauformen
+    # (Druckempfänger); die Doppelmembran nimmt dort d_ext.
+    "body_length_mm": 12.0,
     "bem_body_dia_mm": 56.0,
     "bem_body_gap_mm": 15.0,
     "bem_body_len_mm": 80.0,
@@ -555,6 +558,14 @@ def build_capsule(p):
             if ARCH_LABELS[p["architecture"]] != "dual_diaphragm"
             else "backplate"),
         body_diameter=p["body_diameter_mm"] * 1e-3,
+        # body_length gilt NUR für BEM bei Ein-Membran-Bauformen; bei der
+        # Doppelmembran spannen die Membranen die Stirnflächen auf (d_ext),
+        # dort weist das Physikmodell den Wert zurück.
+        body_length=(p.get("body_length_mm", 12.0) * 1e-3
+                     if (AX_LABELS.get(p.get("axial_body")) == "bem"
+                         and ARCH_LABELS[p["architecture"]]
+                         != "dual_diaphragm")
+                     else None),
         include_diffraction=p["diffraction_on"],
         axial_body_model=AX_LABELS.get(p.get("axial_body",
                                              "Kugel (d_ext, montiert)"),
@@ -1188,23 +1199,34 @@ with st.sidebar:
                         key="p_body_diameter_mm",
                         disabled=not st.session_state["p_diffraction_on"],
                         help=tr("help_body_dia"))
-        if st.session_state["p_architecture"] == K67_LABEL:
-            st.selectbox(tr("lbl_ax_body"),
-                         list(AX_LABELS), format_func=_label_formatter(),
-                         key="p_axial_body",
-                         disabled=not st.session_state["p_diffraction_on"],
-                         help=tr("help_ax_body"))
-            if AX_LABELS.get(st.session_state["p_axial_body"]) == "bem":
-                st.number_input(tr("lbl_bem_dia"), 0.0, 200.0, step=1.0,
-                                key="p_bem_body_dia_mm",
-                                help=tr("help_bem_dia"))
+        _k67 = st.session_state["p_architecture"] == K67_LABEL
+        # Sphäroid ist ein reines Front-Rück-Transfermodell und bleibt der
+        # Doppelmembran vorbehalten; BEM liefert bei Ein-Membran-Bauformen
+        # den Frontfaktor der flachen Stirnfläche (Druckempfänger).
+        _ax_opts = [k for k, v in AX_LABELS.items()
+                    if _k67 or v != "spheroid"]
+        if st.session_state["p_axial_body"] not in _ax_opts:
+            st.session_state["p_axial_body"] = _ax_opts[0]
+        st.selectbox(tr("lbl_ax_body"), _ax_opts,
+                     format_func=_label_formatter(), key="p_axial_body",
+                     disabled=not st.session_state["p_diffraction_on"],
+                     help=tr("help_ax_body"))
+        if AX_LABELS.get(st.session_state["p_axial_body"]) == "bem":
+            if not _k67:
+                st.number_input(tr("lbl_body_len"), 4.5, 200.0, step=0.5,
+                                key="p_body_length_mm",
+                                help=tr("help_body_len"))
+            st.number_input(tr("lbl_bem_dia"), 0.0, 200.0, step=1.0,
+                            key="p_bem_body_dia_mm",
+                            help=tr("help_bem_dia"))
+            if st.session_state["p_bem_body_dia_mm"] > 0.0:
                 st.number_input(tr("lbl_bem_gap"), 3.0,
                                 100.0, step=1.0, key="p_bem_body_gap_mm",
                                 help=tr("help_bem_gap"))
                 st.number_input(tr("lbl_bem_len"), 10.0, 300.0,
                                 step=5.0, key="p_bem_body_len_mm",
                                 help=tr("help_bem_len"))
-                st.caption(tr("cap_bem"))
+            st.caption(tr("cap_bem") if _k67 else tr("cap_bem_front"))
 
     # ---------------- Spaltfilm-Modell -----------------------------------
     with st.expander(tr("exp_squeeze"), expanded=False):

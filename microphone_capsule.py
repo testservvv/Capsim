@@ -278,6 +278,15 @@ class MicrophoneCapsule:
         body_diameter : float oder None
             Durchmesser des kugelförmigen Ersatz-Gehäuses für die Beugungs-
             rechnung [m]. ``None`` -> 1.2 * max(Membran-, Backplate-Ø).
+        body_length : float oder None
+            AXIALE Länge des Kapselkörpers [m]. Wird NUR von
+            ``axial_body_model='bem'`` gebraucht: dort ist der Körper ein
+            verrundeter Zylinder ``body_diameter × body_length``, und die
+            Membran liegt auf seiner FLACHEN Stirnfläche. Die Kugel-
+            rechnung braucht sie nicht (eine Kugel hat nur einen
+            Durchmesser), deshalb ``None`` als Voreinstellung. Für die
+            Doppelmembran-Bauform wird stattdessen ``d_ext`` benutzt (die
+            beiden Membranen sitzen auf den beiden Stirnflächen).
         include_diffraction : bool
             ``True`` (Standard): Druckstau/Abschattung am Kapselkörper wird
             über die exakte Streuung der ebenen Welle an einer starren
@@ -388,6 +397,7 @@ class MicrophoneCapsule:
         fabric_rear_position="backplate",
         # --- Gehäuse & Beugung ----------------------------------------------
         body_diameter=None,
+        body_length=None,
         include_diffraction=True,
         axial_body_model="sphere",
         bem_body_diameter=56e-3,
@@ -670,6 +680,10 @@ class MicrophoneCapsule:
 
         self.body_diameter = (None if body_diameter is None
                               else float(body_diameter))
+        self.body_length = (None if body_length is None
+                            else float(body_length))
+        if self.body_length is not None and self.body_length <= 0.0:
+            raise ValueError("body_length muss > 0 sein (oder None).")
         self.include_diffraction = bool(include_diffraction)
 
         sm = str(squeeze_model).strip().lower()
@@ -748,6 +762,11 @@ class MicrophoneCapsule:
         # Kopf; Durchmesser 0 = frei stehender Kopf). Das ist die
         # montagetreue Rechnung ZWISCHEN den Referenzkörpern d_ext-Kugel
         # (montiert-idealisiert) und freiem Sphäroid.
+        # "bem" gilt AUSSERDEM für Ein-Membran-Kapseln mit dichter
+        # Rückseite (Druckempfänger): dort liefert es den absoluten
+        # FRONTFAKTOR der realen flachen Stirnfläche. Die Kopflänge ist
+        # dann body_length; bem_body_diameter = 0 heißt frei stehende
+        # Kapsel ohne Mikrofonkörper dahinter.
         ab = str(axial_body_model).strip().lower()
         if ab not in ("sphere", "spheroid", "bem"):
             raise ValueError(
@@ -1368,14 +1387,63 @@ class MicrophoneCapsule:
         self._ring_cos = float(np.clip(
             (self.R_body - self.d_rear_ax) / self.R_body, -1.0, 1.0))
 
-        # Sphäroid-/BEM-Körpermodell: nur für die Doppelmembran-Bauform.
-        if self.axial_body_model in ("spheroid", "bem"):
+        # ------------------------------------------------------------------
+        # KÖRPERMODELL FÜR DIE BEUGUNG
+        # 'sphere' (Standard) und 'spheroid' sind Ersatzkörper für den
+        # AXIALEN Front-Rück-Transfer der Doppelmembran-Bauform. 'bem'
+        # rechnet dagegen die reale Kontur und liefert damit auch den
+        # absoluten FRONTFAKTOR der flachen Stirnfläche — der ist auch für
+        # eine Ein-Membran-Kapsel (Druckempfänger) die eigentlich
+        # interessante Größe, weil die Kugelkalotte dort systematisch
+        # falsch liegt (s. _bem_axial_fields und Gegenprobe 41).
+        # Kopflänge: bei der Doppelmembran spannen die beiden Membranen
+        # die Stirnflächen auf, also d_ext; sonst ist sie eine eigene
+        # Geometrieangabe (body_length).
+        # ------------------------------------------------------------------
+        self._bem_head_len = self.d_ext
+        if self.axial_body_model == "spheroid":
             if self.architecture != "dual_diaphragm":
                 raise ValueError(
-                    f"axial_body_model='{self.axial_body_model}' gilt nur "
-                    "für die Doppelmembran-Bauform (axialer Front-Rück-"
-                    "Transfer)."
+                    "axial_body_model='spheroid' gilt nur für die "
+                    "Doppelmembran-Bauform (axialer Front-Rück-Transfer). "
+                    "Für den Frontfaktor einer Ein-Membran-Kapsel 'bem' "
+                    "nehmen."
                 )
+        elif self.axial_body_model == "bem":
+            if self.architecture != "dual_diaphragm":
+                # DRUCKEMPFÄNGER: der BEM liefert hier NUR den Frontfaktor.
+                # Der rückwärtige Einlass hätte einen eigenen Patch auf der
+                # Kontur nötig (Stirnfläche oder Mantel, je nach
+                # cavity_hole_position) — das ist nicht gebaut, deshalb
+                # bleibt der Gradientenfall gesperrt statt still falsch.
+                if self.rear_open:
+                    raise ValueError(
+                        "axial_body_model='bem' liefert für Ein-Membran-"
+                        "Bauformen nur den FRONTFAKTOR und setzt deshalb "
+                        "eine dichte Rückseite voraus (Druckempfänger). "
+                        "Diese Kapsel ist rückseitig offen — für den "
+                        "Gradientenfall 'sphere' nehmen."
+                    )
+                if self.body_length is None:
+                    raise ValueError(
+                        "axial_body_model='bem' braucht die axiale "
+                        "Körperlänge body_length (die Kugelrechnung kennt "
+                        "nur body_diameter)."
+                    )
+                self._bem_head_len = self.body_length
+            elif self.body_length is not None:
+                raise ValueError(
+                    "body_length gilt nicht für die Doppelmembran-Bauform "
+                    "— dort spannen die beiden Membranen die Stirnflächen "
+                    "auf, die axiale Länge ist d_ext."
+                )
+        if self.axial_body_model == "bem" and self._bem_head_len < 2.0e-3:
+            # Verrundung und Elementlänge skalieren mit dem Körper
+            # (s. _bem_geometry), darunter wird die Scheibe aber so dünn,
+            # dass die m=0-Kollokation auf dem Mantel entartet.
+            raise ValueError(
+                "BEM-Kontur: die axiale Körperlänge muss >= 2 mm sein "
+                f"({self._bem_head_len * 1e3:.2f} mm).")
         if self.axial_body_model == "spheroid":
             if 0.5 * self.d_ext >= 0.98 * self.R_body:
                 raise ValueError(
@@ -2551,6 +2619,10 @@ class MicrophoneCapsule:
     # Sphäroidkontur die Sphäroid-Reihe auf < 1e-3 über das Band.
     # ------------------------------------------------------------------
     _BEM_NPHI = 96
+    # Obergrenze der Meridian-Elementlänge; in _bem_geometry zusätzlich mit
+    # der Körpergröße skaliert. Als Klassenkonstante, damit die Gitter-
+    # konvergenz prüfbar ist (Gegenprobe 41).
+    _BEM_H_MAX = 1.0e-3
     _BEM_G4 = np.array([-0.8611363116, -0.3399810436,
                         0.3399810436, 0.8611363116])
     _BEM_W4 = np.array([0.3478548451, 0.6521451549,
@@ -2640,15 +2712,20 @@ class MicrophoneCapsule:
         CHIEF-Punkte — einmalig aufgebaut und am Objekt gehalten."""
         if getattr(self, "_bem_geo", None) is not None:
             return self._bem_geo
-        rf = 0.8e-3
-        Rh, zf = self.R_body, 0.5 * self.d_ext
+        Rh, zf = self.R_body, 0.5 * self._bem_head_len
         zr = -zf
+        # Kantenverrundung und Elementlänge SKALIEREN mit dem Körper, damit
+        # die Kontur für jede Baugröße gültig bleibt (rf < R und
+        # 2·rf < Länge sind damit automatisch erfüllt). Für Körper ab
+        # ~4 mm Radius/Länge greifen die alten festen Werte unverändert.
+        rf = min(0.8e-3, 0.2 * Rh, 0.2 * self._bem_head_len)
+        h_el = min(self._BEM_H_MAX, 0.35 * Rh)
         segs = [("line", (0.0, zf), (Rh - rf, zf)),
                 ("arc", (Rh - rf, zf - rf), rf, np.pi / 2, 0.0),
                 ("line", (Rh, zf - rf), (Rh, zr + rf)),
                 ("arc", (Rh - rf, zr + rf), rf, 0.0, -np.pi / 2),
                 ("line", (Rh - rf, zr), (0.0, zr))]
-        pts = self._bem_contour(segs, h=1.0e-3)
+        pts = self._bem_contour(segs, rf=rf, h=h_el)
         elems = self._bem_elems(pts)
         n_head = elems["L"].size
         chief = [(0.0, 0.0), (0.55 * Rh, 0.0)]
@@ -2739,9 +2816,11 @@ class MicrophoneCapsule:
             u, *_ = np.linalg.lstsq(A, b, rcond=None)
             # BEIDE Membranmittel MODENGEWICHTET (Galerkin-Projektion auf
             # die Grundmode, s. _cap_mode_quad). Front- und Rückpatch sind
-            # hier beide Membranscheiben (r <= a_mem) der Doppelmembran-
-            # Bauform — nur mit gleichem Gewicht bleibt der Transfer G
+            # bei der Doppelmembran-Bauform beide Membranscheiben
+            # (r <= a_mem) — nur mit gleichem Gewicht bleibt der Transfer G
             # das Verhältnis zweier gleichartig projizierter Antriebe.
+            # Bei einer Ein-Membran-Kapsel ist der Rückpatch eine massive
+            # Stirnfläche; dort wird nur F benutzt (s. _source_pressures).
             wf = w_area[front] * self._membrane_mode_weight(mr[front])
             wr = w_area[rear] * self._membrane_mode_weight(mr[rear])
             p_f = (wf @ u[front]) / np.sum(wf)
@@ -3584,6 +3663,16 @@ class MicrophoneCapsule:
                 else:
                     G_ax = self._axial_body_transfer(omega, theta)
                 return F_f, F_f * G_ax
+            if self.axial_body_model == "bem":
+                # EIN-MEMBRAN-KAPSEL (Druckempfänger): der Frontfaktor
+                # kommt aus derselben BEM-Lösung, jetzt aber auf der
+                # REALEN flachen Stirnfläche statt auf einer Kugelkalotte.
+                # Die Rückseite ist per Gatter dicht — p_rear wird von
+                # _membrane_volume_velocity dann gar nicht gelesen; wir
+                # geben denselben Faktor zurück, damit keine stille
+                # Mischung zweier Körpermodelle entsteht.
+                F_bem, _ = self._bem_axial_fields(omega, theta)
+                return F_bem, F_bem
             return self._diffraction_factors(omega, theta)
         p_front = np.ones((omega.size, theta.size), dtype=complex)
         p_rear = np.exp(-1j * np.outer(k * self.d_ext, np.cos(theta)))
@@ -6043,13 +6132,30 @@ if __name__ == "__main__":
              f"({d_kugel * 1e3:.1f} < {d_mnt * 1e3:.1f} < "
              f"{d_frei * 1e3:.1f} mm)")
         assert abs(abs(G_mnt) - 1.0) < 0.02, "BEM: |G| ~ 1 im Tiefband"
-        try:
-            MicrophoneCapsule(architecture="single",
-                              axial_body_model="bem",
-                              membrane_resonance_hz=8000.0)
-            raise AssertionError("BEM ohne dual_diaphragm muss scheitern")
-        except ValueError:
-            pass
+        # d) Gatter. 'spheroid' ist ein reines Front-Rück-Transfermodell und
+        #    bleibt der Doppelmembran vorbehalten; 'bem' gilt auch für
+        #    Ein-Membran-Kapseln, dort aber NUR mit dichter Rückseite und
+        #    mit angegebener Körperlänge (s. Gegenprobe 41).
+        _g21 = dict(membrane_resonance_hz=8000.0, architecture="single")
+        _dicht = dict(_g21, n_cavity_holes=0, rear_network_enabled=True)
+        for kw, was in (
+                (dict(_g21, axial_body_model="spheroid"),
+                 "spheroid ohne dual_diaphragm"),
+                (dict(_g21, axial_body_model="bem", body_length=20e-3),
+                 "BEM bei offener Rückseite"),
+                (dict(_dicht, axial_body_model="bem"),
+                 "BEM ohne body_length"),
+                (dict(_dicht, axial_body_model="bem", body_length=1e-3),
+                 "BEM mit zu kurzem Körper"),
+                (dict(membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+                      architecture="dual_diaphragm", center_gap=50e-6,
+                      axial_body_model="bem", body_length=20e-3),
+                 "body_length bei dual_diaphragm")):
+            try:
+                MicrophoneCapsule(**kw)
+                raise AssertionError(f"{was} muss scheitern")
+            except ValueError:
+                pass
         print(f"BEM: Kugelkontur {worst_k:.1e}, Sphäroidkontur "
               f"{worst_o:.1e}; d_eff Kugel {d_kugel*1e3:.1f} < montiert "
               f"{d_mnt*1e3:.1f} < freie Scheibe {d_frei*1e3:.1f} mm "
@@ -8227,5 +8333,163 @@ if __name__ == "__main__":
           f"{np.sqrt(27 / 16):.5f}); w0 = 0, Wandlerkoeffizient und "
           f"Feder-Erweichung beide exakt ×2 — der Faktor 2 im Pull-in "
           f"gälte nur bei geteilter Versorgung  OK")
+
+    # --------- Gegenprobe 41: BEM-Frontfaktor der flachen Stirnfläche -----
+    # Eine Ein-Membran-Kapsel ist kein Ball. Die Kugelkalotte
+    # (_diffraction_factors) legt die Membran auf eine um ±40..50°
+    # gekrümmte Fläche; die reale Kapsel hat eine FLACHE Stirnfläche, auf
+    # der die Membran senkrecht zur Einfallsrichtung steht. Der Druckstau
+    # ist dort deutlich größer, und weil eine endliche Scheibe zusätzlich
+    # Randwellen auf die Achse fokussiert, übersteigt er die
+    # Verdopplung (+6 dB) der unendlichen Wand.
+    #
+    # ANKER: A. J. Zuckerwars Gegenstück auf der Messseite ist hier
+    # R. S. Grinnip III, "Advanced Simulation of a Condenser Microphone
+    # Capsule", J. Audio Eng. Soc. 54(3), 157–167 (2006). Tabelle 1 gibt
+    # den Prototyp vollständig (Membran ⌀21.89 mm / 2.4 µm / 1630 kg/m³,
+    # f_vak 3500 Hz, Spalt 50.8 µm, Backplate ⌀22 mm / 0.762 mm mit 84
+    # Bohrungen ⌀1.524 mm auf fünf Lochkreisen, Rückkammer, Körper
+    # ⌀33 × 11.5 mm, 73.5 V), Fig. 5/6/7 gemessene Kurven bei 0/90/180°.
+    # Die Kapsel ist absichtlich extrem: gemessen wird bis 18 kHz, also
+    # das 5.1-fache der Vakuumresonanz.
+    #
+    # ZWEI LESARTEN in Tabelle 1: "h_c = 5.955e-7/b²" ist als Zahl
+    # mehrdeutig. Als Kammerhöhe gelesen (4.921 mm, V = 1.87 cm³) liegt
+    # unser Modell 10.4 dB RMS daneben, als Volumen (V = 5.955e-7 m³,
+    # h_c = 1.567 mm) 1.6 dB — die Physik entscheidet eindeutig für die
+    # zweite. Die Kurvenpunkte unten sind von Fig. 5 abgelesen (±1 dB).
+    #
+    # WAS DIE PROBE ZEIGT — und was NICHT. Auf Achse braucht die Messung
+    # einen Frontfaktor von +6.5…+8.6 dB im Band 8…16 kHz. Eine starre
+    # 33-mm-KUGEL kann das prinzipiell nicht: ihre Kalottenmittelung
+    # sättigt bei ~+5 dB. Die flache Stirnfläche erreicht +8.9 dB. Das
+    # ist der eigentliche Befund und wird unten beidseitig geprüft.
+    # OFF-AXIS bleibt der Fehler dagegen bestehen (90°/14 kHz: ~17 dB) —
+    # er ist NICHT die Körperform: nötig wäre dort ein Frontfaktor von
+    # −22 dB, den kein starrer konvexer Körper dieser Größe bei ka ≈ 4
+    # liefert (Kugel −4.9, BEM −5.1 dB). Die Ursache liegt woanders
+    # (Grinnip rechnet fünf Membranmoden mit modenweise projiziertem
+    # Antrieb und gibt das FLÄCHENMITTEL der Auslenkung aus; bei
+    # Streifeinfall ist der Antrieb über die Membran stark
+    # ungleichförmig). Die Schranke unten hält den Restfehler fest,
+    # damit er nur kleiner werden kann.
+    if _HAS_SCIPY:
+        g41 = dict(
+            membrane_material={"rho": 1630.0, "E": 4.9e9, "nu": 0.37},
+            membrane_resonance_hz=None, membrane_diameter=2 * 1.0945e-2,
+            membrane_thickness=2.4e-6,
+            # T aus c_s = 2π f_vak a / j01 (Tab. 1, Gl. 56/57)
+            membrane_tension=(1630.0 * 2.4e-6
+                              * (2 * np.pi * 3500.0 * 1.0945e-2
+                                 / 2.404825557695773) ** 2),
+            air_gap=5.08e-5, backplate_diameter=2 * 1.1e-2,
+            backplate_thickness=7.62e-4, bias_voltage=73.5,
+            architecture="single",
+            through_hole_rings=[(6, 4e-3), (12, 8e-3), (18, 12e-3),
+                                (24, 16e-3), (24, 20e-3)],
+            through_hole_diameter=2 * 7.62e-4, n_blind_holes=0,
+            rear_network_enabled=True, delay_length=0.0,
+            cavity_length=5.955e-7 / (np.pi * 1.1e-2 ** 2),
+            n_cavity_holes=0, fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=33e-3, include_diffraction=True,
+            squeeze_model="2d")
+        c41s = MicrophoneCapsule(**g41)
+        c41b = MicrophoneCapsule(**dict(g41, axial_body_model="bem",
+                                        body_length=11.5e-3,
+                                        bem_body_diameter=0.0))
+        th41 = np.deg2rad(np.array([0.0, 90.0, 180.0]))
+        # a) ka -> 0: der BETRAG geht gegen 1 (der Körper staut nichts
+        #    mehr). Die PHASE tut das nicht und soll es auch nicht: sie
+        #    trägt die Dipolstreuung des Körpers, also den akustischen
+        #    Mittelpunkt. Für eine Kugel ist der bekannte Grenzwert 1.5·R;
+        #    für die flache Scheibe muss er in derselben Größenordnung
+        #    liegen (die Scheibe ist radial so groß wie die Kugel, axial
+        #    dünner). Geprüft wird beides.
+        om41a = np.array([2 * np.pi * 20.0])
+        F0 = c41b._source_pressures(om41a, th41)[0]
+        assert np.max(np.abs(np.abs(F0) - 1.0)) < 1e-3, \
+            f"|F| muss für ka -> 0 gegen 1 gehen ({np.abs(F0)})"
+        d_ac = float(np.angle(F0[0, 0])) / (om41a[0] / C_AIR)
+        assert 0.5 * c41b.R_body < d_ac < 2.0 * c41b.R_body, \
+            (f"akustischer Mittelpunkt bei ka -> 0: {d_ac * 1e3:.1f} mm "
+             f"muss in der Größenordnung von R_body = "
+             f"{c41b.R_body * 1e3:.1f} mm liegen")
+        # b) flache Stirnfläche gegen Kugelkalotte im Band ka = 1.5..4
+        f41 = np.array([5000.0, 6000.0, 8000.0, 10000.0, 12000.0, 14000.0])
+        om41, ax41 = 2 * np.pi * f41, th41[:1]
+        Fb = 20 * np.log10(np.abs(
+            c41b._source_pressures(om41, ax41)[0][:, 0]))
+        Fs = 20 * np.log10(np.abs(
+            c41s._source_pressures(om41, ax41)[0][:, 0]))
+        assert np.all(Fb > Fs + 1.0), \
+            (f"die flache Stirnfläche muss mehr stauen als die Kalotte "
+             f"(BEM {np.round(Fb, 2)} gegen Kugel {np.round(Fs, 2)} dB)")
+        assert Fs.max() < 5.5, \
+            (f"die Kugelkalotte kann den gemessenen Druckstau prinzipiell "
+             f"nicht liefern — sie sättigt bei {Fs.max():.2f} dB")
+        assert Fb.max() > 6.0, \
+            (f"die flache Stirnfläche muss über die Verdopplung hinaus "
+             f"fokussieren ({Fb.max():.2f} dB)")
+        assert c41b._bem_solid_angle_residual < 5e-3, \
+            "BEM-Gitterqualität (Raumwinkel-Residuum)"
+
+        # b2) GITTERKONVERGENZ: dasselbe mit dreifach feinerem Meridian.
+        #     Ein Randelementergebnis ohne diesen Nachweis ist wertlos.
+        class _Fein41(MicrophoneCapsule):
+            _BEM_H_MAX = MicrophoneCapsule._BEM_H_MAX / 3.0
+
+        c41f = _Fein41(**dict(g41, axial_body_model="bem",
+                              body_length=11.5e-3, bem_body_diameter=0.0))
+        f41c = np.array([2000.0, 6000.0, 10000.0, 14000.0, 18000.0])
+        om41c = 2 * np.pi * f41c
+        d41c = np.max(np.abs(
+            20 * np.log10(np.abs(c41f._source_pressures(om41c, th41)[0]))
+            - 20 * np.log10(np.abs(c41b._source_pressures(om41c, th41)[0]))))
+        n_grob = c41b._bem_geometry()["elems"]["L"].size
+        n_fein = c41f._bem_geometry()["elems"]["L"].size
+        assert n_fein > 2.5 * n_grob, "feineres Gitter muss feiner sein"
+        assert d41c < 0.2, \
+            (f"BEM-Frontfaktor muss gitterkonvergent sein ({n_grob} -> "
+             f"{n_fein} Elemente ändern {d41c:.3f} dB)")
+        # c) gemessener Frequenzgang auf Achse (Fig. 5, ±1 dB abgelesen)
+        f41r = np.array([100.0, 1000.0, 2000.0, 3000.0, 5000.0, 7000.0,
+                         8000.0, 10000.0, 12000.0, 14000.0, 16000.0,
+                         18000.0])
+        a41r = np.array([0.0, 0.0, 0.5, 2.2, 6.1, 9.6, 11.0, 12.5, 12.1,
+                         12.3, 11.0, 7.0])
+
+        def _rms41(cap, ang):
+            aa = 20 * np.log10(np.abs(
+                cap.transfer_function(f41r, angle_deg=ang)))
+            return aa - aa[1], float(np.sqrt(np.mean(
+                (aa - aa[1] - a41r) ** 2)))
+
+        _, r41b = _rms41(c41b, 0.0)
+        _, r41s = _rms41(c41s, 0.0)
+        assert r41b < 2.0, \
+            f"BEM auf Achse muss Fig. 5 auf < 2 dB treffen ({r41b:.2f})"
+        assert r41b < r41s, \
+            (f"der BEM-Frontfaktor muss die Kugel schlagen "
+             f"({r41b:.2f} gegen {r41s:.2f} dB)")
+        # d) dokumentierte Grenze off-axis: KEIN Körpermodell schließt sie
+        a41_90 = np.array([0.0, 0.3, 1.2, 4.9, 4.6, -0.5, -8.2, -17.5])
+        f41_90 = np.array([1000.0, 3000.0, 5000.0, 7000.0, 8000.0,
+                           10000.0, 12000.0, 14000.0])
+        aa90 = 20 * np.log10(np.abs(
+            c41b.transfer_function(f41_90, angle_deg=90.0)))
+        d41 = float((aa90 - aa90[0] - a41_90)[-1])
+        assert 8.0 < d41 < 20.0, \
+            (f"dokumentierte Off-Axis-Grenze bei 90°/14 kHz "
+             f"({d41:+.1f} dB) — Schranke, damit sie nur kleiner wird")
+        print(f"BEM-Frontfaktor (Grinnip 2006, Shure-Prototyp): "
+              f"|F|(ka->0) = 1 ({np.max(np.abs(np.abs(F0) - 1.0)):.0e}), "
+              f"akust. Mittelpunkt {d_ac * 1e3:.1f} mm bei "
+              f"R_body {c41b.R_body * 1e3:.1f} mm; flache "
+              f"Stirnfläche staut bis {Fb.max():+.1f} dB, die Kugelkalotte "
+              f"sättigt bei {Fs.max():+.1f} dB (gemessen nötig +6.5…+8.6); "
+              f"Fig. 5 auf Achse {r41b:.2f} dB RMS gegen {r41s:.2f} dB mit "
+              f"Kugel; gitterkonvergent ({n_grob}->{n_fein} Elemente: "
+              f"{d41c:.3f} dB); off-axis bleibt {d41:+.0f} dB bei "
+              f"90°/14 kHz — nicht die Körperform, dokumentiert  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
