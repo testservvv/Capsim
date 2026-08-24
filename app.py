@@ -656,7 +656,7 @@ def compute_results(cache_key, capsule, progress=None):
     p = json.loads(cache_key)
     n_pts = int(p["n_points"])
     dir_freqs = sorted(p["dir_freqs"]) or [1000]
-    n_work = n_pts + len(dir_freqs)
+    n_work = n_pts + len(dir_freqs) + 1        # + Eigenrauschen
     done = 0
 
     def _tick(k, label):
@@ -724,13 +724,19 @@ def compute_results(cache_key, capsule, progress=None):
     # 3D-Feldlöser hat keinen konzentrierten Membranzweig.
     noise = None
     if capsule.squeeze_model != "3d":
+        _tick(0, tr("prog_noise"))
         try:
-            f_n = np.logspace(np.log10(10.0), np.log10(25000.0), 400)
+            # DASSELBE Raster fuer Spektrum und Kennzahl: noise_spectrum
+            # ruft transfer_function, und im BEM-Modus steckt darin je
+            # Frequenz ein Randelementsystem. Ein zweites Raster hat den
+            # Lauf frueher verdoppelt — unsichtbar hinter dem 100 %-Balken.
+            f_n = f              # dasselbe Raster wie der Frequenzgang
             spn = capsule.noise_spectrum(f_n)
-            noise = {"self": capsule.self_noise(),
+            noise = {"self": capsule.self_noise(spectrum=spn),
                      "f": f_n, "asd": spn["asd_pa_shz"]}
         except Exception:            # Rauschen darf nie die App stoppen
             noise = None
+    _tick(1, tr("prog_noise"))
     result = {"fr": fr, "di": di, "aux": aux, "sens_1k": sens_1k,
               "delay": delay, "noise": noise}
     store[cache_key] = result

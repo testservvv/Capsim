@@ -1075,12 +1075,22 @@ TR = {
               "Backplate-Dicke verwenden.",
     },
     "cap_bem": {
-        "en": "⏳ BEM solves a boundary-element system (~200 elements) "
-              "per frequency point. Recommendation: frequency points "
-              "≤ 150.",
-        "de": "⏳ BEM rechnet je Frequenzpunkt ein Rand"
-              "elementsystem (~200 Elemente). Empfehlung: "
-              "Frequenzpunkte ≤ 150.",
+        "en": "⏳ BEM solves a boundary-element system per frequency "
+              "point, and the cost grows with the SQUARE of the element "
+              "count. A bare capsule head is ~55 elements (~0.1 s per "
+              "point); adding a microphone body makes it ~150 (~0.5 s "
+              "per point, so ~3.5 min for 400 points). Recommendation: "
+              "frequency points ≤ 150 while trying things out. Every "
+              "frequency is solved once — directivity and self-noise "
+              "reuse that solution.",
+        "de": "⏳ BEM rechnet je Frequenzpunkt ein Randelementsystem, "
+              "und der Aufwand wächst QUADRATISCH mit der Elementzahl. "
+              "Der nackte Kapselkopf hat ~55 Elemente (~0,1 s je "
+              "Punkt), mit Mikrofonkörper sind es ~150 (~0,5 s je "
+              "Punkt, also ~3,5 min für 400 Punkte). Empfehlung: beim "
+              "Ausprobieren Frequenzpunkte ≤ 150. Jede Frequenz wird "
+              "nur EINMAL gelöst — Richtdiagramm und Eigenrauschen "
+              "greifen darauf zurück.",
     },
 
     # ------------------------- Spaltfilm-Modell -------------------------
@@ -1231,6 +1241,7 @@ TR = {
     },
     "prog_build": {"en": "building model", "de": "Modell aufbauen"},
     "prog_fr": {"en": "frequency response", "de": "Frequenzgang"},
+    "prog_noise": {"en": "self-noise", "de": "Eigenrauschen"},
     "prog_di": {
         "en": "polar pattern {f:.0f} Hz",
         "de": "Richtdiagramm {f:.0f} Hz",

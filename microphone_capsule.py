@@ -3293,9 +3293,20 @@ class MicrophoneCapsule:
         aber weiter aus der Kugelkalotte; das war die Mischung zweier
         Körpermodelle in einer Größe (s. Gegenprobe 43).
 
-        Ergebnis wird für den letzten (ω, θ)-Satz gehalten, weil
-        :meth:`_source_pressures` es zweimal braucht (Grundmode und
-        Modenverhältnisse) und der Lösungsgang das Teure ist."""
+        WAS GERECHNET WIRD UND WAS NICHT (Laufzeit): teuer ist der Aufbau
+        der Matrix, und der hängt NUR von ω ab — die Einfallsrichtungen
+        sind bloß weitere rechte Seiten. Deshalb liegt am Geometrie-Objekt
+        ein Ergebnisspeicher je (ω, θ): ein zweiter Aufruf mit denselben
+        Frequenzen und einer Teilmenge der Winkel kostet nichts mehr. Das
+        ist kein Luxus — der Frequenzgang läuft mit θ = 0/90/180°, das
+        Eigenrauschen danach mit θ = 0° über dasselbe Frequenzraster, und
+        ohne diesen Speicher rechnete der BEM alles ein zweites Mal.
+        Ebenso wird der STATISCHE Kern K0 (frequenzunabhängig) einmal je
+        Geometrie gebaut statt je Frequenz — das halbiert den Aufbau.
+
+        Der letzte Satz wird zusätzlich identisch zurückgegeben, weil
+        :meth:`_source_pressures` ihn zweimal braucht (Grundmode und
+        Modenverhältnisse)."""
         from scipy.special import j0 as _bessel_j0
         omega = np.atleast_1d(np.asarray(omega, dtype=float))
         theta = np.atleast_1d(np.asarray(theta, dtype=float))
@@ -3322,51 +3333,82 @@ class MicrophoneCapsule:
         # Moden projiziert, die dieses Objekt braucht (bei modal_source
         # sind das membrane_modes, sonst nur die Grundmode).
         n_mod = self.membrane_modes if self.modal_source else 1
-        F = np.empty((n_mod, omega.size, theta.size), dtype=complex)
-        G = np.empty((omega.size, theta.size), dtype=complex)
-        wsum = np.zeros(N)
-        for i, om in enumerate(omega):
-            k = om / C_AIR
-            K = np.empty((N, N), dtype=complex)
+        # Speicher und statischer Kern hängen am GEOMETRIE-Objekt: wer
+        # eine andere Kontur injiziert (Gegenproben 21/26/44), bekommt
+        # automatisch einen frischen Speicher.
+        store = geo.setdefault("_cache", {})
+        if len(store) > 60000:                    # Speicher begrenzen
+            store.clear()
+        if "_K0" not in geo:
             K0 = np.empty((N, N), dtype=complex)
+            for b0 in range(0, N, 32):
+                b1 = min(b0 + 32, N)
+                K0[b0:b1] = self._bem_ring_rows(0.0, mr[b0:b1], mz[b0:b1],
+                                                elems, cphi, wphi,
+                                                static=True)
+            rows0 = np.arange(N)
+            row0 = np.sum(K0, axis=1) - K0[rows0, rows0]
+            geo["_K0"] = (K0, row0,
+                          float(np.max(np.abs(row0 + K0[rows0, rows0] + 0.5))))
+        K0, row0, res0 = geo["_K0"]
+        self._bem_solid_angle_residual = res0
+        rows = np.arange(N)
+        # Welche (ω, θ) fehlen noch?
+        todo = []
+        for i, om in enumerate(omega):
+            miss = [j for j in range(theta.size)
+                    if (float(om), float(theta[j])) not in store]
+            if miss:
+                todo.append((i, miss))
+        wf_all = [w_area[front] * self._membrane_mode_weight(mr[front], mm + 1)
+                  for mm in range(n_mod)]
+        self._bem_solves = getattr(self, "_bem_solves", 0) + len(todo)
+        for i, miss in todo:
+            k = omega[i] / C_AIR
+            K = np.empty((N, N), dtype=complex)
             for b0 in range(0, N, 32):
                 b1 = min(b0 + 32, N)
                 K[b0:b1] = self._bem_ring_rows(k, mr[b0:b1], mz[b0:b1],
                                                elems, cphi, wphi)
-                K0[b0:b1] = self._bem_ring_rows(0.0, mr[b0:b1], mz[b0:b1],
-                                                elems, cphi, wphi,
-                                                static=True)
             # Diagonale: statische Identität Σ_j K0_ij = -1/2
-            rows = np.arange(N)
-            row0 = np.sum(K0, axis=1) - K0[rows, rows]
             K[rows, rows] = (K[rows, rows] - K0[rows, rows]
                              + (-0.5 - row0))
-            wsum = np.abs(row0 + K0[rows, rows] + 0.5)
-            A = 0.5 * np.eye(N) - K
-            b = _pinc(k, mr, mz)
-            K_c = self._bem_ring_rows(k, cr, cz, elems, cphi, wphi)
-            A = np.vstack([A, -K_c])
-            b = np.vstack([b, _pinc(k, cr, cz)])
-            u, *_ = np.linalg.lstsq(A, b, rcond=None)
-            # FRONT: Galerkin-Projektion auf die Membranmode (Fläche ×
-            # Modengewicht, s. _cap_mode_quad). RÜCK: was dort steht,
-            # entscheidet die Geometrie — bei der Doppelmembran dieselbe
-            # Projektion auf der zweiten Membran, bei einer Ein-Membran-
-            # Kapsel der Bohrungskranz des Rückeinlasses
-            # (s. _bem_rear_inlet_weights). Nur so ist G das Verhältnis
-            # der beiden Antriebe, die die Kette wirklich sieht.
-            p_f1 = None
-            for mm in range(n_mod):
-                wf = w_area[front] * self._membrane_mode_weight(mr[front],
-                                                                mm + 1)
-                p_f = (wf @ u[front]) / np.sum(wf)
-                F[mm, i] = np.conj(p_f)
-                if mm == 0:
-                    p_f1 = p_f
-            p_r = (w_rear @ u) / np.sum(w_rear)
-            G[i] = np.conj(p_r / p_f1)
-        # Diagnose: Residuum der Raumwinkel-Identität (Gitterqualität)
-        self._bem_solid_angle_residual = float(np.max(wsum))
+            A = np.vstack([0.5 * np.eye(N) - K,
+                           -self._bem_ring_rows(k, cr, cz, elems, cphi, wphi)])
+            b = np.vstack([_pinc(k, mr, mz), _pinc(k, cr, cz)])[:, miss]
+            # LAPACK setzt auf manchen Plattformen (Apple Accelerate)
+            # Gleitkomma-Flags, die numpy erst beim NÄCHSTEN ufunc meldet
+            # — als "divide by zero encountered in matmul" mitten in der
+            # Projektion. Deshalb hier gekapselt und das ERGEBNIS geprüft,
+            # statt sich auf Warnungen zu verlassen.
+            with np.errstate(all="ignore"):
+                u, *_ = np.linalg.lstsq(A, b, rcond=None)
+                if not np.all(np.isfinite(u)):
+                    raise ValueError(
+                        f"BEM: die Randintegralgleichung ist bei "
+                        f"{omega[i] / (2 * np.pi):.0f} Hz nicht lösbar "
+                        f"({N} Elemente, Kondition "
+                        f"{np.linalg.cond(A):.2e}). Körpermaße prüfen.")
+                # FRONT: Galerkin-Projektion auf die Membranmode (Fläche ×
+                # Modengewicht, s. _cap_mode_quad). RÜCK: was dort steht,
+                # entscheidet die Geometrie — bei der Doppelmembran
+                # dieselbe Projektion auf der zweiten Membran, bei einer
+                # Ein-Membran-Kapsel der Bohrungskranz des Rückeinlasses
+                # (s. _bem_rear_inlet_weights). Nur so ist G das
+                # Verhältnis der beiden Antriebe, die die Kette sieht.
+                p_f = np.array([(wf @ u[front]) / np.sum(wf)
+                                for wf in wf_all])         # (n_mod, n_miss)
+                p_r = (w_rear @ u) / np.sum(w_rear)         # (n_miss,)
+            for jj, j in enumerate(miss):
+                store[(float(omega[i]), float(theta[j]))] = (
+                    np.conj(p_f[:, jj]), complex(np.conj(p_r[jj] / p_f[0, jj])))
+        F = np.empty((n_mod, omega.size, theta.size), dtype=complex)
+        G = np.empty((omega.size, theta.size), dtype=complex)
+        for i, om in enumerate(omega):
+            for j in range(theta.size):
+                Fc, Gv = store[(float(om), float(theta[j]))]
+                F[:, i, j] = Fc
+                G[i, j] = Gv
         self._bem_cache = (key, F, G)
         return F, G
 
@@ -5147,7 +5189,8 @@ class MicrophoneCapsule:
             "frac_rear": np.real(Z_r) / reZ_safe,
         }
 
-    def self_noise(self, f_min=20.0, f_max=20000.0, n_points=1200):
+    def self_noise(self, f_min=20.0, f_max=20000.0, n_points=1200,
+                   spectrum=None, refine=True):
         """A- und Z-bewerteter Ersatzgeräuschpegel (Eigenrauschen) [dB SPL].
 
         Integriert die äquivalente Eingangs-Druckrauschdichte über das
@@ -5160,9 +5203,53 @@ class MicrophoneCapsule:
 
         Reines thermisch-akustisches Kapselrauschen ohne Verstärker/
         Elektronik — die physikalische Untergrenze dieser Geometrie.
+
+        ``spectrum``: ein bereits gerechnetes :meth:`noise_spectrum`. Dann
+        wird dessen Frequenzraster benutzt (auf [f_min, f_max] beschnitten)
+        statt ein eigenes mit ``n_points`` aufzubauen. Das ist keine
+        Bequemlichkeit, sondern Laufzeit: ``noise_spectrum`` ruft
+        ``transfer_function`` auf, und mit ``axial_body_model='bem'``
+        steckt darin je Frequenz ein Randelementsystem. Ein zweites
+        Raster verdoppelt die Rechenzeit für nichts.
+
+        ``refine``: eine lokale NACHVERFEINERUNG um das Maximum des
+        gewichteten Integranden. Sie ist nötig, weil der Integrand
+        S_p = S_v/|H|² genau dort Spitzen hat, wo die Kapsel TAUB ist —
+        an einer Antiresonanz von |H|. Die Beispielkapsel hat eine bei
+        11.2 kHz mit 30 Hz Halbwertsbreite (Q ≈ 375); ein logarithmisches
+        Raster über drei Dekaden trifft die nicht. Ohne Verfeinerung lag
+        der A-Pegel mit 1200 Punkten 0.53 dB zu tief (0.21 statt 0.74 dB);
+        mit einer einzigen Runde von 129 Punkten über ±4 % bleiben 0.05 dB
+        (Gegenprobe 46). Abschalten nur, um genau das zu zeigen.
         """
-        f = np.logspace(np.log10(f_min), np.log10(f_max), int(n_points))
-        sp = self.noise_spectrum(f)
+        if spectrum is None:
+            f = np.logspace(np.log10(f_min), np.log10(f_max), int(n_points))
+            sp = self.noise_spectrum(f)
+        else:
+            f0 = np.asarray(spectrum["frequency_hz"], dtype=float)
+            m = (f0 >= f_min) & (f0 <= f_max)
+            if int(np.sum(m)) < 50:
+                raise ValueError(
+                    f"self_noise: das übergebene Spektrum hat im Band "
+                    f"{f_min:.0f}…{f_max:.0f} Hz nur {int(np.sum(m))} "
+                    "Stützstellen.")
+            f = f0[m]
+            sp = {k: (v[m] if isinstance(v, np.ndarray) and v.shape == f0.shape
+                      else v) for k, v in spectrum.items()}
+        _kk = ("psd_pa2_hz", "frac_front", "frac_mem", "frac_rear")
+        if refine and f.size >= 8:
+            fp = float(f[int(np.argmax(sp["psd_pa2_hz"]
+                                       * self._a_weighting(f) ** 2))])
+            f_ref = np.logspace(np.log10(max(fp / 1.04, f_min)),
+                                np.log10(min(fp * 1.04, f_max)), 129)
+            sp_ref = self.noise_spectrum(f_ref)
+            f = np.concatenate([f, f_ref])
+            sp = {k: np.concatenate([sp[k], sp_ref[k]]) for k in _kk}
+            o = np.argsort(f)
+            f = f[o]
+            sp = {k: v[o] for k, v in sp.items()}
+            f, uq = np.unique(f, return_index=True)
+            sp = {k: v[uq] for k, v in sp.items()}
         S = sp["psd_pa2_hz"]
         w_a = self._a_weighting(f)
 
@@ -9969,5 +10056,125 @@ if __name__ == "__main__":
               f"({100 * ab45w[0.1][1]:+.1f} %), Ring also fast doppelt so "
               f"stabil ({ab45w[0.1][0] / ab45w[0.0][0]:.2f}×); Gatter "
               f"greifen  OK")
+
+    # --------- Gegenprobe 46: Laufzeit und Rauschintegral -----------------
+    # Meldung aus der Praxis: mit BEM-Kopf UND -Körper lief die K67 rund
+    # 24 Minuten, davon 19 STILL hinter einem Fortschrittsbalken, der
+    # schon 100 % zeigte. Dazu Warnungen "divide by zero encountered in
+    # matmul" mitten in der Projektion. Beides hatte je eine eigene
+    # Ursache, und beide sind hier festgenagelt.
+    #
+    # a) DOPPELTE LÖSUNGSGÄNGE. Teuer am BEM ist der Matrixaufbau, und der
+    #    hängt NUR von ω ab — Einfallsrichtungen sind bloß weitere rechte
+    #    Seiten. Der Frequenzgang rechnet mit θ = 0/90/180°, das
+    #    Eigenrauschen danach mit θ = 0° über DASSELBE Raster: ohne
+    #    Ergebnisspeicher wurde alles ein zweites Mal gelöst. Geprüft wird
+    #    beides — dass der Speicher greift (Zähler) und dass er das
+    #    Ergebnis nicht verändert (bitgleich, stückweise gerechnet).
+    # b) DER STATISCHE KERN ist frequenzunabhängig und wurde je Frequenz
+    #    neu gebaut. Jetzt einmal je Geometrie.
+    # c) WARNUNGEN. LAPACK setzt auf manchen Plattformen Gleitkomma-Flags,
+    #    die numpy erst beim nächsten ufunc meldet. Der Lösungsgang ist
+    #    deshalb gekapselt und prüft sein ERGEBNIS; ein wirklich
+    #    unlösbares System wirft jetzt einen benannten Fehler.
+    # d) DAS RAUSCHINTEGRAL war unabhängig davon zu grob. S_p = S_v/|H|²
+    #    hat Spitzen dort, wo die Kapsel TAUB ist — an einer Antiresonanz
+    #    von |H|. Die Prüfkapsel hat eine mit Q ≈ 375; ein logarithmisches
+    #    Raster über drei Dekaden trifft sie nicht, und die bisherigen
+    #    1200 Punkte lagen 0.53 dB zu tief. Eine lokale Nachverfeinerung
+    #    bringt das auf 0.0002 dB.
+    if _HAS_SCIPY:
+        g46 = dict(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=34e-3, squeeze_model="1d",
+            axial_body_model="bem")
+        c46 = MicrophoneCapsule(**g46)          # Kopf UND Körper
+        n46 = c46._bem_geometry()["elems"]["L"].size
+        assert n46 > 100, f"Kopf+Körper muss viele Elemente haben ({n46})"
+        f46 = np.array([200.0, 1000.0, 5000.0, 12000.0])
+        om46 = 2.0 * np.pi * f46
+        th46 = np.array([0.0, 0.5 * np.pi, np.pi])
+        c46._bem_solves = 0
+        F46, G46 = c46._bem_front_modes(om46, th46)
+        s_voll = c46._bem_solves
+        assert s_voll == f46.size, \
+            f"vier Frequenzen = vier Lösungsgänge ({s_voll})"
+        # a1) derselbe Satz noch einmal: KEIN Lösungsgang mehr
+        c46._bem_cache = None                    # Identitäts-Abkürzung aus
+        F46b, G46b = c46._bem_front_modes(om46, th46)
+        assert c46._bem_solves == s_voll, \
+            f"Wiederholung darf nicht neu lösen ({c46._bem_solves})"
+        assert np.array_equal(F46, F46b) and np.array_equal(G46, G46b), \
+            "der Speicher muss bitgleich dasselbe liefern"
+        # a2) Teilmenge der Winkel (so ruft noise_spectrum auf): auch frei
+        c46._bem_cache = None
+        F46c, _ = c46._bem_front_modes(om46, th46[:1])
+        assert c46._bem_solves == s_voll, \
+            "eine Teilmenge der Winkel darf nichts kosten"
+        assert np.array_equal(F46c[:, :, 0], F46[:, :, 0]), \
+            "Teilmenge muss dieselben Zahlen liefern"
+        # a3) stückweise gerechnet == in einem Zug
+        c47 = MicrophoneCapsule(**g46)
+        F47a, G47a = c47._bem_front_modes(om46[:2], th46)
+        c47._bem_cache = None
+        F47b, G47b = c47._bem_front_modes(om46[2:], th46)
+        c47._bem_cache = None
+        F47, G47 = c47._bem_front_modes(om46, th46)
+        assert (np.array_equal(F47[:, :2], F47a)
+                and np.array_equal(F47[:, 2:], F47b)
+                and np.array_equal(G47[:2], G47a)
+                and np.array_equal(G47[2:], G47b)), \
+            "stückweise gerechnet muss bitgleich sein"
+        # b) der statische Kern liegt an der Geometrie, nicht an der Frequenz
+        assert "_K0" in c46._bem_geometry(), \
+            "der statische Kern muss je Geometrie zwischengespeichert sein"
+        assert c46._bem_solid_angle_residual < 5e-3, "Gitterqualität"
+
+        # d) Rauschintegral: die Spitze ist real, das grobe Raster trifft
+        #    sie nicht, die Verfeinerung schon.
+        c48 = MicrophoneCapsule()               # Nieren-Single, 1D, schnell
+        f48 = np.logspace(np.log10(20.0), np.log10(20000.0), 60000)
+        S48 = c48.noise_spectrum(f48)["psd_pa2_hz"] * c48._a_weighting(f48)**2
+        i48 = int(np.argmax(S48))
+        halb = f48[S48 > 0.5 * S48[i48]]
+        breite = float(halb.max() - halb.min()) / float(f48[i48])
+        H48 = np.abs(c48.transfer_function(f48))
+        assert abs(float(f48[int(np.argmin(H48))]) / float(f48[i48]) - 1.0) \
+            < 1e-3, "die Spitze muss auf der Antiresonanz von |H| sitzen"
+        assert breite < 0.01, \
+            (f"die Spitze ist schmal — das ist der ganze Punkt "
+             f"({100 * breite:.2f} % der Frequenz)")
+        ref48 = c48.self_noise(n_points=16000, refine=False)["spl_a_db"]
+        roh48 = c48.self_noise(refine=False)["spl_a_db"]
+        fein48 = c48.self_noise()["spl_a_db"]
+        assert ref48 - roh48 > 0.4, \
+            (f"ohne Verfeinerung MUSS das Integral zu tief liegen — sonst "
+             f"prüft das hier nichts ({roh48:.3f} gegen {ref48:.3f} dB-A)")
+        assert abs(fein48 - ref48) < 0.02, \
+            (f"mit Verfeinerung muss der A-Pegel die Referenz treffen "
+             f"({fein48:.4f} gegen {ref48:.4f} dB-A)")
+        # und auf dem gröberen Raster der Anzeige ebenfalls brauchbar
+        sp48 = c48.noise_spectrum(
+            np.logspace(np.log10(10.0), np.log10(25000.0), 400))
+        grob48 = c48.self_noise(spectrum=sp48)["spl_a_db"]
+        assert abs(grob48 - ref48) < 0.1, \
+            (f"auch das Anzeigeraster muss mit Verfeinerung treffen "
+             f"({grob48:.4f} gegen {ref48:.4f} dB-A)")
+        print(f"Laufzeit und Rauschintegral: BEM Kopf+Körper {n46} Elemente, "
+              f"{s_voll} Frequenzen = {s_voll} Lösungsgänge; Wiederholung "
+              f"und Winkel-Teilmenge kosten nichts mehr und sind bitgleich, "
+              f"stückweise == am Stück; statischer Kern je Geometrie. "
+              f"Rauschspitze {100 * breite:.2f} % breit auf der "
+              f"|H|-Antiresonanz: ohne Verfeinerung {roh48:.2f}, mit "
+              f"{fein48:.4f} gegen Referenz {ref48:.4f} dB-A (Anzeigeraster "
+              f"{grob48:.3f})  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
