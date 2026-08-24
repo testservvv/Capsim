@@ -188,8 +188,11 @@ class MicrophoneCapsule:
             Aperturmittelung der Beugung. Anker: J. E. Warren, JASA 58(3),
             733–740 (1975) gibt den kritischen Antriebsparameter für
             Kreis- (0.789) und Ringmembran (1.548 bei ρ = 0.1);
-            Gegenprobe 45 prüft beides. GRENZEN: der 3D-Feldlöser ist für
-            Ringmembranen gesperrt, und der Ringfaktor gilt für den
+            Gegenprobe 45 prüft beides. Der 3D-Feldlöser führt die
+            Ringmembran ebenfalls: sein Gitter beginnt am Pfostenrand,
+            und die innerste Fläche — ohne Pfosten mit Radius 0, also
+            stillschweigend die Achsenbedingung — wird zur eingespannten
+            Wand (Gegenprobe 47). GRENZE: der Ringfaktor gilt für den
             VORSPANNUNGSANTEIL — eine biegesteife Platte wird abgewiesen.
 
     Backplate-System
@@ -1678,18 +1681,6 @@ class MicrophoneCapsule:
 
         # 3D-Löser: Gitter-/Lochgeometrie einmalig aufbauen
         if self.squeeze_model == "3d":
-            if self.r_post > 0.0:
-                # Der 3D-Löser führt die Membranen als FD-Felder auf einem
-                # (r,phi)-Gitter ab r = 0 mit Achsenbedingung. Eine
-                # Mittenterminierung wäre dort eine INNERE Dirichlet-
-                # Randbedingung samt Wandbedingung für die Filme — das ist
-                # nicht gebaut. Gesperrt statt still falsch.
-                raise ValueError(
-                    "Mittenterminierung ist im 3D-Feldlöser nicht gebaut "
-                    "(innerer Rand für Membranfelder und Spaltfilme). "
-                    "Für Ringmembranen squeeze_model='1d' oder '2d' "
-                    "nehmen."
-                )
             self._build_3d_geometry()
 
     # ======================================================================
@@ -3532,7 +3523,6 @@ class MicrophoneCapsule:
         Strahlungsimpedanz der Membranaußenseiten werden im 3D-Modell
         vernachlässigt (klein; Gewebe in den validierten Beispielen 0).
         """
-        from scipy.special import j1 as _j1, jn_zeros as _jn_zeros
         # Azimutale Auflösung: einteilig genügen 96 Zellen (Debenham,
         # 12 Löcher). Im K67-Modus müssen der Lochabstand UND der
         # Verdrehungs-Versatz der Hälften im Zwischenspalt aufgelöst
@@ -3545,11 +3535,17 @@ class MicrophoneCapsule:
                 Np_ = int(max(96, min(4 * max(self.n_th, 1), 320)))
             else:
                 Np_ = 96
+        # MITTENTERMINIERUNG: beide Gitter beginnen am Pfostenrand r0.
+        # Film und Membran teilen sich dr und den Startradius, weil die
+        # ersten Nr Membranzellen mit den Filmzellen gekoppelt werden.
+        # r0 = 0 liefert bitgleich den bisherigen Stand.
         Nr = self._fld_N
-        dr = self.a_bp / Nr
-        Nr_m = max(Nr + 1, int(round(self.a_mem / dr)))
-        r_f = (np.arange(Nr) + 0.5) * dr
-        r_m = (np.arange(Nr_m) + 0.5) * dr
+        r0 = self.r_post
+        dr = (self.a_bp - r0) / Nr
+        Nr_m = max(Nr + 1, int(round((self.a_mem - r0) / dr)))
+        q0 = r0 / dr                      # Pfostenrand in Zellbreiten
+        r_f = r0 + (np.arange(Nr) + 0.5) * dr
+        r_m = r0 + (np.arange(Nr_m) + 0.5) * dr
         dphi = 2.0 * np.pi / Np_
         A_f = r_f * dr * dphi                       # Zellfläche je Ring
         A_m = r_m * dr * dphi
@@ -3557,21 +3553,26 @@ class MicrophoneCapsule:
         NM = Nr_m * Np_
 
         # Membrankonstanten: Flächendichte, Spannung aus f_res, verteilte
-        # Feder-Erweichung (Grundmoden-kalibriert auf C_A_eff)
-        sigma = 0.75 * self.M_A_mem * self.S_mem
-        b01 = float(_jn_zeros(0, 1)[0])
+        # Feder-Erweichung (Grundmoden-kalibriert auf C_A_eff). Mit
+        # Mittenterminierung sind Kolbenfaktor, Eigenwert und Modenform
+        # die der RINGmembran (s. _ring_modes) — sonst träfe das 3D-Feld
+        # eine andere Resonanz als die Kette.
+        # (Kehrwert zuerst: 1/(4/3) ist exakt 0.75, damit bleibt der Fall
+        # ohne Mittenterminierung bitgleich)
+        sigma = self.M_A_mem * self.S_mem * (1.0 / self._piston_factor)
+        _md3 = self._ring_modes()
+        b01 = float(_md3["z"][0])
         T_mem = sigma * (2.0 * np.pi * self.f_res * self.a_mem / b01) ** 2
-        from scipy.special import j0 as _j0
-        psi1 = _j0(b01 * r_m / self.a_mem)
+        psi1 = self._membrane_mode_weight(r_m)
         k1 = ((2.0 * np.pi * self.f_res) ** 2 * sigma
-              * np.pi * self.a_mem ** 2 * _j1(b01) ** 2)
+              * self.S_mem * float(_md3["I2"][0]))
         E2 = float(np.sum((psi1[:Nr] ** 2) * A_f * Np_))
         kappa = k1 * (1.0 - self.C_A_mem / self.C_A_eff) / E2
 
         # Loch-Fußabdrücke: Zellen, deren Zentrum in der Mündung liegt
         def _foot(radius, n, off_deg, r_hole):
             out = []
-            i0 = int(np.clip(radius / dr, 0, Nr - 1))
+            i0 = int(np.clip((radius - r0) / dr, 0, Nr - 1))
             for k in range(max(n, 0)):
                 ph0 = np.deg2rad(off_deg) + 2.0 * np.pi * k / max(n, 1)
                 cells = []
@@ -3602,8 +3603,8 @@ class MicrophoneCapsule:
                     out.append((cnt, r_pcd))
                     continue
                 n_sub = max(2, int(round(np.sqrt(cnt))))
-                edges = self.a_bp * np.sqrt(np.linspace(0.0, 1.0,
-                                                        n_sub + 1))
+                edges = np.sqrt(r0**2 + (self.a_bp**2 - r0**2)
+                                * np.linspace(0.0, 1.0, n_sub + 1))
                 mids = 0.5 * (edges[:-1] + edges[1:])
                 areas = np.diff(edges ** 2)
                 counts = np.maximum(np.round(cnt * areas
@@ -3689,9 +3690,16 @@ class MicrophoneCapsule:
         vals = []
 
         def _lap(base_off, Tfac):
+            # Radialer Flächenleitwert einer Fläche bei r: T·r·dphi/dr.
+            # Ohne Mittenterminierung ist r0 = 0, die innerste Fläche hat
+            # den Radius 0 und trägt nichts — genau die Achsenbedingung.
+            # MIT Pfosten ist dieselbe Fläche eine EINGESPANNTE Wand: sie
+            # liegt eine halbe Zelle vor der ersten Zellmitte, also mit
+            # dem doppelten Leitwert auf der Diagonalen. Beide Fälle
+            # fallen aus derselben Formel.
             for i in range(Nr_m):
                 if i < Nr_m - 1:
-                    G = Tfac * (i + 1) * dphi
+                    G = Tfac * (q0 + i + 1) * dphi
                     for j in range(Np_):
                         k1_ = base_off + i * Np_ + j
                         k2_ = base_off + (i + 1) * Np_ + j
@@ -3699,9 +3707,16 @@ class MicrophoneCapsule:
                         cols.extend((k2_, k1_, k1_, k2_))
                         vals.extend((-G, -G, G, G))
                 else:
-                    G = Tfac * Nr_m * dphi * 2.0    # geklemmter Rand
-                    for j in range(Np_):
+                    G = Tfac * (q0 + Nr_m) * dphi * 2.0
+                    for j in range(Np_):                # geklemmter Rand
                         k1_ = base_off + i * Np_ + j
+                        rows.append(k1_)
+                        cols.append(k1_)
+                        vals.append(G)
+                if i == 0 and q0 > 0.0:                 # Pfostenrand
+                    G = Tfac * q0 * dphi * 2.0
+                    for j in range(Np_):
+                        k1_ = base_off + j
                         rows.append(k1_)
                         cols.append(k1_)
                         vals.append(G)
@@ -3781,7 +3796,7 @@ class MicrophoneCapsule:
 
         self._g3d = dict(
             Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, dphi=dphi,
-            r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM,
+            r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM, q0=q0,
             arch=arch, n_films=n_films, n_mem=n_mem, n_nodes=n_nodes,
             sigma=sigma, T_mem=T_mem, kappa=kappa,
             th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
@@ -3900,7 +3915,7 @@ class MicrophoneCapsule:
                 K_edge_side[side] = K[Nr - 1]
                 # radiale Faces
                 Kmid = 0.5 * (K[:-1] + K[1:])
-                Gr = (np.arange(1, Nr) * dphi) * Kmid
+                Gr = ((g["q0"] + np.arange(1, Nr)) * dphi) * Kmid
                 k1_ = off + idx_all[:(Nr - 1) * Np_]
                 k2_ = k1_ + Np_
                 Gv = np.repeat(Gr, Np_)
@@ -10032,8 +10047,6 @@ if __name__ == "__main__":
 
         # g) Gatter
         for kw45, was45 in (
-                (dict(center_post_diameter=1e-3, squeeze_model="3d"),
-                 "Mittenterminierung im 3D-Löser"),
                 (dict(center_post_diameter=0.7 * 22e-3),
                  "Pfosten über 0.6·a"),
                 (dict(center_post_diameter=1e-3, membrane_thickness=200e-6,
@@ -10176,5 +10189,154 @@ if __name__ == "__main__":
               f"|H|-Antiresonanz: ohne Verfeinerung {roh48:.2f}, mit "
               f"{fein48:.4f} gegen Referenz {ref48:.4f} dB-A (Anzeigeraster "
               f"{grob48:.3f})  OK")
+
+    # --------- Gegenprobe 47: Ringmembran im 3D-Feldlöser -----------------
+    # Gegenprobe 45 hat die Mittenterminierung in 1D/2D gebracht und den
+    # 3D-Löser gesperrt: dort sind die Membranen FD-FELDER auf einem
+    # (r,phi)-Gitter, und ein innerer Rand war nicht gebaut. Jetzt ist er
+    # gebaut — und zwar OHNE Fallunterscheidung.
+    #
+    # DER TRICK. Der radiale Flächenleitwert einer Fläche bei r ist
+    # T·r·dphi/dr. Beginnt das Gitter am Pfostenrand r0, so hat die
+    # innerste Fläche den Radius r0; sie liegt eine halbe Zelle vor der
+    # ersten Zellmitte, trägt also den doppelten Leitwert auf der
+    # Diagonalen — das ist die EINGESPANNTE Wand. Für r0 = 0 wird
+    # derselbe Term null, und das ist exakt die Achsenbedingung. Ein
+    # Ausdruck, zwei Randbedingungen. Ebenso beim Film: dessen innerste
+    # Fläche trägt schon immer nichts, und eine Wand tut dasselbe.
+    #
+    # a) r_i = 0 ist bitgleich der bisherige Stand (Gitter, Flächendichte,
+    #    Spannung, Eigenwert).
+    # b) DER OPERATOR GEGEN DIE EXAKTE LÖSUNG: eine statische
+    #    Gleichlast auf das reine Membranfeld muss die geschlossene
+    #    Ring-Nachgiebigkeit π·r_a⁴·g(ρ)/(8T) treffen, und zwar
+    #    GITTERKONVERGENT (zweiter Ordnung). Das prüft Innenrand,
+    #    Flächenradien und Gitterstart in einem.
+    # c) Auch die FORM muss stimmen, nicht nur ihr Integral.
+    # d) STRUKTUR: mit Pfosten muss die innerste Zelle fast still stehen
+    #    (halbe Zelle vor der Wand), ohne Pfosten ist sie das Maximum.
+    # e) ENDE ZU ENDE: 3D und 2D müssen mit Pfosten so gut
+    #    zusammenpassen wie ohne.
+    if _HAS_SCIPY:
+        from scipy.sparse import coo_matrix as _coo47
+        from scipy.sparse.linalg import spsolve as _spsolve47
+        g47 = dict(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            architecture="dual_diaphragm", center_gap=50e-6,
+            n_through_holes=12, through_hole_diameter=0.6e-3,
+            n_blind_holes=24, blind_hole_diameter=1.3e-3,
+            blind_hole_depth=3.7e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, squeeze_model="3d")
+
+        # a) Grenzfall: die alten geschlossenen Formeln, exakt
+        c47a = MicrophoneCapsule(bias_voltage=60.0, **g47)
+        ga = c47a._g3d
+        assert ga["q0"] == 0.0 and ga["dr"] == c47a.a_bp / ga["Nr"], \
+            "ohne Pfosten muss das Gitter bei 0 beginnen"
+        assert np.array_equal(
+            ga["r_f"], (np.arange(ga["Nr"]) + 0.5) * ga["dr"]), \
+            "ohne Pfosten bitgleich das alte Filmgitter"
+        assert ga["sigma"] == 0.75 * c47a.M_A_mem * c47a.S_mem, \
+            "ohne Pfosten ist die Flächendichte 0.75·M_A·S (Kolbenfaktor 4/3)"
+        assert ga["T_mem"] == ga["sigma"] * (
+            2.0 * np.pi * c47a.f_res * c47a.a_mem
+            / 2.404825557695773) ** 2, \
+            "ohne Pfosten muss die Spannung aus j01 = 2.4048 kommen"
+
+        # b/c/d) reines Membranfeld gegen die geschlossene Ringlösung
+        def _mem47(cap, n_r):
+            """Statische Gleichlast auf das Membranfeld allein."""
+            cap._fld_N = n_r
+            cap._n_phi_3d = 8                 # azimutal irrelevant, spart Zeit
+            cap._build_3d_geometry()
+            gg = cap._g3d
+            Np7, NM7 = gg["Np"], gg["NM"]
+            ow = gg["n_films"] * gg["NF"]
+            rr, cc, vv = gg["static"]
+            msk = ((rr >= ow) & (rr < ow + NM7)
+                   & (cc >= ow) & (cc < ow + NM7))
+            Lm = _coo47((vv[msk].real, (rr[msk] - ow, cc[msk] - ow)),
+                        shape=(NM7, NM7)).tocsc()
+            rhs = np.repeat(gg["A_m"], Np7)
+            w = _spsolve47(Lm, rhs)
+            r_a = gg["r_m"][-1] + 0.5 * gg["dr"]
+            r_i = gg["r_m"][0] - 0.5 * gg["dr"]
+            C_ex = (np.pi * r_a**4
+                    * _ring_compliance_factor(r_i / r_a) / (8.0 * gg["T_mem"]))
+            wr = w.reshape(gg["Nr_m"], Np7)[:, 0]
+            pr = _ring_static_shape((gg["r_m"] / r_a) ** 2, (r_i / r_a) ** 2)
+            pr = pr / pr.max() * wr.max()
+            return (abs(float(np.sum(w * rhs)) / C_ex - 1.0),
+                    float(np.max(np.abs(wr - pr)) / wr.max()),
+                    float(wr[0] / wr.max()))
+
+        konv47 = {}
+        for d47 in (0.0, 0.5e-3, 1.0e-3):
+            cap47 = MicrophoneCapsule(bias_voltage=1e-6,
+                                      center_post_diameter=d47, **g47)
+            konv47[d47] = [_mem47(cap47, n) for n in (60, 120, 240)]
+        for d47, rr47 in konv47.items():
+            assert rr47[0][0] < 6e-3, \
+                (f"Pfosten {d47 * 1e3:.1f} mm: das Membranfeld muss die "
+                 f"geschlossene Ring-Nachgiebigkeit treffen "
+                 f"({rr47[0][0]:.1e})")
+            assert rr47[2][0] < 1e-3, \
+                f"auf feinem Gitter erst recht ({rr47[2][0]:.1e})"
+            # zweite Ordnung: jede Halbierung von dr muss den Fehler
+            # mindestens dritteln (theoretisch vierteln)
+            for k47 in (0, 1):
+                assert rr47[k47][0] > 3.0 * rr47[k47 + 1][0], \
+                    (f"Pfosten {d47 * 1e3:.1f} mm: der Fehler muss mit dem "
+                     f"Gitter fallen ({[f'{x[0]:.1e}' for x in rr47]})")
+            assert rr47[2][1] < 3e-3, \
+                (f"auch die FORM muss stimmen "
+                 f"({100 * rr47[2][1]:.3f} % bei feinem Gitter)")
+        # d) Struktur des inneren Randes
+        assert konv47[0.0][0][2] > 0.99, \
+            "ohne Pfosten ist die innerste Zelle das Maximum"
+        assert konv47[1.0e-3][2][2] < 0.05, \
+            (f"mit Pfosten muss die innerste Zelle fast stillstehen "
+             f"({konv47[1.0e-3][2][2]:.4f} des Maximums)")
+
+        # e) Ende zu Ende gegen das 2D-Feld
+        f47 = np.array([100.0, 500.0, 2000.0])
+        e47 = {}
+        for d47 in (0.0, 1.0e-3):
+            c2 = MicrophoneCapsule(bias_voltage=60.0, squeeze_model="2d",
+                                   center_post_diameter=d47,
+                                   **{k: v for k, v in g47.items()
+                                      if k != "squeeze_model"})
+            c3 = MicrophoneCapsule(bias_voltage=60.0,
+                                   center_post_diameter=d47, **g47)
+            e47[d47] = np.abs(c3.transfer_function(f47)
+                              / c2.transfer_function(f47))
+        for d47, q47 in e47.items():
+            assert np.all(np.abs(q47 - 1.0) < 0.05), \
+                (f"3D und 2D müssen bei {d47 * 1e3:.1f} mm Pfosten "
+                 f"zusammenpassen ({np.round(q47, 4)})")
+        assert np.max(np.abs(e47[1.0e-3] - e47[0.0])) < 0.02, \
+            (f"der Pfosten muss BEIDE Modelle gleich bewegen "
+             f"({np.round(e47[1.0e-3] - e47[0.0], 4)})")
+        # und die Spannung sinkt, wie es die Ringmembran verlangt
+        c47r = MicrophoneCapsule(bias_voltage=60.0,
+                                 center_post_diameter=1.0e-3, **g47)
+        assert c47r._g3d["T_mem"] < 0.75 * ga["T_mem"], \
+            (f"eine Ringmembran braucht für dieselbe Resonanz deutlich "
+             f"weniger Zug ({c47r._g3d['T_mem']:.2f} gegen "
+             f"{ga['T_mem']:.2f} N/m)")
+        print(f"Ringmembran im 3D-Feld: r_i = 0 bitgleich; Membranoperator "
+              f"trifft die geschlossene Ring-Nachgiebigkeit gitterkonvergent "
+              f"("
+              + "; ".join(
+                  f"{1e3 * d:.1f} mm: "
+                  + "->".join(f"{x[0]:.0e}" for x in v)
+                  for d, v in konv47.items())
+              + f"), Form auf {100 * max(v[2][1] for v in konv47.values()):.2f} %; "
+              f"innerste Zelle mit Pfosten "
+              f"{konv47[1.0e-3][2][2]:.3f} statt 1.0; 3D/2D mit Pfosten "
+              f"{np.round(e47[1.0e-3], 3)} gegen {np.round(e47[0.0], 3)} ohne; "
+              f"Zug {ga['T_mem']:.1f} -> {c47r._g3d['T_mem']:.1f} N/m  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

@@ -206,9 +206,12 @@ TR = {
               "against J. E. Warren, JASA 58(3), 733–740 (1975), who gives "
               "the critical forcing parameter for circular (0.789) and "
               "annular (1.548 at r = 0.1) membranes (Gegenprobe 45). "
-              "LIMITS: the 3D field solver rejects annular membranes, and "
-              "the ring factor is derived for the TENSION part only — a "
-              "bending-stiff plate is rejected.",
+              "The 3D field solver carries them too: its membrane grid "
+              "starts at the post edge, and the innermost face — radius 0 "
+              "without a post, so silently the axis condition — becomes "
+              "the clamped wall (Gegenprobe 47). LIMIT: the ring factor is "
+              "derived for the TENSION part only — a bending-stiff plate "
+              "is rejected.",
         "de": "Durchmesser einer MITTENTERMINIERUNG — Kontaktstift "
               "oder Bolzen, der die Membranmitte festlegt. 0 "
               "(Voreinstellung) = klassische randgespannte "
@@ -232,10 +235,14 @@ TR = {
               "J. E. Warren, JASA 58(3), 733–740 (1975), der den "
               "kritischen Antriebsparameter für Kreis- (0,789) "
               "und Ringmembran (1,548 bei r = 0,1) angibt "
-              "(Gegenprobe 45). GRENZEN: der 3D-Feldlöser weist "
-              "Ringmembranen ab, und der Ringfaktor gilt nur für "
-              "den VORSPANNUNGSANTEIL — eine biegesteife Platte "
-              "wird abgewiesen.",
+              "(Gegenprobe 45). Der 3D-Feldlöser führt sie "
+              "ebenfalls: sein Membrangitter beginnt am "
+              "Pfostenrand, und die innerste Fläche — ohne "
+              "Pfosten mit Radius 0, also stillschweigend die "
+              "Achsenbedingung — wird zur eingespannten Wand "
+              "(Gegenprobe 47). GRENZE: der Ringfaktor gilt nur "
+              "für den VORSPANNUNGSANTEIL — eine biegesteife "
+              "Platte wird abgewiesen.",
     },
     "lbl_modal_source": {
         "en": "Mode-dependent source pressure",
