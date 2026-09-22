@@ -7,7 +7,7 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 
 | Datei | Inhalt |
 |---|---|
-| `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell, elektrostatische Wandlung mit Pull-in, Gehäusebeugung) — eigenständig lauffähig mit Testlauf |
+| `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung) — eigenständig lauffähig mit Testlauf |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
 | `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
 
@@ -34,6 +34,11 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
 - **1D (Standard):** ein Lumped-Element (Škvor-Widerstand + Nachgiebigkeit
   + Lochimpedanz). Schnell; für dichte, gleichmäßige Lochmuster
   ausreichend und für die validierten Beispiele verwendet.
+- **Gültigkeitsgrenze von 1D und 2D:** beide verschmieren die Löcher.
+  Bei spärlichen Lochbildern und weicher Membran beult sich die Membran
+  zwischen den Löchern örtlich aus, was nur der 3D-Löser abbildet. Die
+  Grenzfrequenz f_hom (`homogenization_limit()`, Gegenprobe 48) steht in
+  `summary()`; liegt sie im Hörband, warnen Modell und GUI.
 - **2D:** das Druckfeld im Spalt wird als *modifizierte Reynolds-Gleichung*
   (Homentcovschi & Miles, JASA 2004; Bao) axialsymmetrisch als
   Feldgleichung gelöst — inklusive Zell-Engstellenwiderstand je Bohrung
@@ -63,8 +68,11 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   `center_gap > 0`): der Zwischenspalt wird als dritter Reynolds-Film
   gerechnet, Stufenbohrungen als Zweitor-Kette je Loch (Senkung als
   Leitungsstück + Karal-Stufe + enger Kern), und die Elektrodenhälften
-  sind gegeneinander **verdreht** (`half_rotation_deg`, Standard eine
-  halbe Lochteilung 180°/n wie an der realen K67). Seit Gegenprobe 23
+  sind gegeneinander **verdreht** (`half_rotation_deg`; Standard seit
+  Gegenprobe 48 kreisweise so, dass die Durchgangslöcher der
+  Gegenseite über den Sacksenkungen liegen — die frühere pauschale
+  halbe Teilung 180°/n gilt nur für einen einzigen Lochkreis). Seit
+  Gegenprobe 23
   rechnet der Löser auch **single/dual**: ein Membranfeld, ein Film je
   Backplate; die Durchgangslöcher münden als Zweitor-Ketten in einen
   **Sammelknoten**, dessen Abschluss die baugleiche Lumped-Kette des
@@ -84,11 +92,13 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   **Befund zur Verdrehung** (beantwortet die alte Frage, was der
   Versatz der Bohrbilder bewirkt): zeigen die Durchgangslöcher beider
   Hälften aufeinander (0°), kurzschließen sie den Nieren-Phasenschieber
-  durch den Zwischenspalt — flache 180°-Auslöschung (−7 dB) bei hoher
-  Empfindlichkeit (34 mV/Pa); schon die halbe Teilung (3° bei 60
-  Löchern) zwingt den Pfad durch den Zwischenspalt-Film und liefert
-  −20 dB bei 22 mV/Pa, nahe am homogenisierten 2D-Modell (−26 dB,
-  21 mV/Pa), das versetzte Arrays stillschweigend annimmt.
+  durch den Zwischenspalt — das Minimum wandert auf ~106°. Versetzte
+  Hälften legen es auf 180°; wie TIEF es wird, hängt an der nicht
+  dokumentierten Kernlage im Zwischenspalt (vollständig versetzt
+  −11 dB, teilweise fluchtend −29 dB wie im 2D-Modell, s. Gegenprobe
+  48). Die früher hier genannten −20 dB bei „3°" stammten aus einem
+  3D-Stand, in dem die Mündungen abgeschnitten und nicht äquipotential
+  waren und die Kerne sich überlappten.
   Verifiziert über Reziprozität (±1 %), Gitterkonvergenz, die
   Grenzfälle einteilig ≡ zweiteilig-ausgerichtet (5-µm-Spalt, 2 %) und
   Stufenbohrung → glatte Bohrung (winzige Senkung, 0,8 %) sowie die
@@ -528,6 +538,8 @@ Effekt verschwindet sauber mit steigender Membransteifigkeit
 (f_res 2,1 → 8 → 20 → 50 kHz ergibt 8,0 → 0,4 → −0,2 → −0,3 dB) — es ist
 dieselbe Effektklasse wie beim K67-Sattel. Für randbelüftete Bauformen
 mit weicher Membran ist der **3D-Modus daher der belastbarere**.
+Gegenprobe 48 hat daraus das allgemeine Kriterium f_hom gemacht (der
+Randspalt zählt dort als Senke am Plattenrand).
 
 **Nebenbefund (nicht Teil dieses Features):** Der Kettenpfad führt den
 Škvor-Widerstand zweimal — einmal in `_membrane_impedance`, einmal im
@@ -616,6 +628,235 @@ nötig. Das ist als Grenze dokumentiert, nicht wegkalibriert.
 
 Die K67 bleibt dabei auf ihren publizierten Werten: Minimum bei 180°,
 −6,0/−15,5/−27,9 dB bei 90/135/180°, 20,1 mV/Pa (publiziert ~20).
+
+*Nachtrag (Gegenprobe 48):* die Grenze „48–96 Bohrungen" war zu grob —
+sie hängt nicht an der Lochzahl allein, sondern an der Frequenz f_hom
+(s. u.). Mit dem korrigierten 3D-Löser lautet die Zeile „einmal
+gezählt" −6,4 / −1,7 / +0,2 / +0,5 / −0,3 dB; die Entscheidung bleibt
+dieselbe, und die frühere Unstimmigkeit bei 192 Bohrungen (+2,5 dB)
+ist verschwunden.
+
+### Externe Referenzen: FEM und Messung (Gegenproben 32, 38)
+
+Zwei fremde, in sich vollständige Quellen verankern das Modell von
+außen:
+
+* **FEM (Gegenprobe 32):** Šimonová/Honzík, JASA 159, 4512 (2026),
+  COMSOL 3D thermoviskos, ~6·10⁶ Freiheitsgrade, alle Parameter in
+  derselben Arbeit. Der Prüfling ist bewusst extrem (R = 18 mm,
+  230-µm-Spalt, nur **vier** Bohrungen). Getroffen: der Tiefton
+  (< 1 dB) und — die eigentliche Dämpfungsprobe — die
+  Resonanzüberhöhung (+6,4 gegen +6,7 dB). Das **Dublett** der FEM im
+  Kerbenband (3500/4200 Hz) kann der homogenisierende 2D-Pfad
+  prinzipiell nicht haben; der 3D-Löser zeigt es (3336/4042 Hz).
+  **Offen** bleibt die Resonanzlage: 2D und 3D liegen beide 13 % unter
+  der FEM (477/480 gegen 550 Hz). Früher stand hier, das sei die
+  Homogenisierungsgrenze — ein Fehler, den das diskret rechnende Modell
+  genauso macht, kann das nicht sein (korrigiert in Gegenprobe 48).
+* **Messung (Gegenprobe 38):** Zuckerwar, JASA 64, 1278 (1978), B&K
+  4134 und 4146 — Tabelle I vollständig, Tabelle II die Ersatzelemente,
+  Fig. 6/7 Amplitude **und** Phase gegen Messwerte. M und C_M treffen
+  analytisch (< 0,2 %), der Frequenzgang des 4134 liegt 0,3 dB RMS neben
+  der Messung. Beim 4146 bleibt die Streuung der Škvor-Zellregel
+  q = n·r²/a_bp² als dokumentierter Rest (Schranke 1,6 dB RMS).
+
+### Modenweise Anregung (Gegenproben 33, 34, 42, 43)
+
+* **Modengewicht der Frontmittelung (33):** eine Membranmode wird von der
+  Galerkin-Projektion ⟨p·ψ⟩/⟨ψ⟩ getrieben, nicht vom Flächenmittel. Das
+  alte Flächenmittel erzeugte bei k·a·sin θ = 3,83 eine Auslöschung, die
+  die Grundmode gar nicht hat. Geprüft gegen die geschlossene
+  Freifeldform D(u) = z₀₁²·J₀(u)/(z₀₁² − u²).
+* **Modenabhängiger Quelldruck (`modal_source`, 34):** jede Mode bekommt
+  ihre eigene Projektion; weil die Moden in der Kette parallel am selben
+  Spaltknoten liegen, ist die Zusammenfassung zu einer Ersatzquelle
+  exakt. Bei streifendem Einfall fehlten der uniformen Anregung gegen die
+  FEM oberhalb 5 kHz 14 dB.
+* **Flächenmittel der Modenreihe (42):** die zwei Rayleigh-Summen
+  Σ1/z_m² = 1/4 (Hochton: freier Kolben) und Σ1/z_m⁴ = 1/32 (exakte
+  Statik) verankern die parallelen Zweige; die Grundmode allein trägt
+  95,7 % der statischen Nachgiebigkeit, deshalb die Normierung der
+  höheren Zweige.
+* **Modenfaktoren aus demselben Körper (43):** mit BEM kommen alle
+  Modenfaktoren aus EINEM Lösungsgang (vorher Grundmode aus dem BEM,
+  höhere aus der Kugelkalotte), und Gewichtung und Kette benutzen
+  dieselben gedämpften Zweige. Gegen Grinnips Messung: 90° von 3,7 auf
+  2,4 dB RMS, 180° von 3,0 auf 1,7 dB.
+
+### Spaltfilm gegen die Literatur (Gegenproben 35, 36, 37)
+
+* **Filmträgheit Φ(ω) (35):** unsere selbst hergeleitete Frequenz-
+  korrektur trifft die Reihe von Homentcovschi & Miles (JASA 124, 175,
+  2008) im ersten **und** zweiten Glied (1 + jK²/10 + K⁴/8400). Deren
+  Aussage „M = 1 genügt unter 100 kHz" gilt für MEMS-Spalte; bei
+  Kapselspalten ist K = O(1…10) und die Korrektur wesentlich.
+* **Reaktivanteil der Zell-Engstelle (36):** der Imaginärteil des
+  Zellterms ist exakt die kinetische Energie der Schmierfilmströmung —
+  zwei unabhängige Wege, ein Ergebnis. Die Stokes-Zelle von
+  Homentcovschi/Murray/Miles (2010) wurde nachgebaut (ihre Tabelle 3 auf
+  0,0 %) und liefert MEHR, nicht weniger — der Zellterm ist kein
+  Massenüberschuss.
+* **Randumgehung (37):** der Film liegt nur unter der Backplate, die
+  Membran erzeugt Fluss aber über ihre ganze Fläche. Für die lochfreie
+  Platte ist die Filmimpedanz geschlossen integrierbar,
+  Z = (12μ/πh³)·(u²/2 − u³/3 + u⁴/16) mit u = (a_bp/a_mem)²; ohne die
+  Umgehung wäre Z um 1/[u(2−u)]² zu groß (B&K: +28/+56 %).
+
+### Pull-in der Gegentakt-Bauform (Gegenprobe 39)
+
+„Zwei Backplates → doppelte Pull-in-Spannung" stimmt **nicht**. Bei
+`dual` heben sich die statischen Kräfte auf (w₀ = 0), der Wandler-
+koeffizient verdoppelt sich — aber auch die Feder-Erweichung addiert
+sich. Die Einzel-Backplate kollabiert erst, nachdem die Membran auf
+x* = 0,44042 des Spalts gekrochen ist; daraus folgt geschlossen
+U_PI(dual)/U_PI(single) = √(1,5·A₃(x*)) = **1,3464** (starrer Kolben:
+√(27/16) = 1,299).
+
+### BEM: flache Stirnfläche und Rückeinlass (Gegenproben 41, 44)
+
+* **Frontfaktor der flachen Stirnfläche (41):** eine Ein-Membran-Kapsel
+  ist kein Ball. Die reale flache Stirnfläche staut stärker als die
+  Kugelkalotte (die bei ~+5 dB sättigt); gegen Grinnip (JAES 54, 157,
+  2006, Fig. 5) 1,0 dB RMS auf Achse statt 3,1 dB mit der Kugel. Die
+  mehrdeutige Tabellenangabe „h_c = 5,955e-7/b²" entscheidet die Physik
+  eindeutig (als Volumen gelesen 1,6 dB RMS, als Höhe 10,4 dB). Offen:
+  ein Rest außerhalb der Achse (90°: 2,5 dB RMS mit modenweiser
+  Anregung).
+* **Rückpatch des Gradientenempfängers (44):** der rückwärtige Einlass
+  sitzt als Ring auf der realen Kontur — im Mantel bei seiner
+  Einbautiefe oder (`cavity_hole_position='end'`) in der hinteren
+  Stirnfläche. Absolut geprüft gegen die exakte Morse-Reihe auf der
+  Kugelkontur (2·10⁻⁴), unabhängig von der Elementteilung. Bei zwei
+  symmetrischen Backplates ist der vordere Einlass die Außenseite der
+  vorderen Platte; der Abstand zum Rückeinlass ist d_ext. Das frühere
+  Gatter ist eine **Warnung** (glatter Zylinder, kein Korb/Gitter).
+
+### Mittenterminierung / Ringmembran (Gegenproben 45, 47)
+
+Eine in der Mitte festgelegte Membran (Kontaktstift, Mittenbolzen,
+`center_post_diameter`) ist eine **Ringmembran**. Die statische Form
+enthält einen Logarithmus — schon r_i/a = 1 % nimmt 22 % der
+Nachgiebigkeit weg. Verankert in 1D/2D (45): r_i = 0 exakt der Bestand;
+die statische Form gegen eine unabhängige Finite-Volumen-Lösung; die
+Modenintegrale gegen Quadratur; die Ringvariante der Rayleigh-Summe
+(ΣC_m = Ring-Nachgiebigkeit) und die Massensummenregel; Pull-in gegen
+Warren (JASA 58, 733, 1975): kritisches Ā = 0,789 (Kreis) bzw. 1,548
+(Ring, ρ = 0,1) — unser Ein-Moden-Galerkin liegt +5,0 % bzw. +2,6 %
+darüber (offener Punkt: exakter statischer Arbeitspunkt). Im 3D-Löser
+(47) beginnt das Gitter am Pfostenrand; derselbe Flächenleitwert-Term
+ist bei r₀ = 0 die Achsenbedingung und bei r₀ > 0 die eingespannte Wand.
+Das reine Membranfeld trifft die geschlossene Ring-Nachgiebigkeit
+gitterkonvergent, 3D und 2D passen mit Pfosten so gut zusammen wie
+ohne.
+
+### Laufzeit und Rauschintegral (Gegenprobe 46)
+
+Die K67 mit BEM-Kopf und -Körper lief 24 Minuten, davon 19 still bei
+100 %. Ursachen: jeder BEM-Lösungsgang wurde für das Eigenrauschen ein
+zweites Mal gerechnet, und der frequenzunabhängige statische Kern wurde
+je Frequenz neu gebaut — jetzt ein Ergebnisspeicher je (ω, θ) und ein
+Kern je Geometrie (bitgleiches Ergebnis, ~5 statt 24 min). Die
+„divide by zero"-Warnungen waren stehengebliebene LAPACK-Flags; der
+Lösungsgang prüft jetzt sein Ergebnis. Unabhängig davon war das
+Rauschintegral zu grob: S_p = S_v/|H|² hat Spitzen, wo die Kapsel taub
+ist; eine lokale Nachverfeinerung bringt den Fehler von 0,53 auf
+0,0002 dB.
+
+### Homogenisierungsgrenze der 1D/2D-Modelle (Gegenprobe 48)
+
+1D und 2D verschmieren die Bohrungen zu einer Senkendichte und zwingen
+der Membran über jeder Lochzelle die **globale Modenform** auf. Über
+einem großen lochfreien Bereich staut sich aber der Film, und die
+gespannte Membran weicht ihm örtlich aus — sie beult sich zwischen den
+Löchern. Das kann nur der 3D-Löser. Maßgeblich ist das Verhältnis der
+viskosen Filmkraft zur Spannungssteifigkeit der Membran über dem
+größten lochfreien Bereich (Überdeckungsradius ρ = größter Abstand
+eines Elektrodenpunkts zur nächsten Durchgangsbohrung):
+
+    Π(ω) = ω · 12μ·ρ⁴ / (h³ · T · j₀₁²)
+
+Der Atmosphärendruck kürzt sich heraus — es zählt die Viskosität,
+nicht die Kompressibilität. Gegen den (korrigierten, konvergierten)
+3D-Löser setzt die 1-dB-Abweichung bei Π = 10…42 ein (zwei Kapseln,
+T = 40 und 109 N/m, Spalte 20/38/65 µm). Mit dem vorsichtigen Rand
+Π = 10 folgt die Grenzfrequenz
+
+    f_hom = 10 / (2π · 12μ·ρ⁴ / (h³·T·j₀₁²)).
+
+Liegt sie im Hörband (< 20 kHz), rechnet das Modell trotzdem, **warnt**
+aber (`UserWarning`, in der GUI als Hinweis, in `summary()` als Zeile
+„Loch-Homogenisierung bis"). `homogenization_limit()` liefert ρ, T und
+f_hom. Beispiele:
+
+| Kapsel | ρ | T | f_hom |
+|---|---|---|---|
+| K67 (60 Durchgangs-Senkungen) | 3,2 mm | 13 N/m | 1,1 kHz |
+| Debenham (12 Bohrungen) | 6,0 mm | 41 N/m | 44 Hz |
+| B&K 4134 (6 Bohrungen + Randspalt) | 2,0 mm | 3300 N/m | 73 kHz |
+| Standardkapsel (60 Durchgangs- + 30 Sacklöcher, 8 kHz) | 2,1 mm | 440 N/m | 58 kHz |
+
+Großmembran-Kapseln mit weicher Folie liegen damit fast immer im
+Warnbereich. Π = 10 ist bewusst der vorsichtige Rand; bei der K67
+liegen 2D und 3D auf Achse bis zu 4 dB auseinander (−4,0 dB bei
+8 kHz), tragen aber schon im Tiefton einen Versatz von ~2 dB, den
+f_hom nicht erklärt (Zwischenspalt-Geometrie, s. u.).
+
+**Geprüft und verworfen** (mit Beleg in der Gegenprobe): die
+Kompressibilität *in* der Škvor-Zelle (exakte Lösung mit modifizierten
+Besselfunktionen, gegen eine FD-Zelle auf 10⁻⁹ — ändert B bis zur
+Zell-Squeeze-Zahl 1 um < 1 %), der Modenabbruch der Membran
+(`membrane_modes = 3` ändert die 2D-Rechnung um < 0,01 dB) und
+Sacklöcher als Entlastung (36 tiefe Sacklöcher zwischen 12
+Durchgangslöchern senken die Abweichung nur von 10 auf 7,6 dB — es
+zählen die Durchgangslöcher).
+
+**Der 3D-Löser musste dafür erst selbst belastbar werden.** Vier Fehler
+fielen auf, jeder physikalisch begründet behoben:
+
+1. **Fußabdruck:** das Suchfenster der Mündungszellen war fest ±4
+   Zellen. Größere Mündungen wurden abgeschnitten (12 × ⌀1,4 mm auf
+   3 mm Radius wirkten wie ⌀0,8 mm), das Ergebnis **wanderte** mit der
+   Gitterfeinheit statt zu konvergieren. Jetzt exakter Abstand, Fenster
+   nach Lochgröße: konvergent (0,97 → 0,34 dB je Halbierung).
+2. **Äquipotentiale Mündung:** über dem Lochquerschnitt gibt es keinen
+   Film. Die Mündungszellen waren gewöhnliche Filmzellen mit
+   gleichverteiltem Zufluss — ein Aufschlag von +1/8 auf Škvors B
+   (+28 % Zellwiderstand bei q = 0,04). Jetzt kurzgeschlossen
+   (G_s·(I − 11ᵀ/k); das Ergebnis hängt vom numerischen Leitwert nicht
+   ab, 10⁻⁴ dB).
+3. **Lochlage:** gleichverteilte Löcher lagen auf flächengleichen
+   Hilfskreisen mit gleicher Lochzahl (außen Zellen von 0,9 × 10 mm) —
+   jetzt ein isotropes Raster. Gleichverteilte Durchgangs- und
+   Sacklöcher waren zwei getrennte Raster, 15° versetzt; an der K67
+   überlappten die Senkungen. Jetzt ein gemeinsames Raster mit
+   abwechselnder Belegung (wie die reale K67: 120 Senkungen, jede
+   zweite durchgebohrt), und die Gegenelektrode ist kreisweise
+   verdreht. Die frühere Voreinstellung 180°/n_th ist nur für EINEN
+   Lochkreis eine halbe Teilung; auf dem Mehrkreis-Raster legte sie die
+   Kerne beider Hälften im Zwischenspalt übereinander.
+4. **Spaltprofil:** der 3D-Film sieht jetzt wie das 2D-Feld das örtliche
+   h(r) = h − w₀·φ(r) statt des Flächenmittels.
+
+**Offene Punkte, die dabei sichtbar wurden:**
+
+* **K67-Rückdämpfung im 3D hängt an der Kernlage.** Wie die Kerne beider
+  Hälften im 50-µm-Zwischenspalt zueinander liegen, ist nirgends
+  dokumentiert — und genau das bestimmt die Tiefe der Auslöschung:
+  vollständig versetzt (automatisch, jeder Kern über einer Sacksenkung
+  der Gegenseite, ~2 mm Querweg) −11 dB bei 180°/1 kHz; teilweise
+  fluchtend (global 9°) −29 dB wie im 2D-Modell (−28 dB), dessen
+  Škvor-Zelle einen Querweg von etwa einem Zellradius annimmt; fluchtend
+  (0°) wandert das Minimum auf 106°. Das ist eine Geometriefrage an der
+  realen Kapsel, kein Modellfehler — `half_rotation_deg` stellt sie ein.
+* **Standardgitter des 3D-Lösers:** 60 Radialzellen lösen kleine
+  Mündungen nur grob auf (48 × ⌀0,7 mm auf 1": 1,1 dB neben dem
+  konvergierten Wert). Ein feineres Standardgitter kostet ein Mehrfaches
+  an Rechenzeit; Gegenprobe 48 rechnet ihre Trennprobe deshalb auf
+  90 × 288.
+* **B&K 4134 im 3D:** bei 13…20 kHz liegt der 3D-Löser 1,9…3,1 dB über
+  der Messung, das 2D-Modell höchstens 0,6 dB. Die im 3D fehlende
+  Randumgehung ist es nicht (mit a_bp = a_mem wird die Differenz eher
+  größer).
 
 ## Verlustmechanismen (vollständig erfasst)
 
