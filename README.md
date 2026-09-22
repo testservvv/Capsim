@@ -631,10 +631,11 @@ Die K67 bleibt dabei auf ihren publizierten Werten: Minimum bei 180°,
 
 *Nachtrag (Gegenprobe 48):* die Grenze „48–96 Bohrungen" war zu grob —
 sie hängt nicht an der Lochzahl allein, sondern an der Frequenz f_hom
-(s. u.). Mit dem korrigierten 3D-Löser lautet die Zeile „einmal
-gezählt" −6,4 / −1,7 / +0,2 / +0,5 / −0,3 dB; die Entscheidung bleibt
-dieselbe, und die frühere Unstimmigkeit bei 192 Bohrungen (+2,5 dB)
-ist verschwunden.
+(s. u.). Mit dem korrigierten 3D-Löser und dem exakten Arbeitspunkt
+(Gegenprobe 49; der Prüfling läuft jetzt mit 45 V, denn 50 V liegen
+genau auf seinem Pull-in) lautet die Zeile „einmal gezählt" −5,8 /
+−1,2 / +0,2 / +0,3 / −0,5 dB; die Entscheidung bleibt dieselbe, und
+die frühere Unstimmigkeit bei 192 Bohrungen (+2,5 dB) ist verschwunden.
 
 ### Externe Referenzen: FEM und Messung (Gegenproben 32, 38)
 
@@ -707,10 +708,12 @@ außen:
 „Zwei Backplates → doppelte Pull-in-Spannung" stimmt **nicht**. Bei
 `dual` heben sich die statischen Kräfte auf (w₀ = 0), der Wandler-
 koeffizient verdoppelt sich — aber auch die Feder-Erweichung addiert
-sich. Die Einzel-Backplate kollabiert erst, nachdem die Membran auf
-x* = 0,44042 des Spalts gekrochen ist; daraus folgt geschlossen
-U_PI(dual)/U_PI(single) = √(1,5·A₃(x*)) = **1,3464** (starrer Kolben:
-√(27/16) = 1,299).
+sich. Pull-in ist dort das Eigenwertkriterium am Ruhespalt, für die
+volle, lochfreie Elektrode geschlossen **Ā = j₀₁²/4 = 1,4458**; die
+Einzel-Backplate kollabiert erst, nachdem die Membran ein gutes Stück
+gekrochen ist (Warren: Ā = 0,789). Das Verhältnis ist deshalb
+U_PI(dual)/U_PI(single) = √(1,4458/0,789) = **1,3537** (Ein-Moden-Bild
+√(1,5·A₃(x*)) = 1,3464, starrer Kolben √(27/16) = 1,299).
 
 ### BEM: flache Stirnfläche und Rückeinlass (Gegenproben 41, 44)
 
@@ -741,8 +744,8 @@ die statische Form gegen eine unabhängige Finite-Volumen-Lösung; die
 Modenintegrale gegen Quadratur; die Ringvariante der Rayleigh-Summe
 (ΣC_m = Ring-Nachgiebigkeit) und die Massensummenregel; Pull-in gegen
 Warren (JASA 58, 733, 1975): kritisches Ā = 0,789 (Kreis) bzw. 1,548
-(Ring, ρ = 0,1) — unser Ein-Moden-Galerkin liegt +5,0 % bzw. +2,6 %
-darüber (offener Punkt: exakter statischer Arbeitspunkt). Im 3D-Löser
+(Ring, ρ = 0,1) — seit Gegenprobe 49 exakt getroffen (vorher lag der
+Ein-Moden-Galerkin +5,0 % bzw. +2,6 % darüber). Im 3D-Löser
 (47) beginnt das Gitter am Pfostenrand; derselbe Flächenleitwert-Term
 ist bei r₀ = 0 die Achsenbedingung und bei r₀ > 0 die eingespannte Wand.
 Das reine Membranfeld trifft die geschlossene Ring-Nachgiebigkeit
@@ -761,6 +764,53 @@ Lösungsgang prüft jetzt sein Ergebnis. Unabhängig davon war das
 Rauschintegral zu grob: S_p = S_v/|H|² hat Spitzen, wo die Kapsel taub
 ist; eine lokale Nachverfeinerung bringt den Fehler von 0,53 auf
 0,0002 dB.
+
+### Exakter statischer Arbeitspunkt (Gegenprobe 49)
+
+Die Membran unter Polarisationsspannung ist eine nichtlineare
+Randwertaufgabe, kein Ein-Freiheitsgrad-Problem:
+
+    T·∇²w = −(ε₀U²/2)·[c_s/(h − w)² + c_b/(h + d − w)²]
+
+(c_s, c_b: Anteile solider Elektrode bzw. über Sacklöchern, radial wie
+im Feldmodell; w = 0 am Rand, bei der Ringmembran auch am Pfosten). In
+der Koordinate u = r²/a² ist der Operator an der Achse regulär und das
+Finite-Volumen-System tridiagonal. **Pull-in ist der Faltpunkt** des
+Lösungsasts — parametrisiert über das verdrängte Volumen, das auch über
+die Falte hinweg monoton ist. Die **Feder-Erweichung** kommt aus dem
+linearisierten Operator am Arbeitspunkt und divergiert genau dort;
+Wandlerkoeffizient, Ruhekapazität C₀ und das Spaltprofil der Feldmodelle
+(2D und 3D) sehen das exakte Profil h − w(r); der 3D-Löser erhält die
+Erweichung **örtlich** statt als gleichförmige, an der Grundmode
+kalibrierte Konstante. Bei `dual` (w₀ = 0) ist Pull-in das
+Eigenwertkriterium am Ruhespalt.
+
+Bis dahin stand ein Ein-Moden-Galerkin mit der statischen Form φ da —
+für kleine Lasten exakt, zum Pull-in hin aber zu steif. Geprüft mit
+unabhängigen Methoden:
+
+| Prüfung | Ergebnis |
+|---|---|
+| Form gegen Schießverfahren (solve_ivp in r) | 3·10⁻⁶ |
+| Kleinsignal-Nachgiebigkeit gegen ∂V/∂p des nichtlinearen Asts | 5·10⁻⁹ |
+| Warren, Kreis | Ā = 0,7892 gegen 0,789 (Ein-Moden: 0,8274, +4,8 %) |
+| Warren, Ring ρ = 0,1 | 1,549 gegen 1,548 (Ein-Moden: +2,6 %) |
+| Gegentakt, volle Elektrode | Ā = j₀₁²/4 = 1,4458 geschlossen |
+| Nachgiebigkeit 0,5 → 0,999·U_PI | 1,08 → 10,9 × (divergiert) |
+
+Die kleinen Restabstände zu Warren sind die Biegesteife der Folie
+(0,1 % der Spannung), die Warrens reine Membran nicht hat.
+
+**Wirkung:** der Pull-in sinkt um 1,3…2,5 % — bei der K67 von 74,4 auf
+**72,6 V** (Arbeitspunkt bei 60 V: w₀ = 11,7 µm, C₀ = 50,3 pF,
+Erweichung 28 %). Vier Prüflinge des Selbsttests saßen genau auf oder
+knapp über ihrem exakten Pull-in — die weiche 1"-Kapsel der
+Gegenproben 29/31 und die Debenham-Variante ohne Sacklöcher in 22
+(48,9…50,0 V gegen 50 V Bias) sowie die fast volle K67-Elektrode in 19
+(59,7 V gegen 60 V) — und laufen jetzt mit 45 bzw. 50 V; sie prüfen
+Filmphysik bzw. Struktur, nicht die Nähe zum Kollaps. Die Beispiel-
+projekte bleiben stabil (Debenham 52,0 V bei 50 V Betrieb, K67 72,6 V
+bei 60 V).
 
 ### Homogenisierungsgrenze der 1D/2D-Modelle (Gegenprobe 48)
 
@@ -791,7 +841,7 @@ f_hom. Beispiele:
 | Kapsel | ρ | T | f_hom |
 |---|---|---|---|
 | K67 (60 Durchgangs-Senkungen) | 3,2 mm | 13 N/m | 1,1 kHz |
-| Debenham (12 Bohrungen) | 6,0 mm | 41 N/m | 44 Hz |
+| Debenham (12 Bohrungen) | 6,0 mm | 41 N/m | 43 Hz |
 | B&K 4134 (6 Bohrungen + Randspalt) | 2,0 mm | 3300 N/m | 73 kHz |
 | Standardkapsel (60 Durchgangs- + 30 Sacklöcher, 8 kHz) | 2,1 mm | 440 N/m | 58 kHz |
 

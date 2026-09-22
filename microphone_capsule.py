@@ -52,6 +52,28 @@ try:
 except ImportError:  # pragma: no cover — Fallback auf Näherungsformeln
     _HAS_SCIPY = False
 
+    def _solve_banded(l_and_u, ab, b):
+        """Thomas-Algorithmus für das tridiagonale solve_banded-Format
+        (1, 1) — damit der exakte statische Arbeitspunkt auch ohne SciPy
+        rechnet (ab[0, j] = A[j−1, j], ab[1, j] = A[j, j],
+        ab[2, j] = A[j+1, j])."""
+        if tuple(l_and_u) != (1, 1):
+            raise ValueError("Fallback kann nur tridiagonal (1, 1).")
+        sup, dia, sub = ab[0, 1:], ab[1].astype(complex), ab[2, :-1]
+        x = np.array(b, dtype=complex)
+        n = dia.size
+        d = dia.copy()
+        for i in range(1, n):
+            m = sub[i - 1] / d[i - 1]
+            d[i] = d[i] - m * sup[i - 1]
+            x[i] = x[i] - m * x[i - 1]
+        x[-1] = x[-1] / d[-1]
+        for i in range(n - 2, -1, -1):
+            x[i] = (x[i] - sup[i] * x[i + 1]) / d[i]
+        if np.isrealobj(ab) and np.isrealobj(b):
+            return x.real
+        return x
+
 
 def _j0_mode(x):
     """J0(x) für das Membran-Modengewicht (0 <= x <= z_0m).
@@ -1073,6 +1095,7 @@ class MicrophoneCapsule:
         self._fld_gedge_geom = 4.0 * np.pi * r_f[N] / dr
         self._fld_S_elec = np.pi * (self.a_bp**2 - r0**2)
         self._fld_N = N
+        self._fld_r_c = r_c
 
         # Radiale Dichteverteilungen der Löcher (normiert: Σ dens·A = 1),
         # damit die Gesamt-Lochleitwerte erhalten bleiben. Jeder Lochkreis
@@ -1145,15 +1168,9 @@ class MicrophoneCapsule:
         scale = np.where(tot > 0.95, 0.95 / np.maximum(tot, 1e-30), 1.0)
         self._es_u = u_es
         # Modenprofil an denselben Stützstellen (Parabel bzw. Ringform),
-        # normiert auf 1 — damit bleibt w0 die MAXIMALE Auslenkung.
+        # normiert auf 1 — die dynamische Modenform der Kette.
         self._es_phi = (_ring_static_shape(u_es, self.u_post)
                         / self._phi_max)
-        # Flächenmittel des Profils ÜBER DER ELEKTRODE (für den Arbeits-
-        # punkt-Spalt weiter unten). Ohne Pfosten exakt 1 − ub/2.
-        self._es_phi_mean = (
-            1.0 - self._ub / 2.0 if self.r_post <= 0.0 else
-            float(np.trapezoid(self._es_phi, u_es)
-                  / (self._ub - self.u_post)))
         self._es_c_solid = 1.0 - tot * scale
         self._es_c_blind = p_bh * scale
 
@@ -1166,35 +1183,31 @@ class MicrophoneCapsule:
         #     Beitrag zu Kraft und Kapazität ist um (h/(h+d))^2..3 kleiner
         #     (genau so gehen sie unten in die Integrale ein).
         # Zusätzlich ist die elektrostatische Last VERTEILT und die Membran
-        # am Rand eingespannt: alle Größen werden mit dem Auslenkungsprofil
-        # phi(r) = 1 - r^2/a^2 (Galerkin-Ansatz, gleiche Mode wie M_A/C_A)
-        # über die Elektrodenfläche integriert.
-        #
-        # Statischer Arbeitspunkt (konstante Spannung — der Bias-Widerstand
-        # hält U0 statisch fest; das Luftpolster entweicht statisch durch
-        # die Löcher und trägt NICHT):
-        #     k_gen * w0 = F_es(w0),  F_es = (eps0 U0^2 / 2) Int phi/g(r)^2
-        # mit lokalem Spalt g(r) = h - w0*phi(r) und der generalisierten
-        # Membransteifigkeit k_gen = S^2/(4 C_A) (konsistent zu C_A).
-        # PULL-IN: existiert keine stabile Lösung (oder ist die tangentiale
-        # Steifigkeit k_gen - dF/dw0 <= 0), kollabiert die Membran — das
-        # passiert bereits VOR dem Kleinsignal-Kriterium am Ruhespalt.
-        #
-        # FEDER-ERWEICHUNG am Arbeitspunkt ("spring softening"):
-        #     k_neg = dF/dw0 = eps0 U0^2 Int phi^2/g(r)^3
-        # akustisch: 1/C_eff = 1/C_A - 4*k_neg/S^2   (w0 -> V_disp: Faktor 2/S)
+        # am Rand eingespannt. Seit Gegenprobe 49 wird der statische
+        # Arbeitspunkt als EXAKTE Randwertaufgabe gelöst (s. _static_setup):
+        # konstante Spannung (der Bias-Widerstand hält U0 statisch fest;
+        # das Luftpolster entweicht statisch durch die Löcher und trägt
+        # NICHT),
+        #     T·∇²w = −(eps0 U0²/2)·[c_s/(h−w)² + c_b/(h+d−w)²].
+        # PULL-IN ist der Faltpunkt dieses Lösungsasts. Die Feder-Erweichung
+        # kommt aus dem linearisierten Operator am Arbeitspunkt; Kraft-
+        # modulation und Ruhekapazität (Wandlerkoeffizient, C0) werden
+        # über dem exakten Spaltprofil g(r) = h − w(r) integriert. Das
+        # frühere Ein-Moden-Bild (Galerkin mit der statischen Form, k_gen =
+        # S_eff²/C_A) war für kleine Lasten exakt, lag aber am Pull-in
+        # Warrens Ā um +5.0 % (Kreis) bzw. +2.6 % (Ring) zu hoch.
         #
         # DUAL-BACKPLATES (Gegentakt): u_bias liegt an BEIDEN Spalten voll
         # an (Backplates auf ±U, Gesamtversorgung 2·U). Die statischen
         # Kräfte heben sich auf -> w0 = 0, die Erweichung beider Seiten
-        # ADDIERT sich (k_neg = 2·eps0·U²·I_k(0)). Pull-in ist deshalb das
-        # KLEINSIGNAL-Kriterium k_gen > k_neg am Ruhespalt, nicht das
-        # Verschwinden eines Gleichgewichts. Beide Effekte zusammen ergeben
-        #     U_PI(dual)/U_PI(single) = sqrt(A3(x*) / (2·A3(0))) = 1.3464
-        # mit A3(x) = Int_0^1 t²/(1-x t)³ dt und dem Pull-in-Punkt x* =
-        # w0/h = 0.4404 der Einzel-Backplate (Gegenprobe 39). Der Gewinn
-        # kommt also NICHT aus einer kleineren Feldstärke, sondern allein
-        # daraus, dass die Membran im Ruhepunkt bleibt.
+        # ADDIERT sich. Pull-in ist deshalb das Eigenwertkriterium am
+        # Ruhespalt, nicht das Verschwinden eines Gleichgewichts — für die
+        # volle, lochfreie Elektrode geschlossen Ā = j01²/4 = 1.4458, und
+        # mit Warrens 0.789 der Einzel-Backplate
+        #     U_PI(dual)/U_PI(single) = sqrt(1.4458/0.789) = 1.3537
+        # (Ein-Moden-Bild: 1.3464, Gegenprobe 39). Der Gewinn kommt NICHT
+        # aus einer kleineren Feldstärke, sondern allein daraus, dass die
+        # Membran im Ruhepunkt bleibt.
         # ------------------------------------------------------------------
         self.phi_th = self.n_th * np.pi * self.r_th**2 / self.S_bp
         self.phi_bh = self.n_bh * np.pi * self.r_bh**2 / self.S_bp
@@ -1209,35 +1222,64 @@ class MicrophoneCapsule:
             )
         # generalisierte Steifigkeit zur Koordinate w0 (Maximalauslenkung):
         # E = (w0·S_eff)²/(2C_A)  ->  k_gen = S_eff²/C_A. Ohne Mitten-
-        # terminierung ist S_eff = S/2, also der bisherige Wert S²/(4C_A).
+        # terminierung ist S_eff = S/2, also S²/(4C_A). Seit Gegenprobe 49
+        # trägt sie den Arbeitspunkt nicht mehr (das tut die exakte
+        # Randwertaufgabe), bleibt aber die Referenz des Ein-Moden-Bilds.
         self._k_gen = self.S_eff_mem**2 / self.C_A_mem
 
-        eq = self._solve_static_deflection(self.u_bias)
-        if eq is None:
-            u_pi = self.pullin_voltage()
+        # EXAKTER ARBEITSPUNKT (Gegenprobe 49, s. _static_setup)
+        self._static_setup()
+        self._st_branch_cache = None
+        st = self._st
+        lam_b = EPS0 * self.u_bias**2
+        if self.architecture == "dual":
+            # Gegentakt: statisch symmetrisch (w0 = 0), beide Spalte
+            # erweichen; Pull-in = Eigenwertkriterium am Ruhespalt
+            lam_pi = self._st_dual_pullin_lambda()
+            w_st = np.zeros(st["u"].size)
+            soft = lam_b * 2.0 * (st["cs"] / self.h_gap**3
+                                  + st["cb"] / (self.h_gap + self.d_bh)**3)
+            stable = lam_b < lam_pi
+        else:
+            lam_pi = self._st_branch()[1]
+            if lam_b <= 0.0:
+                w_st = np.zeros(st["u"].size)
+            else:
+                w_st = self._st_equilibrium(lam_b)
+            stable = w_st is not None
+            soft = self._st_system(w_st, lam_b)[3] if stable else None
+        self.U_pullin = (float(np.sqrt(lam_pi / EPS0))
+                         if np.isfinite(lam_pi) else float("inf"))
+        if not stable:
             raise ValueError(
                 "Elektrostatischer Kollaps (Pull-in): die statische "
                 "Anziehung der Backplate übersteigt die Rückstellkraft der "
                 "Membran. Maximal stabile Polarisationsspannung für diese "
-                f"Konfiguration: ca. {u_pi:.1f} V. Abhilfe: Spannung senken, "
-                "Luftspalt vergrößern oder Membran steifer (höhere "
-                "Resonanzfrequenz/Vorspannung). Hinweis: statisch trägt nur "
-                "die Membran-Vorspannung — das Luftpolster entweicht durch "
-                "die Löcher; gemessene Kapselresonanzen enthalten dagegen "
-                "die Luftpolster-Steifigkeit und liegen deshalb unter der "
-                "hier maßgeblichen Vorspannungs-Resonanz."
+                f"Konfiguration: ca. {self.U_pullin:.1f} V. Abhilfe: "
+                "Spannung senken, Luftspalt vergrößern oder Membran steifer "
+                "(höhere Resonanzfrequenz/Vorspannung). Hinweis: statisch "
+                "trägt nur die Membran-Vorspannung — das Luftpolster "
+                "entweicht durch die Löcher; gemessene Kapselresonanzen "
+                "enthalten dagegen die Luftpolster-Steifigkeit und liegen "
+                "deshalb unter der hier maßgeblichen Vorspannungs-Resonanz."
             )
-        self.w0_static, k_neg_eq = eq
-        self.h_min_static = self.h_gap - self.w0_static  # Restspalt Mitte
+        self._w_static = w_st
+        self._st_soft = soft
+        self.w0_static = float(np.max(w_st))       # MAXIMALE Auslenkung
+        self.h_min_static = self.h_gap - self.w0_static  # engster Restspalt
 
-        inv_C_eff = 1.0 / self.C_A_mem - 4.0 * k_neg_eq / self.S_mem**2
-        if inv_C_eff <= 0.0:  # durch Stabilitätsprüfung praktisch abgedeckt
+        # Kleinsignal-Nachgiebigkeit aus dem LINEARISIERTEN Operator. Das
+        # Verhältnis zweier Lösungen desselben diskreten Systems kürzt den
+        # Diskretisierungsfehler heraus: ohne Bias ist es exakt 1.
+        C_st0 = self._st_compliance(np.zeros_like(soft))
+        C_st1 = self._st_compliance(soft)
+        if not (np.isfinite(C_st1) and C_st1 > 0.0):
             raise ValueError("Elektrostatischer Kollaps (Feder-Erweichung).")
-        self.C_A_eff = 1.0 / inv_C_eff
+        self.C_A_eff = self.C_A_mem * C_st1 / C_st0
         # relative Steifigkeitsreduktion durch die Vorspannung (Diagnose)
         self.softening_ratio = 1.0 - self.C_A_mem / self.C_A_eff
-        # maximal stabile Polarisationsspannung (Diagnose)
-        self.U_pullin = self.pullin_voltage()
+        # statische Auslenkung auf dem Elektrodengitter der Integrale
+        self._es_w = np.interp(self._es_u, st["u"], w_st)
 
         # NUMERISCHER BODEN der Membrandämpfung (s. _Q_MEMBRANE_INTERNAL).
         # Die DOMINANTE Dämpfung der Membran-Grundmode kommt aus dem Spalt-
@@ -1276,7 +1318,8 @@ class MicrophoneCapsule:
         C0_rear = None
         signs = (+1.0, -1.0) if self.architecture == "dual" else (+1.0,)
         for sign in signs:
-            I_F, _, I_C = self._electrode_integrals(sign * self.w0_static)
+            # exaktes statisches Profil (Gegenprobe 49); bei 'dual' null
+            I_F, _, I_C = self._electrode_integrals(profile=sign * self._es_w)
             C0 = EPS0 * I_C
             if C0_rear is None:
                 C0_rear = C0
@@ -1293,9 +1336,20 @@ class MicrophoneCapsule:
         # membran-Bauform die Front/Rück-Symmetrie und koppelt die
         # Polarisationsspannung in REALISTISCHEM Maß an die Richt-
         # charakteristik. Bei 'dual' (beidseitig polarisiert) ist w0 = 0.
+        # Seit Gegenprobe 49 das Flächenmittel des EXAKTEN Profils.
         # ------------------------------------------------------------------
-        sag = self.w0_static * self._es_phi_mean
+        span_es = self._es_u[-1] - self._es_u[0]
+        sag = (float(np.trapezoid(self._es_w, self._es_u)) / span_es
+               if span_es > 0.0 else 0.0)
         self.h_gap_front = max(self.h_gap - sag, 0.05 * self.h_gap)
+        # normierte statische FORM auf dem 2D-Feldgitter (Spaltprofil der
+        # polarisierten Seite, s. _gap_field_2port); ohne Bias die Mode
+        if self.w0_static > 0.0:
+            self._fld_sag_shape = np.interp(
+                np.minimum((self._fld_r_c / self.a_mem) ** 2, 1.0),
+                st["u"], w_st) / self.w0_static
+        else:
+            self._fld_sag_shape = self._fld_phi.copy()
 
         # ------------------------------------------------------------------
         # LUFTSPALT: SQUEEZE-FILM-WIDERSTAND NACH ŠKVOR
@@ -1832,28 +1886,259 @@ class MicrophoneCapsule:
         return 1j * omega * S * h_film / (n_p * P_ATM)
 
     # ======================================================================
-    # Elektrostatik: Integrale, statischer Arbeitspunkt, Pull-in
+    # Elektrostatik: EXAKTER statischer Arbeitspunkt (Gegenprobe 49)
     # ======================================================================
-    def _electrode_integrals(self, w0):
-        """Elektrodenintegrale über das Membranprofil phi(r) = 1 - r²/a².
+    # Die Membran unter Polarisationsspannung ist eine nichtlineare
+    # Randwertaufgabe, kein Ein-Freiheitsgrad-Problem:
+    #
+    #     T·(4/a²)·(u·w_u)_u = −p_es(u, w),        u = r²/a_mem²,
+    #     p_es = (ε0U²/2)·[c_s/(h−w)² + c_b/(h+d_bh−w)²]   (Elektrode),
+    #     w(1) = 0;  Kreis: u·w_u = 0 bei u = 0;  Ring: w(u_i) = 0.
+    #
+    # In der Koordinate u ist der Operator an der Achse regulär und das
+    # Finite-Volumen-System tridiagonal. T ist die Spannung, die die
+    # statische Nachgiebigkeit C_A_mem trägt: T = π·a⁴·g(ρ)/(8·C_A_mem).
+    # Bis Gegenprobe 48 stand hier ein Ein-Moden-Galerkin mit der
+    # statischen Form φ — für kleine Lasten exakt, zum Pull-in hin aber
+    # zu steif: Warrens kritisches Ā (0.789 Kreis, 1.548 Ring ρ = 0.1)
+    # lag um +5.0 % bzw. +2.6 % zu hoch, U_PI also um ~2.5 %/1.3 %.
+    #
+    # PULL-IN ist der FALTPUNKT des Lösungsasts. Der Ast wird über das
+    # verdrängte Volumen V = ∫w dS parametrisiert (monoton längs des Asts,
+    # auch über die Falte hinweg); λ = ε0·U² ist dann eine Unbekannte, und
+    # ihr Maximum über V ist λ_PI. Die Kleinsignal-Nachgiebigkeit folgt aus
+    # dem LINEARISIERTEN Operator L + λ·∂p/∂w am Arbeitspunkt (statt
+    # 1/C_A − 4k_neg/S²) und divergiert genau im Faltpunkt.
+    #
+    # 'dual' (Gegentakt): w0 = 0, beide Spalte erweichen; Pull-in ist der
+    # kleinste Eigenwert von −L·w = λ·2(c_s/h³ + c_b/(h+d)³)·w — für die
+    # volle, lochfreie Elektrode geschlossen Ā = j01²/4 = 1.4458.
+    _N_STATIC = 400
+
+    def _static_setup(self):
+        """Gitter, Porosität und Membranoperator der exakten Statik."""
+        N = self._N_STATIC
+        u = np.linspace(self.u_post, 1.0, N + 1)
+        du = u[1] - u[0]
+        vol = np.full(u.size, du)
+        vol[0] *= 0.5
+        vol[-1] *= 0.5
+        on = u <= self._ub + 1e-12
+        cs = np.where(on, np.interp(u, self._es_u, self._es_c_solid), 0.0)
+        cb = np.where(on, np.interp(u, self._es_u, self._es_c_blind), 0.0)
+        tension = (np.pi * self.a_mem**4 * self._ring_g
+                   / (8.0 * self.C_A_mem))
+        g = (4.0 * tension / self.a_mem**2) * 0.5 * (u[:-1] + u[1:]) / du
+        L = np.zeros((3, u.size))                  # solve_banded-Format
+        L[0, 1:] = g                               # A[k, k+1]
+        L[2, :-1] = g                              # A[k+1, k]
+        L[1, :-1] -= g
+        L[1, 1:] -= g
+        # dynamische Modenform (die der Kette) auf demselben Gitter
+        psi = _ring_static_shape(u, self.u_post) / self._phi_max
+        self._st = dict(u=u, vol=vol, cs=cs, cb=cb, L=L, tension=tension,
+                        ring=self.u_post > 0.0, psi=psi,
+                        S=np.pi * self.a_mem**2)
+
+    def _st_system(self, w, lam, sides=1.0):
+        """Residuum F und Jacobi-Band J von L·w + λ·p̂(w)·vol = 0 samt
+        Dirichlet-Zeilen; außerdem ∂F/∂λ und die örtliche Erweichung
+        λ·∂p̂/∂w (sides = 2: Gegentakt bei w = 0)."""
+        st = self._st
+        L, vol = st["L"], st["vol"]
+        g1 = self.h_gap - w
+        g2 = self.h_gap + self.d_bh - w
+        f = 0.5 * (st["cs"] / g1**2 + st["cb"] / g2**2)
+        fp = sides * (st["cs"] / g1**3 + st["cb"] / g2**3)
+        Lw = L[1] * w
+        Lw[:-1] += L[0, 1:] * w[1:]
+        Lw[1:] += L[2, :-1] * w[:-1]
+        F = Lw + lam * f * vol
+        J = L.copy()
+        J[1] = J[1] + lam * fp * vol
+        dFdl = f * vol
+        # Dirichlet: Einspannung außen, Ring zusätzlich am Pfosten
+        F[-1] = w[-1]
+        J[1, -1], J[2, -2], J[0, -1] = 1.0, 0.0, 0.0
+        dFdl[-1] = 0.0
+        if st["ring"]:
+            F[0] = w[0]
+            J[1, 0], J[0, 1] = 1.0, 0.0
+            dFdl[0] = 0.0
+        return F, J, dFdl, lam * fp
+
+    def _st_on_volume(self, V, w, lam):
+        """Punkt des Lösungsasts mit vorgegebenem Volumen Σw·vol = V
+        (Newton mit Randbordierung, zwei Bandlösungen je Schritt)."""
+        vol = self._st["vol"]
+        for _ in range(60):
+            F, J, dFdl, _ = self._st_system(w, lam)
+            x1 = _solve_banded((1, 1), J, -F)
+            x2 = _solve_banded((1, 1), J, dFdl)
+            dl = (np.dot(vol, x1) + np.dot(vol, w) - V) / np.dot(vol, x2)
+            dw = x1 - dl * x2
+            w = w + dw
+            lam = lam + dl
+            if not np.all(np.isfinite(w)) or np.max(w) >= 0.999 * self.h_gap:
+                return None, None
+            if np.max(np.abs(dw)) < 1e-13 * self.h_gap:
+                return w, lam
+        return None, None
+
+    def _st_branch(self):
+        """Stabiler Ast bis zum Faltpunkt: [(V, λ, w), ...] und λ_PI.
+        Einmal je Kapsel (gecacht)."""
+        cached = getattr(self, "_st_branch_cache", None)
+        if cached is not None:
+            return cached
+        vol = self._st["vol"]
+        V_full = self.h_gap * float(np.sum(vol))
+        w = np.zeros(vol.size)
+        lam = 0.0
+        pts = [(0.0, 0.0, w.copy())]
+        dV = V_full / 80.0
+        V = 0.0
+        while V < 0.95 * V_full:
+            V += dV
+            w_n, lam_n = self._st_on_volume(V, w, lam)
+            if w_n is None:
+                break
+            w, lam = w_n, lam_n
+            pts.append((V, lam, w.copy()))
+            if len(pts) >= 3 and pts[-1][1] < pts[-2][1]:
+                break                              # Falte überschritten
+        lams = np.array([p[1] for p in pts])
+        k = int(np.argmax(lams))
+        lam_pi = float(lams[k])
+        if 0 < k < len(pts) - 1:
+            # Goldener Schnitt um das diskrete Maximum
+            a_, b_ = pts[k - 1][0], pts[k + 1][0]
+            wg = pts[k][2]
+            gr = 0.5 * (np.sqrt(5.0) - 1.0)
+            c_, d_ = b_ - gr * (b_ - a_), a_ + gr * (b_ - a_)
+            wc, lc = self._st_on_volume(c_, wg, pts[k][1])
+            wd, ld = self._st_on_volume(d_, wg, pts[k][1])
+            for _ in range(40):
+                if wc is None or wd is None:
+                    break
+                if lc > ld:
+                    b_, d_, wd, ld = d_, c_, wc, lc
+                    c_ = b_ - gr * (b_ - a_)
+                    wc, lc = self._st_on_volume(c_, wd, ld)
+                else:
+                    a_, c_, wc, lc = c_, d_, wd, ld
+                    d_ = a_ + gr * (b_ - a_)
+                    wd, ld = self._st_on_volume(d_, wc, lc)
+            lam_pi = max(lam_pi, *(x for x in (lc, ld) if x is not None))
+        self._st_branch_cache = (pts[:k + 1], lam_pi)
+        return self._st_branch_cache
+
+    def _st_equilibrium(self, lam_t):
+        """Stabiles Gleichgewicht bei λ = ε0·U² oder None (Pull-in)."""
+        pts, lam_pi = self._st_branch()
+        if lam_t >= lam_pi:
+            return None
+        lams = np.array([p[1] for p in pts])
+        k = int(np.searchsorted(lams, lam_t))
+        k = min(max(k, 1), len(pts) - 1)
+        V0, l0, w0_ = pts[k - 1]
+        V1, l1, w1_ = pts[k]
+        t = (lam_t - l0) / (l1 - l0) if l1 > l0 else 0.0
+        w = w0_ + t * (w1_ - w0_)
+        lam = lam_t
+        # Newton bei festem λ vom interpolierten Startwert
+        for _ in range(60):
+            F, J, _, _ = self._st_system(w, lam)
+            dw = _solve_banded((1, 1), J, -F)
+            w = w + dw
+            if np.max(np.abs(dw)) < 1e-13 * self.h_gap:
+                break
+        # Sekanten-Absicherung über das Volumen, falls Newton nahe der
+        # Falte abwandert (dort ist J fast singulär)
+        F, _, _, _ = self._st_system(w, lam)
+        if (not np.all(np.isfinite(w)) or np.max(np.abs(F[:-1])) > 1e-6
+                or np.max(w) >= 0.999 * self.h_gap):
+            lo, hi = V0, V1
+            wv, lv = w0_, l0
+            for _ in range(80):
+                Vm = 0.5 * (lo + hi)
+                wm, lm = self._st_on_volume(Vm, wv, lv)
+                if wm is None:
+                    return None
+                if lm < lam_t:
+                    lo, wv, lv = Vm, wm, lm
+                else:
+                    hi = Vm
+                if abs(lm - lam_t) < 1e-12 * lam_pi:
+                    break
+            w = wm
+        return w
+
+    def _st_compliance(self, soft):
+        """Volumen-Nachgiebigkeit unter gleichförmigem Druck für den
+        linearisierten Operator L + soft·vol (Dirichlet wie oben)."""
+        st = self._st
+        _, J, _, _ = self._st_system(np.zeros(st["u"].size), 0.0)
+        free = np.ones(st["u"].size)               # keine Dirichlet-Zeile
+        free[-1] = 0.0
+        if st["ring"]:
+            free[0] = 0.0
+        J[1] = J[1] + soft * st["vol"] * free
+        dw = _solve_banded((1, 1), J, -st["vol"] * free)
+        return float(np.dot(st["vol"], dw)) * st["S"]
+
+    def _st_dual_pullin_lambda(self):
+        """Gegentakt: kleinstes λ mit −L·w = λ·2(c_s/h³ + c_b/(h+d)³)·w
+        (Potenziteration auf (−L)⁻¹·K̂, K̂ ≥ 0)."""
+        st = self._st
+        _, J, _, _ = self._st_system(np.zeros(st["u"].size), 0.0)
+        Khat = 2.0 * (st["cs"] / self.h_gap**3
+                      + st["cb"] / (self.h_gap + self.d_bh)**3) * st["vol"]
+        Khat[-1] = 0.0
+        if st["ring"]:
+            Khat[0] = 0.0
+        x = st["psi"].copy()
+        nu = 0.0
+        for _ in range(200):
+            y = _solve_banded((1, 1), -J, Khat * x)
+            nu_new = float(np.dot(x, Khat * y) / np.dot(x, Khat * x))
+            x = y / np.max(np.abs(y))
+            if abs(nu_new - nu) < 1e-13 * abs(nu_new):
+                nu = nu_new
+                break
+            nu = nu_new
+        return 1.0 / nu if nu > 0.0 else float("inf")
+
+    def _st_softening_density(self, r):
+        """Örtliche elektrostatische Erweichung [Pa/m] am Arbeitspunkt,
+        λ·∂p/∂w — für den 3D-Löser (statt einer gleichförmigen, an der
+        Grundmode kalibrierten negativen Steifigkeit)."""
+        u = np.minimum((np.asarray(r, float) / self.a_mem) ** 2, 1.0)
+        return np.interp(u, self._st["u"], self._st_soft)
+
+    def _electrode_integrals(self, w0=0.0, profile=None):
+        """Elektrodenintegrale über dem statischen Spaltprofil.
 
         In Modenkoordinate u = r²/a_mem² (dS = S_mem·du, Elektrode bis
-        u <= ub) mit lokalem Spalt g = h - w0·phi:
-            I_F = Int phi/g²  dS   (Kraft-/Kapazitätsmodulation)
-            I_k = Int phi²/g³ dS   (negative Steifigkeit)
+        u <= ub) mit lokalem Spalt g = h − w(u):
+            I_F = Int psi/g²  dS   (Kraft-/Kapazitätsmodulation)
+            I_k = Int psi²/g³ dS   (negative Steifigkeit, Ein-Moden-Bild)
             I_C = Int 1/g     dS   (Ruhekapazität)
-        Die Porosität geht als RADIALES Profil ein (gleiche Lochdichten
-        wie im Feldmodell, s. _derive_parameters): solide Elektrodenfläche
-        wiegt mit c_solid(u), über Blindlöchern gilt der vergrößerte
-        Feldweg g + Tiefe (Durchgangslöcher tragen nichts). Damit sind
-        auch Lochkreise (PCD) in der Elektrostatik konsistent. w0 < 0
-        beschreibt die von der Platte weg ausgelenkte Membran (vordere
-        Backplate der Dual-Architektur).
+        psi ist die dynamische Modenform der Kette (statische Form, max 1).
+        ``profile`` ist die statische Auslenkung auf ``_es_u`` (seit
+        Gegenprobe 49 die EXAKTE Lösung, s. _static_setup); ohne Profil
+        gilt das Ein-Moden-Bild w = w0·psi. Die Porosität geht als
+        RADIALES Profil ein (gleiche Lochdichten wie im Feldmodell):
+        solide Elektrodenfläche wiegt mit c_solid(u), über Blindlöchern
+        gilt der vergrößerte Feldweg g + Tiefe (Durchgangslöcher tragen
+        nichts). Negative Auslenkung beschreibt die von der Platte weg
+        gebogene Membran (vordere Backplate der Dual-Architektur).
         """
         u = self._es_u
-        v = self._es_phi                          # Modenprofil phi (max 1)
-        g_s = self.h_gap - w0 * v                 # Spalt, solide Elektrode
-        g_b = self.h_gap + self.d_bh - w0 * v     # Feldweg über Blindloch
+        v = self._es_phi                          # Modenprofil psi (max 1)
+        w = w0 * v if profile is None else np.asarray(profile, float)
+        g_s = self.h_gap - w                      # Spalt, solide Elektrode
+        g_b = self.h_gap + self.d_bh - w          # Feldweg über Blindloch
         c_s = self._es_c_solid
         c_b = self._es_c_blind
         S = self.S_mem
@@ -1862,73 +2147,11 @@ class MicrophoneCapsule:
         I_C = S * np.trapezoid(c_s / g_s + c_b / g_b, u)
         return I_F, I_k, I_C
 
-    def _static_residual(self, u_bias, w_grid):
-        """k_gen·w0 − F_es(w0) für ein Array von Auslenkungen (vektorisiert)."""
-        u = self._es_u
-        v = self._es_phi
-        w2 = np.atleast_1d(w_grid)[:, None]
-        g_s = self.h_gap - w2 * v[None, :]
-        g_b = self.h_gap + self.d_bh - w2 * v[None, :]
-        I_F = self.S_mem * np.trapezoid(
-            self._es_c_solid * v / g_s**2
-            + self._es_c_blind * v / g_b**2, u, axis=1)
-        F = 0.5 * EPS0 * u_bias**2 * I_F
-        return self._k_gen * np.atleast_1d(w_grid) - F
-
-    def _solve_static_deflection(self, u_bias):
-        """Statischer Arbeitspunkt der Membran unter Polarisationsspannung.
-
-        Rückgabe: (w0_statisch, k_neg_gesamt) oder ``None`` bei Pull-in.
-        Gesucht wird die ERSTE Nullstelle von k_gen·w0 − F_es(w0) (das
-        stabile Gleichgewicht); danach wird die tangentiale Stabilität
-        k_gen − k_neg(w0) > 0 geprüft. Dual: statische Kräfte symmetrisch
-        -> w0 = 0, aber beide Seiten erweichen.
-        """
-        if u_bias <= 1e-9:
-            return 0.0, 0.0
-        if self.architecture == "dual":
-            _, I_k, _ = self._electrode_integrals(0.0)
-            k_neg = 2.0 * EPS0 * u_bias**2 * I_k
-            return (0.0, k_neg) if self._k_gen > k_neg else None
-        w_max = 0.98 * self.h_gap
-        grid = np.linspace(0.0, w_max, 240)
-        res = self._static_residual(u_bias, grid)
-        idx = None
-        for i in range(1, grid.size):
-            if res[i - 1] < 0.0 <= res[i]:
-                idx = i
-                break
-        if idx is None:
-            return None                            # kein Gleichgewicht
-        lo, hi = grid[idx - 1], grid[idx]
-        for _ in range(60):                        # Bisektion
-            mid = 0.5 * (lo + hi)
-            if self._static_residual(u_bias, mid)[0] < 0.0:
-                lo = mid
-            else:
-                hi = mid
-        w0 = 0.5 * (lo + hi)
-        _, I_k, _ = self._electrode_integrals(w0)
-        k_neg = EPS0 * u_bias**2 * I_k
-        if self._k_gen <= k_neg:                   # tangential instabil
-            return None
-        return w0, k_neg
-
     def pullin_voltage(self, u_max=20000.0):
-        """Maximal stabile Polarisationsspannung (Pull-in) per Bisektion."""
-        hi = max(2.0 * self.u_bias, 100.0)
-        while self._solve_static_deflection(hi) is not None:
-            hi *= 2.0
-            if hi > u_max:
-                return float("inf")
-        lo = 0.0
-        for _ in range(50):
-            mid = 0.5 * (lo + hi)
-            if self._solve_static_deflection(mid) is None:
-                hi = mid
-            else:
-                lo = mid
-        return lo
+        """Maximal stabile Polarisationsspannung (Pull-in) — der Faltpunkt
+        der exakten statischen Randwertaufgabe bzw. bei 'dual' das
+        Eigenwertkriterium am Ruhespalt (Gegenprobe 49)."""
+        return self.U_pullin if self.U_pullin <= u_max else float("inf")
 
     # ======================================================================
     # Elementare akustische Impedanzen
@@ -2504,9 +2727,11 @@ class MicrophoneCapsule:
         die einfache Zählung den Feldlöser auf 0.4 dB, die doppelte liegt
         4 dB daneben. Bei sehr spärlichen Rastern (12-24) versagen beide —
         dort ist die azimutale Auflösung des 3D-Lösers nötig.
-        (Stand Gegenprobe 31. Mit dem in Gegenprobe 48 korrigierten
-        3D-Löser lautet die Zeile „einfach“ −6.4 / −1.7 / +0.2 / +0.5 /
-        −0.3 dB — die Entscheidung bleibt dieselbe, und bei 192 Bohrungen
+        (Stand Gegenprobe 31, 50 V. Mit dem in Gegenprobe 48 korrigierten
+        3D-Löser und dem exakten Arbeitspunkt aus Gegenprobe 49 — der
+        Prüfling läuft jetzt mit 45 V, weil 50 V genau auf seinem Pull-in
+        liegen — lautet die Zeile „einfach“ −5.8 / −1.2 / +0.2 / +0.3 /
+        −0.5 dB. Die Entscheidung bleibt dieselbe, und bei 192 Bohrungen
         fällt die frühere Unstimmigkeit von +2.5 dB weg.)
 
         ``h_film``/``R_A_gap`` bleiben in der Signatur, damit die
@@ -3655,13 +3880,12 @@ class MicrophoneCapsule:
         return best
 
     def _polarized_gap_profile(self, r):
-        """Örtlicher Spalt der polarisierten Seite h(r) = h − w0·φ(r)
-        (statische Modenform, Maximum 1) — dieselbe Form, die das 2D-Feld
-        über _fld_phi benutzt. Ohne Boden; den setzt der Aufrufer."""
-        phi = np.maximum(_ring_static_shape(
-            np.minimum((np.asarray(r, float) / self.a_mem) ** 2, 1.0),
-            self.u_post), 0.0) / self._phi_max
-        return self.h_gap - self.w0_static * phi
+        """Örtlicher Spalt der polarisierten Seite h(r) = h − w(r) mit der
+        EXAKTEN statischen Auslenkung (Gegenprobe 49) — dieselbe, die das
+        2D-Feld über _fld_sag_shape benutzt. Ohne Boden; den setzt der
+        Aufrufer."""
+        u = np.minimum((np.asarray(r, float) / self.a_mem) ** 2, 1.0)
+        return self.h_gap - np.interp(u, self._st["u"], self._w_static)
 
     def homogenization_limit(self):
         """Obere Frequenz, bis zu der die Loch-Homogenisierung der 1D/2D-
@@ -3818,8 +4042,7 @@ class MicrophoneCapsule:
         NF = Nr * Np_
         NM = Nr_m * Np_
 
-        # Membrankonstanten: Flächendichte, Spannung aus f_res, verteilte
-        # Feder-Erweichung (Grundmoden-kalibriert auf C_A_eff). Mit
+        # Membrankonstanten: Flächendichte, Spannung aus f_res. Mit
         # Mittenterminierung sind Kolbenfaktor, Eigenwert und Modenform
         # die der RINGmembran (s. _ring_modes) — sonst träfe das 3D-Feld
         # eine andere Resonanz als die Kette.
@@ -3829,11 +4052,13 @@ class MicrophoneCapsule:
         _md3 = self._ring_modes()
         b01 = float(_md3["z"][0])
         T_mem = sigma * (2.0 * np.pi * self.f_res * self.a_mem / b01) ** 2
-        psi1 = self._membrane_mode_weight(r_m)
-        k1 = ((2.0 * np.pi * self.f_res) ** 2 * sigma
-              * self.S_mem * float(_md3["I2"][0]))
-        E2 = float(np.sum((psi1[:Nr] ** 2) * A_f * Np_))
-        kappa = k1 * (1.0 - self.C_A_mem / self.C_A_eff) / E2
+        # Feder-Erweichung ÖRTLICH aus dem exakten Arbeitspunkt (λ·∂p/∂w
+        # über dem Spaltprofil, Gegenprobe 49). Bis dahin eine über die
+        # Elektrode gleichförmige negative Steifigkeit, an der Grundmode
+        # auf C_A_eff kalibriert — das Feld sah damit weder, dass die
+        # Erweichung in der Mitte (engster Spalt) am größten ist, noch
+        # die Porosität.
+        kappa = self._st_softening_density(r_f)
 
         # Loch-Fußabdrücke: Zellen, deren Zentrum in der Mündung liegt
         # (EXAKTER kartesischer Abstand Zellmitte–Lochmitte). Bis
@@ -3996,7 +4221,7 @@ class MicrophoneCapsule:
                 k1_ = off_wf + i * Np_ + j
                 rows.append(k1_)
                 cols.append(k1_)
-                vals.append(-kappa * A_m[i])
+                vals.append(-kappa[i] * A_m[i])
         # Druckkopplung Membranzeilen (omega-unabhängig)
         if arch == "dual_diaphragm":
             # Frontmembran: -p_film0; Rückmembran: +p_film1
@@ -4809,7 +5034,10 @@ class MicrophoneCapsule:
         K_f, c_gap = _film_props(h)                      # (Nf,) nominal
         # Örtliches Spaltprofil: statische Durchbiegung (h³-Wirkung!)
         # plus Clearance-Ring-Relief; sag_w0 = 0 und Relief 0 -> Bestand.
-        h_cell = np.maximum(h - sag_w0 * phi + self._clr_relief, 0.05 * h)
+        # (Form der statischen Auslenkung: seit Gegenprobe 49 die EXAKTE
+        # Lösung, auf ihr Maximum normiert; sag_w0 skaliert sie)
+        shape = self._fld_sag_shape
+        h_cell = np.maximum(h - sag_w0 * shape + self._clr_relief, 0.05 * h)
         if sag_w0 > 0.0 or np.any(self._clr_relief > 0.0):
             sq = np.sqrt(1j * omega * RHO0 / MU_AIR)
             a_v2 = 0.5 * h_cell[None, :] * sq[:, None]          # (Nf, N)
@@ -4828,7 +5056,7 @@ class MicrophoneCapsule:
             def _mean_phi(dens):
                 w = dens * A
                 s = float(np.sum(w))
-                return float(np.sum(phi * w)) / s if s > 0.0 else 0.0
+                return float(np.sum(shape * w)) / s if s > 0.0 else 0.0
 
             h_e_th = ((h + self.clearance_ring_depth
                        if self._clr_th_relieved else h)
@@ -6974,11 +7202,13 @@ if __name__ == "__main__":
     # d) Exakte J0-Modalfrequenz: ~1.8 % unter dem Lumped-Wert (4/3-Faktor).
     assert k67._fok_th is not None and 0.70 < k67._fok_th < 0.80, \
         f"K67-Fok-Faktor ~0.74 erwartet ({k67._fok_th:.3f})"
+    # (50 V: fast volle Elektrode ohne Senkungen — der exakte Pull-in
+    # liegt bei 59.7 V, Gegenprobe 49; geprüft wird hier die Mündung)
     sparse = MicrophoneCapsule(
         membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
         membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
         backplate_diameter=25e-3, backplate_thickness=4e-3,
-        bias_voltage=60.0, architecture="dual_diaphragm", center_gap=50e-6,
+        bias_voltage=50.0, architecture="dual_diaphragm", center_gap=50e-6,
         n_through_holes=2, through_hole_diameter=0.3e-3,
         n_blind_holes=0, blind_hole_depth=1e-3,
         clamp_ring_thickness=2e-3, clamp_ring_width=4e-3,
@@ -7239,7 +7469,10 @@ if __name__ == "__main__":
     #    homogenisierten 2D-Modell (das versetzte Arrays annimmt).
     if _HAS_SCIPY:
         deb22 = dict(deb_kwargs)
-        deb22.update(squeeze_model="3d",
+        # (45 V: ohne Sacklöcher ist die Elektrode fast voll, der exakte
+        # Pull-in liegt dann bei 49.2 V — Gegenprobe 49; a/b prüfen
+        # Struktur, nicht die Nähe zum Kollaps)
+        deb22.update(squeeze_model="3d", bias_voltage=45.0,
                      blind_hole_rings=[(0, None)],
                      blind_hole_diameter=1.2e-3, blind_hole_depth=1e-3)
         om22 = np.array([2.0 * np.pi * 500.0, 2.0 * np.pi * 2000.0])
@@ -8264,12 +8497,15 @@ if __name__ == "__main__":
     #    (det T = 1), auch mit Löchern UND Randspalt gleichzeitig.
     # f) GATTER: Doppelmembran, K103-Spacer, 1D+Löcher, 3D.
     if _HAS_SCIPY:
+        # (45 V: die lochfreie Platte hat die volle Elektrodenfläche, der
+        # exakte Pull-in dieser weichen Kapsel liegt bei 48.9 V —
+        # Gegenprobe 49)
         BK29 = dict(
             architecture="single", membrane_resonance_hz=2100.0,
             membrane_diameter=25.4e-3, membrane_thickness=6e-6,
             membrane_tension=45.0, air_gap=38.1e-6,
             backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
-            bias_voltage=50.0, n_blind_holes=0,
+            bias_voltage=45.0, n_blind_holes=0,
             rear_network_enabled=True, delay_length=0.0,
             cavity_length=8.0e-3, cavity_wall_thickness=1.5e-3,
             n_cavity_holes=0, fabric_front_rayl=0.0,
@@ -8561,18 +8797,21 @@ if __name__ == "__main__":
     #    Ende und der 3D-Löser nötig.
     # NACHTRAG Gegenprobe 48: die Grenze hängt nicht an der Lochzahl
     # allein, sondern an f_hom (lochfreier Radius, Spalt, Membranspannung).
-    # Bei diesem sehr weichen Prüfling (T = 40 N/m, 50 V nahe Pull-in)
-    # liegt f_hom für 48 Bohrungen bei 2 kHz — der Vergleich bei 4 kHz
-    # sitzt also schon knapp darüber (Π = 20, im beobachteten 1-dB-
-    # Bereich 10…42) und trifft trotzdem auf 0.2 dB. Die Vorsichtsgrenze
-    # Π = 10 ist konservativ gewählt.
+    # Bei diesem sehr weichen Prüfling (T = 40 N/m, 45 V) liegt f_hom für
+    # 48 Bohrungen bei 2.5 kHz — der Vergleich bei 4 kHz sitzt also schon
+    # darüber (Π = 16, im beobachteten 1-dB-Bereich 10…42) und trifft
+    # trotzdem auf 0.2 dB. Die Vorsichtsgrenze Π = 10 ist konservativ.
     if _HAS_SCIPY:
+        # (45 V: mit dem EXAKTEN Arbeitspunkt, Gegenprobe 49, liegt der
+        # Pull-in dieser weichen Kapsel bei 50.0 V — die früheren 50 V
+        # saßen genau auf der Falte. Geprüft wird hier der Film, nicht die
+        # Nähe zum Kollaps.)
         par31 = dict(
             architecture="single", membrane_resonance_hz=2100.0,
             membrane_diameter=25.4e-3, membrane_thickness=6e-6,
             membrane_tension=45.0, air_gap=38.1e-6,
             backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
-            bias_voltage=50.0, n_blind_holes=0, rear_network_enabled=True,
+            bias_voltage=45.0, n_blind_holes=0, rear_network_enabled=True,
             delay_length=0.0, cavity_length=8.0e-3,
             cavity_wall_thickness=1.5e-3, n_cavity_holes=0,
             fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
@@ -9466,9 +9705,14 @@ if __name__ == "__main__":
             hi39 = mid39
     x_pi39 = 0.5 * (lo39 + hi39)
     rat39 = float(np.sqrt(1.5 * _A3_39(x_pi39)))
-    # c) das Modell muss beides treffen — Elektrode nahezu voll, damit die
-    #    Lochprofile die analytische Aussage nicht verwischen; kleiner Bias,
-    #    damit der Arbeitspunkt der Einzel-Backplate bei w0 -> 0 liegt.
+    # c) das Modell rechnet seit Gegenprobe 49 den EXAKTEN Arbeitspunkt;
+    #    das Ein-Moden-Verhältnis oben ist damit die Näherung, nicht mehr
+    #    der Sollwert. Exakte Anker, beide ohne freien Parameter:
+    #      * dual: −∇²w = k²w mit k² = 2ε0U²/(T h³), eingespannt bei a
+    #        -> k·a = j01, also Ā = j01²/4 = 1.44580 (geschlossen);
+    #      * single: Warrens Ā = 0.789 (Gegenprobe 45).
+    #    Elektrode nahezu voll, damit die Lochprofile die Aussage nicht
+    #    verwischen; kleiner Bias, damit w0 -> 0.
     g39 = dict(membrane_diameter=25.4e-3, backplate_diameter=25.4e-3,
                membrane_resonance_hz=8000.0, air_gap=40e-6,
                backplate_thickness=3e-3, n_through_holes=4,
@@ -9477,9 +9721,25 @@ if __name__ == "__main__":
     c39s = MicrophoneCapsule(architecture="single", **g39)
     c39d = MicrophoneCapsule(architecture="dual", **g39)
     r39 = c39d.U_pullin / c39s.U_pullin
-    assert abs(r39 / rat39 - 1.0) < 1e-3, \
-        (f"Pull-in-Verhältnis dual/single muss sqrt(A3(x*)/(2·A3(0))) sein "
-         f"({r39:.5f} gegen {rat39:.5f})")
+
+    def _abar39(cc):
+        # Spannung, die die statische Nachgiebigkeit trägt (s. _static_setup)
+        return (cc.U_pullin**2 * cc.a_mem**2 * EPS0
+                / (2.0 * cc._st["tension"] * cc.h_gap**3))
+
+    ad39, as39 = _abar39(c39d), _abar39(c39s)
+    rex39 = float(np.sqrt((2.404825557695773**2 / 4.0) / 0.789))
+    assert abs(ad39 / (2.404825557695773**2 / 4.0) - 1.0) < 2e-3, \
+        (f"Gegentakt-Pull-in muss j01²/4 = 1.44580 sein ({ad39:.5f})")
+    assert abs(as39 / 0.789 - 1.0) < 2e-3, \
+        f"Einzel-Backplate muss Warrens 0.789 treffen ({as39:.5f})"
+    assert abs(r39 / rex39 - 1.0) < 3e-3, \
+        (f"Pull-in-Verhältnis dual/single muss sqrt(1.4458/0.789) = "
+         f"{rex39:.5f} sein ({r39:.5f})")
+    assert r39 > rat39, \
+        ("das Ein-Moden-Bild unterschätzt den Gewinn (es überschätzt den "
+         "Pull-in der Einzel-Backplate stärker als den der Gegentakt-"
+         "Bauform)")
     assert r39 > 1.0, "zwei symmetrische Backplates müssen den Pull-in ANHEBEN"
     assert abs(r39 - 2.0) > 0.5, \
         "der Gewinn ist NICHT Faktor 2 — die Erweichung beider Spalte addiert sich"
@@ -9493,11 +9753,12 @@ if __name__ == "__main__":
         (f"die Feder-Erweichung beider Spalte muss sich addieren "
          f"({c39d.softening_ratio / c39s.softening_ratio:.5f})")
     print(f"Gegentakt-Pull-in: U_PI(dual)/U_PI(single) = {r39:.5f} gegen "
-          f"sqrt(1.5·A3(x*)) = {rat39:.5f} (Pull-in-Punkt der Einzelplatte "
-          f"x* = w0/h = {x_pi39:.5f}; Kolben-Grenzfall wäre "
+          f"exakt sqrt(1.4458/0.789) = {rex39:.5f} (Ā dual {ad39:.4f} = "
+          f"j01²/4, single {as39:.4f} = Warren; Ein-Moden-Bild "
+          f"{rat39:.5f} mit x* = {x_pi39:.5f}, starrer Kolben "
           f"{np.sqrt(27 / 16):.5f}); w0 = 0, Wandlerkoeffizient und "
-          f"Feder-Erweichung beide exakt ×2 — der Faktor 2 im Pull-in "
-          f"gälte nur bei geteilter Versorgung  OK")
+          f"Feder-Erweichung beide ×2 — der Faktor 2 im Pull-in gälte nur "
+          f"bei geteilter Versorgung  OK")
 
     # --------- Messanker Grinnip 2006, Fig. 5/6/7 -------------------------
     # R. S. Grinnip III, "Advanced Simulation of a Condenser Microphone
@@ -10348,10 +10609,10 @@ if __name__ == "__main__":
     # f) PULL-IN gegen J. E. Warren, JASA 58(3), 733–740 (1975): der
     #    kritische Antriebsparameter Ā = V²a²ε₀/(2Th³) einer flachen,
     #    LOCHFREIEN Elektrode ist 0.789 für die Kreis- und 1.548 für die
-    #    Ringmembran mit ρ = 0.1. Unser Ein-Moden-Galerkin liegt
-    #    systematisch darüber — und zwar bei der Ringmembran WENIGER
-    #    (+2.6 %) als beim Vollkreis (+5.0 %), weil das Ringprofil
-    #    formtreuer ist. Beides wird geprüft, samt der Richtung.
+    #    Ringmembran mit ρ = 0.1. Der ursprüngliche Ein-Moden-Galerkin
+    #    lag systematisch darüber (Ring +2.6 %, Vollkreis +5.0 %); seit
+    #    Gegenprobe 49 rechnet das Modell den exakten Arbeitspunkt und
+    #    trifft beide Werte.
     # g) GATTER: 3D-Löser, zu großer Pfosten, biegesteife Platte.
     if _HAS_SCIPY:
         # a) Grenzfall
@@ -10442,18 +10703,19 @@ if __name__ == "__main__":
         for rho45, ref45 in warren45.items():
             cw45 = MicrophoneCapsule(
                 **dict(g45w, center_post_diameter=2.0 * rho45 * 13e-3))
+            # T = die Spannung, die die statische Nachgiebigkeit trägt
+            # (inkl. der winzigen Biegesteife der Folie, hier 0.1 %)
             A45 = (cw45.U_pullin**2 * cw45.a_mem**2 * EPS0
-                   / (2.0 * cw45.tension * cw45.h_gap**3))
+                   / (2.0 * cw45._st["tension"] * cw45.h_gap**3))
             ab45w[rho45] = (A45, A45 / ref45 - 1.0)
-        assert abs(ab45w[0.0][1] - 0.050) < 0.01, \
-            (f"Vollkreis: Ein-Moden-Galerkin liegt bekannt +5 % über "
-             f"Warrens 0.789 ({ab45w[0.0][0]:.4f})")
-        assert abs(ab45w[0.1][1] - 0.026) < 0.01, \
-            (f"Ringmembran ρ = 0.1: erwartet +2.6 % über Warrens 1.548 "
+        # seit Gegenprobe 49 der EXAKTE Arbeitspunkt: Warren wird
+        # getroffen (vorher Ein-Moden-Galerkin +5.0 % bzw. +2.6 %)
+        assert abs(ab45w[0.0][1]) < 2e-3, \
+            (f"Vollkreis muss Warrens 0.789 treffen "
+             f"({ab45w[0.0][0]:.4f})")
+        assert abs(ab45w[0.1][1]) < 2e-3, \
+            (f"Ringmembran ρ = 0.1 muss Warrens 1.548 treffen "
              f"({ab45w[0.1][0]:.4f})")
-        assert 0.0 < ab45w[0.1][1] < ab45w[0.0][1], \
-            ("die Galerkin-Abweichung MUSS beim Ring kleiner sein als beim "
-             "Vollkreis — das Ringprofil ist formtreuer")
         # und die Wirkung selbst: ρ = 0.1 hebt Ā um Faktor ~1.96
         assert 1.9 < ab45w[0.1][0] / ab45w[0.0][0] < 2.0, \
             (f"Ringmembran muss fast doppelt so stabil sein "
@@ -10478,9 +10740,9 @@ if __name__ == "__main__":
               f"Quadratur ({g45:.0e}); Modenintegrale {i45:.0e}; Ring-"
               f"Rayleigh-Summe Σ C_m = C_A ({s45:.0e}) und Σ1/M_m = "
               f"S_Ring/σ ({p45:.0e}); Pull-in gegen Warren 1975: "
-              f"{ab45w[0.0][0]:.3f} gegen 0.789 ({100 * ab45w[0.0][1]:+.1f} %) "
-              f"und {ab45w[0.1][0]:.3f} gegen 1.548 "
-              f"({100 * ab45w[0.1][1]:+.1f} %), Ring also fast doppelt so "
+              f"{ab45w[0.0][0]:.4f} gegen 0.789 ({100 * ab45w[0.0][1]:+.2f} %) "
+              f"und {ab45w[0.1][0]:.4f} gegen 1.548 "
+              f"({100 * ab45w[0.1][1]:+.2f} %), Ring also fast doppelt so "
               f"stabil ({ab45w[0.1][0] / ab45w[0.0][0]:.2f}×); Gatter "
               f"greifen  OK")
 
@@ -10921,11 +11183,11 @@ if __name__ == "__main__":
         r2_48 = cz48.r_post + (np.arange(cz48._fld_N) + 0.5) * (
             (cz48.a_bp - cz48.r_post) / cz48._fld_N)
         prof48 = cz48._polarized_gap_profile(r2_48)
-        ref48 = cz48.h_gap - cz48.w0_static * cz48._fld_phi
+        ref48 = cz48.h_gap - cz48.w0_static * cz48._fld_sag_shape
         assert cz48.w0_static > 0.05 * cz48.h_gap, \
             "Prüfling muss merklich durchgebogen sein"
         assert np.max(np.abs(prof48 - ref48)) < 1e-12 * cz48.h_gap, \
-            "3D-Spaltprofil muss das des 2D-Felds sein"
+            "3D-Spaltprofil muss das des 2D-Felds sein (exakte Form, GP 49)"
         assert prof48[0] < cz48.h_gap_front < prof48[-1], \
             "Mitte enger, Rand weiter als das Flächenmittel"
 
@@ -11064,5 +11326,141 @@ if __name__ == "__main__":
               f"{np.max(np.abs(dB24)):.2f} dB (f_hom {fhB24 / 1e3:.1f} kHz); "
               f"verworfen: Zellkompressibilität {100 * chg48:.2f} %, "
               f"Moden {dmode48:.3f} dB, Sacklöcher {dsb48:+.1f} dB  OK")
+
+    # --------- Gegenprobe 49: exakter statischer Arbeitspunkt -------------
+    # Der Arbeitspunkt der Membran unter Polarisationsspannung ist eine
+    # nichtlineare Randwertaufgabe (s. _static_setup). Bis Gegenprobe 48
+    # stand ein Ein-Moden-Galerkin da, am Pull-in um +5.0 % (Kreis) bzw.
+    # +2.6 % (Ring) in Warrens Ā zu steif. Geprüft wird die exakte Lösung
+    # mit UNABHÄNGIGEN Methoden:
+    # a) FORM: ein Schießverfahren (solve_ivp in r, Reihenstart an der
+    #    Achse) muss dieselbe statische Auslenkung liefern wie das Finite-
+    #    Volumen-System in u = r²/a².
+    # b) LINEARISIERUNG: die Kleinsignal-Nachgiebigkeit aus L + λ∂p/∂w muss
+    #    die Ableitung ∂V/∂p des NICHTLINEAREN Asts sein (zusätzlicher
+    #    Gleichdruck, finite Differenz).
+    # c) FALTE: zum Pull-in hin divergiert die Nachgiebigkeit.
+    # d) Warren und j01²/4 prüfen Gegenproben 39 und 45; hier steht der
+    #    Vergleich mit dem Ein-Moden-Bild in geschlossener Form:
+    #    Ā_Galerkin = max 2x/A2(x) = 0.8275 bei x* = 0.4404.
+    # e) WIRKUNG an der K67: Pull-in, Arbeitspunkt, C0.
+    if _HAS_SCIPY:
+        from scipy.integrate import solve_ivp as _ivp49
+        from scipy.optimize import brentq as _brentq49
+        g49 = dict(
+            membrane_resonance_hz=None, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=26e-3, backplate_thickness=4e-3,
+            architecture="single", n_through_holes=0, n_blind_holes=0,
+            rear_network_enabled=False, squeeze_model="1d",
+            include_diffraction=False)
+        c49p = MicrophoneCapsule(bias_voltage=1.0, **g49)
+        U49 = 0.8 * c49p.U_pullin
+        c49 = MicrophoneCapsule(bias_voltage=U49, **g49)
+        T49 = c49._st["tension"]
+        a49, h49 = c49.a_mem, c49.h_gap
+        p49 = 0.5 * EPS0 * U49**2
+
+        # a) Schießverfahren
+        def _shoot49(wc):
+            r_s = 1e-6 * a49
+            w_s = wc - p49 / (h49 - wc)**2 * r_s**2 / (4.0 * T49)
+
+            def rhs(r, y):
+                return [y[1], -y[1] / r - p49 / ((h49 - y[0])**2 * T49)]
+            sol = _ivp49(rhs, (r_s, a49),
+                         [w_s, -p49 / (h49 - wc)**2 * r_s / (2.0 * T49)],
+                         rtol=1e-11, atol=1e-16, dense_output=True)
+            return sol
+
+        wc49 = _brentq49(lambda wc: _shoot49(wc).y[0, -1], 0.0,
+                         1.02 * c49.w0_static, xtol=1e-16)
+        shot49 = _shoot49(wc49)
+        r_chk49 = a49 * np.array([0.0, 0.3, 0.6, 0.9])
+        w_fv49 = np.interp((r_chk49 / a49)**2, c49._st["u"], c49._w_static)
+        w_sh49 = np.array([wc49] + list(shot49.sol(r_chk49[1:])[0]))
+        dev_a49 = float(np.max(np.abs(w_fv49 - w_sh49)) / wc49)
+        assert dev_a49 < 1e-4, \
+            (f"statische Form: Finite-Volumen und Schießverfahren müssen "
+             f"übereinstimmen ({dev_a49:.1e})")
+
+        # b) Linearisierung gegen die Ableitung des nichtlinearen Asts
+        st49 = c49._st
+        free49 = np.ones(st49["u"].size)
+        free49[-1] = 0.0
+        lam49 = EPS0 * U49**2
+
+        def _vol49(dp):
+            w = c49._w_static.copy()
+            for _ in range(60):
+                F, J, _, _ = c49._st_system(w, lam49)
+                F = F + dp * st49["vol"] * free49
+                dw = _solve_banded((1, 1), J, -F)
+                w = w + dw
+                if np.max(np.abs(dw)) < 1e-15 * h49:
+                    break
+            return float(np.dot(st49["vol"], w)) * st49["S"]
+
+        dp49 = 1e-3
+        C_fd49 = (_vol49(dp49) - _vol49(-dp49)) / (2.0 * dp49)
+        C_ref49 = c49._st_compliance(np.zeros(st49["u"].size))
+        dev_b49 = abs((C_fd49 / C_ref49) / (c49.C_A_eff / c49.C_A_mem) - 1.0)
+        assert dev_b49 < 1e-5, \
+            (f"Kleinsignal-Nachgiebigkeit muss die Ableitung des statischen "
+             f"Asts sein ({dev_b49:.1e})")
+
+        # c) Falte: die Nachgiebigkeit divergiert zum Pull-in hin
+        ce49 = [MicrophoneCapsule(bias_voltage=q * c49p.U_pullin,
+                                  **g49).C_A_eff / c49p.C_A_mem
+                for q in (0.5, 0.9, 0.99, 0.999)]
+        assert all(b > a for a, b in zip(ce49, ce49[1:])) \
+            and ce49[-1] > 5.0, \
+            f"Nachgiebigkeit muss am Pull-in divergieren ({np.round(ce49, 2)})"
+        try:
+            MicrophoneCapsule(bias_voltage=1.001 * c49p.U_pullin, **g49)
+            raise AssertionError("über dem Pull-in muss die Kapsel kollabieren")
+        except ValueError:
+            pass
+        x_pi49 = c49p._st_branch()[0][-1][2].max() / h49
+
+        # d) Ein-Moden-Bild in geschlossener Form
+        def _A2_49(x):
+            return (1.0 / (1.0 - x) - 1.0 + np.log(1.0 - x)) / x**2
+        xs49 = np.linspace(0.3, 0.6, 30001)
+        abar_g49 = float(np.max(2.0 * xs49 / _A2_49(xs49)))
+        abar_x49 = (c49p.U_pullin**2 * a49**2 * EPS0
+                    / (2.0 * T49 * h49**3))
+        assert abs(abar_x49 / 0.789 - 1.0) < 2e-3, \
+            f"exakter Pull-in muss Warren treffen ({abar_x49:.4f})"
+        assert abs(abar_g49 / 0.8275 - 1.0) < 1e-3 \
+            and abar_g49 > 1.04 * abar_x49, \
+            (f"das Ein-Moden-Bild liegt geschlossen bei 0.8275 "
+             f"({abar_g49:.4f}) — deutlich zu steif")
+
+        # e) Wirkung an der K67 (nur Stand, keine Stellschraube)
+        k49 = MicrophoneCapsule(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, clamp_ring_thickness=2e-3,
+            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, body_diameter=34e-3)
+        assert 60.0 < k49.U_pullin < 74.0, \
+            (f"K67: exakter Pull-in unter dem Ein-Moden-Wert 74.4 V "
+             f"({k49.U_pullin:.1f} V)")
+        print(f"Exakter Arbeitspunkt: Form gegen Schießverfahren "
+              f"{dev_a49:.0e}, Nachgiebigkeit == ∂V/∂p des Asts "
+              f"({dev_b49:.0e}), divergiert an der Falte "
+              f"({' -> '.join(f'{x:.2f}' for x in ce49)}× bei 0.5…0.999 U_PI), "
+              f"Faltpunkt w_max/h = {x_pi49:.3f} (Ein-Moden-Bild 0.440); "
+              f"Ā = {abar_x49:.4f} gegen Warren 0.789, Ein-Moden-Bild "
+              f"{abar_g49:.4f} ({100 * (abar_g49 / abar_x49 - 1):+.1f} %); "
+              f"K67: U_PI {k49.U_pullin:.1f} V (Ein-Moden 74.4), w0 "
+              f"{k49.w0_static * 1e6:.1f} µm, C0 {k49.C_elec_0 * 1e12:.1f} pF, "
+              f"Erweichung {100 * k49.softening_ratio:.1f} %  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
