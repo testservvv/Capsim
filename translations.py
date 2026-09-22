@@ -981,6 +981,33 @@ TR = {
         "en": "in the rear end face",
         "de": "in der hinteren Stirnfläche",
     },
+    "warn_sparse_holes": {
+        "en": "**Hole pattern too sparse for the {model} model above about "
+              "{f:.1f} kHz.** Some areas of the electrode are up to "
+              "{rho:.1f} mm from the nearest through-hole. 1D and 2D smear "
+              "the holes out and force the membrane into its global mode "
+              "shape above every hole cell. Over large hole-free areas "
+              "the film builds up pressure and the tensioned membrane "
+              "bulges locally out of its way (the stiffer the film "
+              "relative to the membrane tension, the more). Above the "
+              "stated frequency the result is no longer backed by the 3D "
+              "solver to within 1 dB; with very sparse patterns the "
+              "difference reaches 10 dB. The 3D solver resolves the holes "
+              "and the membrane field (self-test, check 48).",
+        "de": "**Lochbild oberhalb von etwa {f:.1f} kHz zu spärlich für "
+              "das {model}-Modell.** Teile der Elektrode liegen bis zu "
+              "{rho:.1f} mm von der nächsten Durchgangsbohrung entfernt. "
+              "1D und 2D verschmieren die Löcher und zwingen der Membran "
+              "über jeder Lochzelle die globale Modenform auf. Über großen "
+              "lochfreien Bereichen staut sich der Film, und die gespannte "
+              "Membran beult sich örtlich aus (umso stärker, je steifer "
+              "der Film gegenüber der Membranspannung ist). Oberhalb der "
+              "genannten Frequenz ist das Ergebnis nicht mehr auf 1 dB "
+              "gegen den 3D-Löser abgesichert; bei sehr spärlichen "
+              "Lochbildern erreicht die Abweichung 10 dB. Der 3D-Löser "
+              "löst Löcher und Membranfeld auf (Selbsttest, Gegenprobe "
+              "48).",
+    },
     "lbl_bem_dia": {
         "en": "BEM: body Ø [mm]",
         "de": "BEM: Körper-Ø [mm]",

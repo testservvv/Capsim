@@ -1316,6 +1316,16 @@ if capsule.axial_body_model == "bem" and capsule.rear_open \
                         if capsule.cavity_hole_position == "end"
                         else "warn_bem_circ")))
 
+# Homogenisierungsgrenze der 1D/2D-Modelle: gerechnet wird trotzdem, aber
+# oberhalb f_hom ist das Ergebnis nicht mehr gegen den 3D-Löser
+# abgesichert (s. Gegenprobe 48).
+if capsule.squeeze_model in ("1d", "2d"):
+    _hom = capsule.homogenization_limit()
+    if _hom["f_hom"] < capsule._F_BAND_TOP:
+        st.warning(tr("warn_sparse_holes",
+                      model=capsule.squeeze_model.upper(),
+                      f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3))
+
 m1, m2, m3, m4 = st.columns(4)
 m1.metric(tr("met_sens"), f"{sens_1k * 1e3:.1f} mV/Pa",
           help=tr("help_met_sens", db=20 * np.log10(max(sens_1k, 1e-12))))

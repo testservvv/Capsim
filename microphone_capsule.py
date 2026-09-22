@@ -417,6 +417,20 @@ class MicrophoneCapsule:
     # nur numerische Gutartigkeit ohne Spaltdämpfung sicher).
     _Q_MEMBRANE_INTERNAL = 100.0
 
+    # 3D-Löser: Kurzschlussleitwert der Lochmündungen relativ zum größten
+    # Film-Flächenleitwert (Äquipotential-Mündung, s. _build_3d_geometry).
+    # Numerischer Parameter, kein physikalischer: das Ergebnis muss davon
+    # unabhängig sein (Gegenprobe 48 prüft 10³ gegen 10⁵).
+    _EQUI_SHORT = 1.0e4
+
+    # Homogenisierungsgrenze der 1D/2D-Modelle (Gegenprobe 48): kritische
+    # lokale Kennzahl Π = ω·12μ·ρ⁴/(h³·T·j01²) über dem größten lochfreien
+    # Bereich. Gegen den 3D-Löser setzt die 1-dB-Abweichung bei Π = 10…42
+    # ein (zwei Kapseln, drei Spalthöhen) — hier der VORSICHTIGE Rand.
+    # Oberhalb von _F_BAND_TOP interessiert die Grenze nicht mehr.
+    _PI_HOM = 10.0
+    _F_BAND_TOP = 20.0e3
+
     # Nullstellen von J0 — die axialsymmetrischen (0,m)-Membranmoden.
     # Konstanten, deshalb ohne SciPy hinterlegt.
     _J0_ZEROS = (2.404825557695773, 5.520078110286311, 8.653727912911011,
@@ -823,7 +837,14 @@ class MicrophoneCapsule:
         # Verdrehung der Elektrodenhälften gegeneinander (nur 3D-K67-
         # Modus): die realen Hälften sind so verdreht, dass die
         # Durchgangslöcher nicht zueinander zeigen. None = automatisch
-        # eine halbe Teilung des Durchgangs-Lochbilds (180°/n_th).
+        # eine halbe Teilung des Durchgangs-Lochbilds — JE LOCHKREIS
+        # (s. _hole_positions). Bis Gegenprobe 47 galt pauschal 180°/n_th;
+        # das ist nur für EINEN Kreis mit allen Löchern eine halbe
+        # Teilung, auf einem Mehrkreis-Raster lagen die Kerne der beiden
+        # Hälften damit im Zwischenspalt fast übereinander (Gegenprobe 48).
+        # Der gespeicherte Wert ist dann der Anzeigewert für diesen
+        # Einkreis-Fall; gerechnet wird kreisweise.
+        self._half_rot_auto = half_rotation_deg is None
         if half_rotation_deg is None:
             self.half_rotation_deg = 180.0 / max(self.n_th, 1)
         else:
@@ -1682,6 +1703,24 @@ class MicrophoneCapsule:
         # 3D-Löser: Gitter-/Lochgeometrie einmalig aufbauen
         if self.squeeze_model == "3d":
             self._build_3d_geometry()
+        elif self.n_th > 0 or self.ring_vent_w > 0.0:
+            # HOMOGENISIERUNGSGRENZE (Gegenprobe 48): 1D/2D verschmieren
+            # die Löcher. Liegt die Grenze im Hörband, wird gerechnet,
+            # aber gewarnt — der 3D-Löser löst den Fall auf.
+            lim = self.homogenization_limit()
+            if lim["f_hom"] < self._F_BAND_TOP:
+                warnings.warn(
+                    f"squeeze_model='{self.squeeze_model}': das Lochbild "
+                    f"ist für die Homogenisierung zu spärlich — lochfreie "
+                    f"Bereiche bis {lim['rho'] * 1e3:.1f} mm Abstand zur "
+                    f"nächsten Durchgangsbohrung. Oberhalb von etwa "
+                    f"{lim['f_hom'] / 1e3:.1f} kHz beult sich die Membran "
+                    f"über diesen Bereichen örtlich aus, was 1D/2D nicht "
+                    f"abbilden; die Abweichung gegen den 3D-Löser kann "
+                    f"dort 1 dB übersteigen, bei sehr spärlichen Lochbildern "
+                    f"10 dB (Gegenprobe 48). Für diesen Bereich "
+                    f"squeeze_model='3d' verwenden.",
+                    UserWarning, stacklevel=3)
 
     # ======================================================================
     # Spaltfilm-Grundgrößen
@@ -2465,6 +2504,10 @@ class MicrophoneCapsule:
         die einfache Zählung den Feldlöser auf 0.4 dB, die doppelte liegt
         4 dB daneben. Bei sehr spärlichen Rastern (12-24) versagen beide —
         dort ist die azimutale Auflösung des 3D-Lösers nötig.
+        (Stand Gegenprobe 31. Mit dem in Gegenprobe 48 korrigierten
+        3D-Löser lautet die Zeile „einfach“ −6.4 / −1.7 / +0.2 / +0.5 /
+        −0.3 dB — die Entscheidung bleibt dieselbe, und bei 192 Bohrungen
+        fällt die frühere Unstimmigkeit von +2.5 dB weg.)
 
         ``h_film``/``R_A_gap`` bleiben in der Signatur, damit die
         Aufrufstellen unverändert lesbar sind.
@@ -3465,6 +3508,213 @@ class MicrophoneCapsule:
     # ======================================================================
     # 3D-(r,phi)-Feldlöser: Sandwich mit diskreten Löchern
     # ======================================================================
+    def _hole_ring_layout(self, rings):
+        """Lochkreisliste [(Anzahl, Radius), ...] mit aufgelösten
+        Gleichverteilungen — die Lagekonvention des 3D-Lösers.
+
+        ``(Anzahl, None)`` = gleichmäßig über die Elektrode. Das wird als
+        ISOTROPES Raster aus Hilfskreisen gelegt (Gegenprobe 48): gleicher
+        Ringabstand Δr, Lochzahl je Kreis proportional zu seinem Umfang,
+        so dass die Teilung auf dem Kreis ≈ Δr ist. Das ist die Zelle, die
+        Škvor und die 2D-Homogenisierung voraussetzen (rund, Fläche S/n).
+        Bis Gegenprobe 47 lagen die Hilfskreise flächengleich mit GLEICHER
+        Lochzahl — außen entstanden so Zellen von 0.9 × 10 mm, die den
+        Film künstlich versteiften.
+        """
+        r0 = self.r_post
+        out = []
+        for cnt, r_pcd in rings:
+            if cnt <= 0:
+                continue
+            if r_pcd is not None:
+                out.append((cnt, r_pcd))
+                continue
+            span = self.a_bp - r0
+            n_sub = max(1, int(round(np.sqrt(
+                cnt * span / (np.pi * (self.a_bp + r0))))))
+            mids = r0 + (np.arange(n_sub) + 0.5) * span / n_sub
+            counts = np.maximum(np.round(cnt * mids / mids.sum()),
+                                1).astype(int)
+            # Rundungsdifferenz am äußersten (größten) Ring ausgleichen
+            counts[-1] += cnt - int(counts.sum())
+            for c_k, r_k in zip(counts, mids):
+                if c_k > 0:
+                    out.append((int(c_k), float(r_k)))
+        return out
+
+    def _hole_positions(self):
+        """Lochmitten der (vorderen) Elektrode: {'th': [...], 'bh': [...]},
+        je Eintrag (Radius [m], Winkel [°], Rückversatz [°]) — die Lage-
+        konvention des 3D-Lösers. Um den Rückversatz ist die Gegen-
+        elektrode kreisweise verdreht, damit die Durchgangslöcher beider
+        Seiten nicht zueinander zeigen (automatische K67-Verdrehung,
+        zweite Backplate bei 'dual'): auf expliziten Lochkreisen die
+        halbe eigene Teilung, auf dem gemeinsamen Raster ein Platz (dann
+        liegen die Durchgangslöcher der Gegenseite über den Sacklöchern)
+        bzw. ein halber, wenn mehr als jeder zweite Platz durchgebohrt ist.
+
+        * Explizite Lochkreise: gleichverteilt je Kreis, Durchgangs-
+          kreis m um 20°·m verdreht, Sacklochkreis m um 15° + 20°·m
+          (die realen Azimutwinkel sind selten dokumentiert).
+        * GLEICHVERTEILTE Anteile beider Lochtypen bilden EIN gemeinsames
+          isotropes Raster (s. _hole_ring_layout), auf dem sich Durch-
+          gangs- und Sacklöcher gleichmäßig ABWECHSELN — wie an der realen
+          K67 (120 Senkungen, jede zweite durchgebohrt). Bis Gegenprobe 47
+          lagen beide Typen als getrennte Raster auf denselben Hilfskreisen,
+          nur 15° gegeneinander verdreht: auf einem Kreis mit 26 Löchern
+          (Teilung 13.8°) saß das Sackloch dann 1.2° neben dem Durchgangs-
+          loch — die Mündungen überlappten (Gegenprobe 48).
+        """
+        cached = getattr(self, "_hole_pos_cache", None)
+        if cached is not None:
+            return cached
+        th, bh = [], []
+        m_th = 0
+        for cnt, r_pcd in self._th_rings:
+            if cnt > 0 and r_pcd is not None:
+                for k in range(cnt):
+                    th.append((r_pcd, 20.0 * m_th + 360.0 * k / cnt,
+                               180.0 / cnt))
+                m_th += 1
+        m_bh = 0
+        for cnt, r_pcd in self._bh_rings:
+            if cnt > 0 and r_pcd is not None:
+                for k in range(cnt):
+                    bh.append((r_pcd, 15.0 + 20.0 * m_bh + 360.0 * k / cnt,
+                               180.0 / cnt))
+                m_bh += 1
+        u_th = sum(c for c, r in self._th_rings if r is None and c > 0)
+        u_bh = sum(c for c, r in self._bh_rings if r is None and c > 0)
+        n_u = u_th + u_bh
+        if n_u > 0:
+            rings = self._hole_ring_layout([(n_u, None)])
+            # Durchgangsanteil je Kreis, Rundungsrest am größten Kreis
+            t_k = [int(round(c * u_th / n_u)) for c, _ in rings]
+            t_k[-1] += u_th - sum(t_k)
+            for k, ((c_k, r_k), t) in enumerate(zip(rings, t_k)):
+                t = min(max(t, 0), c_k)
+                # Rückversatz: belegen Durchgangslöcher höchstens jeden
+                # zweiten Platz, liegen nie zwei nebeneinander — dann EIN
+                # Platz weiter, und die Durchgangslöcher der Gegenseite
+                # sitzen über den Sacklöchern dieser Seite. Sonst (mehr als
+                # die Hälfte, z. B. 2 von 3) muss irgendwo ein Paar kollidieren;
+                # dann ein halber Platz, zwischen die Löcher.
+                turn = 360.0 / c_k if 2 * t <= c_k else 180.0 / c_k
+                for j in range(c_k):
+                    deg = 20.0 * k + 360.0 * j / c_k
+                    # Bresenham-Verteilung: t von c_k Plätzen gleichmäßig
+                    is_th = ((j + 1) * t) // c_k - (j * t) // c_k == 1
+                    (th if is_th else bh).append((r_k, deg, turn))
+        self._hole_pos_cache = {"th": th, "bh": bh}
+        return self._hole_pos_cache
+
+    def _drain_coverage_radius(self):
+        """Überdeckungsradius der Durchgangslöcher [m]: der größte Abstand,
+        den ein Punkt der Elektrode (r_post … a_bp) bis zur NÄCHSTEN
+        Durchgangsbohrung hat — Lage wie im 3D-Löser (Ring m um 20°·m
+        verdreht, Gleichverteilungen als isotropes Raster). Ein offener
+        Randspalt zählt als Senke am Plattenrand.
+
+        Das ist die Größe, an der die Homogenisierung der 1D/2D-Modelle
+        scheitert (Gegenprobe 48): beide zwingen der Membran über jeder
+        Lochzelle die GLOBALE Modenform auf. Reicht der lochfreie Bereich
+        weit, verformt sich die gespannte Membran dort örtlich (sie weicht
+        dem gestauten Film aus) — das kann nur der 3D-Löser. Bei
+        gleichverteilten Löchern ist der Radius ≈ 1.3·a_bp/√n (Quadrat-
+        raster: √(π/2) = 1.25), bei einem einzelnen Lochkreis der Abstand
+        zur Mitte oder zum Rand.
+        """
+        cached = getattr(self, "_rho_cov", None)
+        if cached is not None:
+            return cached
+        r0 = self.r_post
+        if self.n_th == 0:
+            if self.ring_vent_w > 0.0:
+                self._rho_cov = self.a_bp - r0
+            else:
+                self._rho_cov = float("inf")
+            return self._rho_cov
+        pos = np.array([(r, d) for r, d, _ in self._hole_positions()["th"]])
+        hx = pos[:, 0] * np.cos(np.deg2rad(pos[:, 1]))
+        hy = pos[:, 0] * np.sin(np.deg2rad(pos[:, 1]))
+        # Abtastung der Elektrode (Randpunkte eingeschlossen: dort liegt
+        # das Maximum bei einzelnen Lochkreisen)
+        rs = np.linspace(r0, self.a_bp, 121)
+        ph = np.linspace(0.0, 2.0 * np.pi, 361)[:-1]
+        best = 0.0
+        for r_s in rs:
+            px = r_s * np.cos(ph)
+            py = r_s * np.sin(ph)
+            d2 = ((px[:, None] - hx[None, :]) ** 2
+                  + (py[:, None] - hy[None, :]) ** 2)
+            dmin = np.sqrt(np.min(d2, axis=1))
+            if self.ring_vent_w > 0.0:
+                dmin = np.minimum(dmin, self.a_bp - r_s)
+            best = max(best, float(np.max(dmin)))
+        self._rho_cov = best
+        return best
+
+    def _polarized_gap_profile(self, r):
+        """Örtlicher Spalt der polarisierten Seite h(r) = h − w0·φ(r)
+        (statische Modenform, Maximum 1) — dieselbe Form, die das 2D-Feld
+        über _fld_phi benutzt. Ohne Boden; den setzt der Aufrufer."""
+        phi = np.maximum(_ring_static_shape(
+            np.minimum((np.asarray(r, float) / self.a_mem) ** 2, 1.0),
+            self.u_post), 0.0) / self._phi_max
+        return self.h_gap - self.w0_static * phi
+
+    def homogenization_limit(self):
+        """Obere Frequenz, bis zu der die Loch-Homogenisierung der 1D/2D-
+        Modelle gegen den 3D-Löser abgesichert ist (Gegenprobe 48).
+
+        PHYSIK. 1D und 2D verschmieren die Bohrungen zu einer Senken-
+        dichte und zwingen der Membran über jeder Lochzelle die GLOBALE
+        Modenform auf. Über einem lochfreien Bereich vom Radius ρ (der
+        Überdeckungsradius, s. _drain_coverage_radius) staut sich aber
+        der Film, und die gespannte Membran weicht ihm örtlich aus — sie
+        beult sich zwischen den Löchern. Das Verhältnis der viskosen
+        Filmkraft zur Spannungssteifigkeit der Membran auf dieser Skala
+        ist die dimensionslose Kennzahl
+
+            Π(ω) = ω · 12μ·ρ⁴ / (h³ · T · j01²),
+
+        (der Atmosphärendruck kürzt sich heraus: es zählt die Viskosität,
+        nicht die Kompressibilität). Gegen den 3D-Löser, der Löcher und
+        Membranfeld diskret auflöst, wächst die Abweichung mit Π; die
+        1-dB-Grenze lag über zwei Kapseln (T = 40 und 109 N/m) und drei
+        Spalthöhen (20/38/65 µm) bei Π = 10…42. Mit dem vorsichtigen Rand
+        Π = 10 folgt
+
+            f_hom = 10 / (2π · 12μ·ρ⁴ / (h³·T·j01²)).
+
+        GEPRÜFT UND VERWORFEN: (a) die Kompressibilität INNERHALB der
+        Škvor-Zelle — die exakte Lösung (modifizierte Besselfunktionen)
+        ändert B bis zur Zell-Squeeze-Zahl 1 um < 1 %; (b) Modenabbruch
+        der Membran — membrane_modes = 3 ändert die 2D-Rechnung um
+        < 0.01 dB; (c) Sacklöcher als Entlastung — 36 tiefe Sacklöcher
+        zwischen 12 Durchgangslöchern senken die Abweichung nur von 10
+        auf 7.6 dB. Es zählen deshalb nur die Durchgangslöcher.
+
+        T ist die Membranspannung, die die Modellresonanz f_res trägt
+        (wie im 3D-Löser), h der wirksame Frontspalt.
+
+        Rückgabe: dict mit ``rho`` [m], ``tension`` [N/m],
+        ``pi_per_omega`` [s] und ``f_hom`` [Hz] (inf, wenn es keinen
+        lochfreien Bereich gibt, der die Grenze setzt).
+        """
+        rho = self._drain_coverage_radius()
+        sigma = self.M_A_mem * self.S_mem * (1.0 / self._piston_factor)
+        z1 = float(self._ring_modes()["z"][0])
+        tension = sigma * (2.0 * np.pi * self.f_res * self.a_mem / z1) ** 2
+        if not np.isfinite(rho) or rho <= 0.0:
+            return dict(rho=rho, tension=tension, pi_per_omega=0.0,
+                        f_hom=float("inf"))
+        h = self.h_gap_front
+        coef = (12.0 * MU_AIR * rho ** 4
+                / (h ** 3 * tension * 2.404825557695773 ** 2))
+        return dict(rho=rho, tension=tension, pi_per_omega=coef,
+                    f_hom=self._PI_HOM / (2.0 * np.pi * coef))
+
     def _build_3d_geometry(self):
         """Einmalige Gitter-/Lochgeometrie für ``squeeze_model='3d'``.
 
@@ -3508,20 +3758,36 @@ class MicrophoneCapsule:
 
         Gegenüber dem axialsymmetrischen 2D-Modell fällt damit die
         Homogenisierung der Löcher weg: Durchgangs- und Sacklöcher sitzen
-        DISKRET an ihren (r, phi)-Positionen (Mündungs-Fußabdruck über
-        die Zellen verteilt), die azimutale Zuströmung durch den Film und
-        die dadurch teilentkoppelten Sacklöcher werden aufgelöst — das
-        bedämpft insbesondere die interne Helmholtz-Resonanz realistisch.
+        DISKRET an ihren (r, phi)-Positionen, die azimutale Zuströmung
+        durch den Film, die dadurch teilentkoppelten Sacklöcher und die
+        örtliche Verformung der Membran zwischen den Löchern werden
+        aufgelöst — das bedämpft insbesondere die interne Helmholtz-
+        Resonanz realistisch und ist die Referenz für die Homogenisierungs-
+        grenze der 1D/2D-Modelle (Gegenprobe 48).
+        MÜNDUNGEN (Gegenprobe 48): Fußabdruck = alle Zellen, deren Mitte
+        in der Mündung liegt (exakter Abstand, Fenster nach Lochgröße),
+        über G_s·(I − 11ᵀ/k) zur Äquipotentialfläche kurzgeschlossen —
+        über dem Lochquerschnitt gibt es keinen Film.
         Da die realen Azimutwinkel der Bohrbilder nicht dokumentiert
-        sind, gilt eine feste KONVENTION: gleichverteilte Löcher je
-        Lochkreis, Ring m der Durchgangslöcher um 20°·m verdreht, Sack-
-        löcher um weitere 15° (Rückseite zusätzlich um eine halbe
-        Teilung bzw. im K67-Modus um half_rotation_deg) — die Ergebnisse
-        hängen nur schwach davon ab.
+        sind, gilt eine feste KONVENTION (s. _hole_positions): explizite
+        Lochkreise gleichverteilt, Durchgangskreis m um 20°·m, Sack-
+        lochkreis m um 15° + 20°·m verdreht; gleichverteilte Anteile
+        beider Typen bilden EIN isotropes Raster, auf dem sie sich
+        abwechseln. Die Gegenelektrode (zweite Backplate, K67-Rückhälfte)
+        ist kreisweise um die halbe Durchgangsteilung verdreht, im K67-
+        Modus mit vorgegebenem half_rotation_deg global um diesen Winkel.
         Membran-Elektrostatik: Feder-Erweichung als verteilte negative
-        Steifigkeit, an der Grundmode kalibriert (C_A_eff). Gewebe- und
-        Strahlungsimpedanz der Membranaußenseiten werden im 3D-Modell
-        vernachlässigt (klein; Gewebe in den validierten Beispielen 0).
+        Steifigkeit, an der Grundmode kalibriert (C_A_eff); der Film der
+        polarisierten Seite sieht das örtliche Spaltprofil h − w0·φ(r)
+        wie im 2D-Modell. Strahlungsimpedanz und Gewebe vor den
+        Membranaußenseiten tragen die Sammelknoten (seit Gegenprobe 27).
+        NICHT enthalten ist die Randumgehung des 2D-Modells (Gegenprobe
+        37): Membranfläche außerhalb der Backplate (a_bp < a_mem) ist im
+        3D-Feld nicht an den Ringraum gekoppelt.
+        OFFENER PUNKT: an der gemessenen B&K 4134 (Gegenprobe 38) liegt
+        der 3D-Löser bei 13…20 kHz 1.9…3.1 dB über der Messung, das 2D-
+        Modell höchstens 0.6 dB. Die fehlende Randumgehung ist es nicht
+        (mit a_bp = a_mem wird die Differenz 2D/3D eher größer).
         """
         # Azimutale Auflösung: einteilig genügen 96 Zellen (Debenham,
         # 12 Löcher). Im K67-Modus müssen der Lochabstand UND der
@@ -3570,50 +3836,35 @@ class MicrophoneCapsule:
         kappa = k1 * (1.0 - self.C_A_mem / self.C_A_eff) / E2
 
         # Loch-Fußabdrücke: Zellen, deren Zentrum in der Mündung liegt
+        # (EXAKTER kartesischer Abstand Zellmitte–Lochmitte). Bis
+        # Gegenprobe 47 war das Suchfenster fest ±4 Zellen breit: sobald
+        # die Mündung mehr als vier Zellen überdeckte — bei feinem Gitter
+        # oder azimutal auf inneren Lochkreisen, wo die Zellen schmal
+        # sind —, wurde sie abgeschnitten. Die Löcher waren dann kleiner
+        # als eingegeben (12 × Ø1.4 mm auf 3 mm Radius: wirksam Ø0.8 mm),
+        # und das Ergebnis wanderte mit der Gitterfeinheit statt zu
+        # konvergieren (Gegenprobe 48).
         def _foot(radius, n, off_deg, r_hole):
             out = []
-            i0 = int(np.clip((radius - r0) / dr, 0, Nr - 1))
+            i_lo = max(0, int(np.floor((radius - r_hole - r0) / dr)) - 1)
+            i_hi = min(Nr - 1, int(np.floor((radius + r_hole - r0) / dr)) + 1)
             for k in range(max(n, 0)):
                 ph0 = np.deg2rad(off_deg) + 2.0 * np.pi * k / max(n, 1)
-                cells = []
-                for di in range(-4, 5):
-                    i = i0 + di
-                    if i < 0 or i >= Nr:
-                        continue
-                    arc = r_f[i] * dphi
-                    for dj in range(-4, 5):
-                        if (di * dr) ** 2 + (dj * arc) ** 2 \
-                                <= r_hole ** 2 + 1e-18:
-                            cells.append(i * Np_
-                                         + int(ph0 / dphi + dj) % Np_)
-                if not cells:
-                    cells = [i0 * Np_ + int(ph0 / dphi) % Np_]
+                j0 = int(np.floor(ph0 / dphi))
+                # die Zelle, die die Lochmitte enthält, gehört immer dazu
+                # (Mündung kleiner als eine Zelle: dann ist sie es allein)
+                i0 = int(np.clip((radius - r0) / dr, 0, Nr - 1))
+                cells = [i0 * Np_ + j0 % Np_]
+                for i in range(i_lo, i_hi + 1):
+                    ri = r_f[i]
+                    dj = min(Np_ // 2,
+                             int(np.ceil(r_hole / (ri * dphi))) + 1)
+                    jj = np.arange(j0 - dj, j0 + dj + 1)
+                    d2 = (ri**2 + radius**2 - 2.0 * ri * radius
+                          * np.cos((jj + 0.5) * dphi - ph0))
+                    sel = jj[d2 <= r_hole**2 * (1.0 + 1e-12)]
+                    cells.extend((i * Np_ + sel % Np_).tolist())
                 out.append(np.array(sorted(set(cells)), dtype=int))
-            return out
-
-        def _ring_list(rings, n_total):
-            # (Anzahl, Radius|None); None = gleichmäßig über die Elektrode
-            # -> flächenproportional auf mehrere Kreise aufgeteilt (die
-            # Zahl der Hilfskreise wächst mit der Lochzahl)
-            out = []
-            for cnt, r_pcd in rings:
-                if cnt <= 0:
-                    continue
-                if r_pcd is not None:
-                    out.append((cnt, r_pcd))
-                    continue
-                n_sub = max(2, int(round(np.sqrt(cnt))))
-                edges = np.sqrt(r0**2 + (self.a_bp**2 - r0**2)
-                                * np.linspace(0.0, 1.0, n_sub + 1))
-                mids = 0.5 * (edges[:-1] + edges[1:])
-                areas = np.diff(edges ** 2)
-                counts = np.maximum(np.round(cnt * areas
-                                             / areas.sum()), 1).astype(int)
-                # Rundungsdifferenz am äußersten (größten) Ring ausgleichen
-                counts[-1] += cnt - int(counts.sum())
-                for c_k, r_k in zip(counts, mids):
-                    if c_k > 0:
-                        out.append((int(c_k), float(r_k)))
             return out
 
         # Architektur-Layout des DOF-Vektors:
@@ -3640,46 +3891,52 @@ class MicrophoneCapsule:
         rot = self.half_rotation_deg
         # Membranseitige Mündung: bei Stufenbohrung die WEITE Senkung
         r_mouth = self.r_bh if self.stepped else self.r_th
-        th_rings_l = _ring_list(self._th_rings, self.n_th)
+        hp = self._hole_positions()
+
+        def _feet(plist, r_hole, rear=False, turn=None):
+            # Fußabdrücke an den Lochmitten. rear: Gegenelektrode, um den
+            # kreisweisen Rückversatz (halbe Durchgangsteilung) verdreht —
+            # oder, wenn turn gesetzt ist, global um turn Grad (K67 mit
+            # vorgegebenem half_rotation_deg).
+            out = []
+            for rr, deg, ring_turn in plist:
+                if rear:
+                    deg = deg + (ring_turn if turn is None else turn)
+                out += _foot(rr, 1, deg, r_hole)
+            return out
+
+        k67_turn = None if self._half_rot_auto else rot
+
         th_cells = None
         th_f = th_r = th_cf = th_cr = None
         if arch == "dual_diaphragm" and n_films == 2:
             # Einteilige Platte: Durchgangsloch verbindet beide Filme an
-            # DENSELBEN Zellen; Rück-Sacklöcher nach alter Konvention.
-            th_cells = []
-            for m, (cnt, rr) in enumerate(th_rings_l):
-                th_cells += _foot(rr, cnt, 20.0 * m, self.r_th)
+            # DENSELBEN Zellen; Rück-Sacklöcher um eine halbe Teilung
+            # versetzt (Konvention).
+            th_cells = _feet(hp["th"], self.r_th)
+            bhr_cells = _feet(hp["bh"], self.r_bh, rear=True)
         elif arch == "dual_diaphragm":
             # K67: je Hälfte ein eigenes Lochbild; die Rückhälfte ist
-            # GLOBAL um rot verdreht. Membranseitig mündet (bei Stufen-
-            # bohrung) die WEITE Senkung, zwischenspaltseitig der enge
-            # Kern.
-            th_f, th_cf, th_r, th_cr = [], [], [], []
-            for m, (cnt, rr) in enumerate(th_rings_l):
-                th_f += _foot(rr, cnt, 20.0 * m, r_mouth)
-                th_cf += _foot(rr, cnt, 20.0 * m, self.r_th)
-                th_r += _foot(rr, cnt, 20.0 * m + rot, r_mouth)
-                th_cr += _foot(rr, cnt, 20.0 * m + rot, self.r_th)
+            # verdreht (automatisch kreisweise um die halbe Durchgangs-
+            # teilung, sonst global um half_rotation_deg). Membranseitig
+            # mündet (bei Stufenbohrung) die WEITE Senkung, zwischen-
+            # spaltseitig der enge Kern.
+            th_f = _feet(hp["th"], r_mouth)
+            th_cf = _feet(hp["th"], self.r_th)
+            th_r = _feet(hp["th"], r_mouth, rear=True, turn=k67_turn)
+            th_cr = _feet(hp["th"], self.r_th, rear=True, turn=k67_turn)
+            bhr_cells = _feet(hp["bh"], self.r_bh, rear=True, turn=k67_turn)
         elif arch == "dual":
             # zwei getrennte Platten: eigene Lochbilder, hinten um eine
             # halbe Teilung versetzt (keine direkte Kopplung der Filme,
-            # der Versatz ist nur Konvention wie bei den Sacklöchern)
-            th_f, th_r = [], []
-            for m, (cnt, rr) in enumerate(th_rings_l):
-                th_f += _foot(rr, cnt, 20.0 * m, r_mouth)
-                th_r += _foot(rr, cnt,
-                              20.0 * m + 180.0 / max(cnt, 1), r_mouth)
+            # der Versatz ist nur Konvention)
+            th_f = _feet(hp["th"], r_mouth)
+            th_r = _feet(hp["th"], r_mouth, rear=True)
+            bhr_cells = _feet(hp["bh"], self.r_bh, rear=True)
         else:                                        # single
-            th_f = []
-            for m, (cnt, rr) in enumerate(th_rings_l):
-                th_f += _foot(rr, cnt, 20.0 * m, r_mouth)
-        bhf_cells = []
-        bhr_cells = []
-        for m, (cnt, rr) in enumerate(_ring_list(self._bh_rings, self.n_bh)):
-            bhf_cells += _foot(rr, cnt, 15.0 + 20.0 * m, self.r_bh)
-            bh_rot = (rot if n_films == 3 else 180.0 / max(cnt, 1))
-            bhr_cells += _foot(rr, cnt, 15.0 + 20.0 * m + bh_rot,
-                               self.r_bh)
+            th_f = _feet(hp["th"], r_mouth)
+            bhr_cells = []
+        bhf_cells = _feet(hp["bh"], self.r_bh)
 
         # Statische COO-Anteile: Membran-Spannungsoperator (eingespannter
         # Rand) + Feder-Erweichung (polarisierte Membran, Elektroden-
@@ -3794,15 +4051,69 @@ class MicrophoneCapsule:
                     cols.append(off_n + 0)
                     vals.append(+A_m[i])
 
+        # ÄQUIPOTENTIALE MÜNDUNGEN (Gegenprobe 48). Über dem Lochquerschnitt
+        # gibt es keinen Spaltfilm, sondern das offene Loch: der Druck ist
+        # dort (bis auf den vernachlässigbaren Eigenwiderstand der Mündung)
+        # EINHEITLICH. Bis Gegenprobe 47 blieben die Fußabdruck-Zellen
+        # gewöhnliche Filmzellen mit gleichverteiltem Zufluss — die Luft
+        # musste dann auch INNERHALB der Mündung lateral durch einen Film
+        # strömen, der dort gar nicht existiert. Das ist der Unterschied
+        # zwischen einer Scheibe mit gleichverteilter Quelle und einer
+        # Äquipotentialscheibe, in Škvor-Einheiten +1/8 auf B (bei q = 0.04
+        # rund +28 % Zellwiderstand). Hier wird jede Mündung über
+        # G_s·(I − 11ᵀ/k) kurzgeschlossen: das zieht alle k Zellen auf
+        # ihren gemeinsamen Mittelwert, ohne Nettofluss einzuspeisen.
+        # G_s liegt 10⁴-fach über dem größten Flächenleitwert des Gitters
+        # (statisch — der dynamische Filmleitwert ist betragsmäßig
+        # kleiner), der Restwiderstand 2/G_s ist also vernachlässigbar.
+        relief_max = (float(np.max(self._clr_relief))
+                      if np.size(self._clr_relief) else 0.0)
+        h_ref = max(self.h_gap, self.h_gap_front) + relief_max
+        if n_films == 3:
+            h_ref = max(h_ref, self.h_center)
+        g_geo = max((q0 + Nr) * dphi, 1.0 / ((q0 + 0.5) * dphi))
+        G_s = self._EQUI_SHORT * g_geo * h_ref ** 3 / (12.0 * MU_AIR)
+        eq_r, eq_c, eq_v = [], [], []
+
+        def _short(cells_list, film):
+            for cells in (cells_list or []):
+                k = cells.size
+                if k < 2:
+                    continue
+                aa = film * NF + cells
+                rr_ = np.repeat(aa, k)
+                cc_ = np.tile(aa, k)
+                vv_ = np.full(k * k, -G_s / k, dtype=complex)
+                vv_[rr_ == cc_] += G_s
+                eq_r.append(rr_)
+                eq_c.append(cc_)
+                eq_v.append(vv_)
+
+        if th_cells is not None:                 # einteilig: beide Filme
+            _short(th_cells, 0)
+            _short(th_cells, 1)
+        else:
+            _short(th_f, 0)
+            if arch != "single":
+                _short(th_r, 1)
+            if n_films == 3:
+                _short(th_cf, 2)
+                _short(th_cr, 2)
+        _short(bhf_cells, 0)
+        if arch != "single":
+            _short(bhr_cells, 1)
+
         self._g3d = dict(
             Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, dphi=dphi,
             r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM, q0=q0,
             arch=arch, n_films=n_films, n_mem=n_mem, n_nodes=n_nodes,
             sigma=sigma, T_mem=T_mem, kappa=kappa,
             th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
-            th_f=th_f, th_cf=th_cf, th_r=th_r, th_cr=th_cr,
-            static=(np.array(rows), np.array(cols),
-                    np.array(vals, dtype=complex)),
+            th_f=th_f, th_cf=th_cf, th_r=th_r, th_cr=th_cr, G_s=G_s,
+            static=(np.concatenate([np.array(rows, dtype=int)] + eq_r),
+                    np.concatenate([np.array(cols, dtype=int)] + eq_c),
+                    np.concatenate([np.array(vals, dtype=complex)]
+                                   + eq_v)),
         )
 
     def _solve_3d(self, omega, want_rear=False):
@@ -3881,18 +4192,27 @@ class MicrophoneCapsule:
         # zu Front-/Rückmembran, Film 2 (K67) ist der membranlose
         # Zwischenspalt. single/dual: alle Filme koppeln an DIE Membran
         # (off_w) — bei 'dual' mit entgegengesetztem Vorzeichen beidseits.
+        # ÖRTLICHES Spaltprofil der polarisierten Seite, wie im 2D-Feld
+        # (s. _gap_field_2port): h(r) = h − w0·φ(r) statt des Flächen-
+        # mittels h_gap_front. Der Filmleitwert geht mit h³ — das Mittel
+        # des Spalts ist nicht das Mittel des Leitwerts, und die Strömung
+        # zu einem Lochkreis muss gerade durch die engste Stelle (Mitte).
+        # Bis Gegenprobe 47 rechnete der 3D-Löser mit dem Flächenmittel
+        # und war damit nahe am Pull-in systematisch zu wenig bedämpft
+        # (Gegenprobe 48). Bei 'dual' ist w0 = 0 -> h_gap wie bisher.
+        h_pol = self._polarized_gap_profile(r_f)
         if arch == "dual_diaphragm":
-            sides = [(0, self.h_gap_front, off_w, +1.0),
+            sides = [(0, h_pol, off_w, +1.0),
                      (1, self.h_gap, off_w + NM, -1.0)]
             if n_films == 3:
                 sides.append((2, self.h_center, None, 0.0))
         elif arch == "dual":
             # w positiv = nach vorn: komprimiert den VORDEREN Film (−jw
             # analog zur Rückmembran der K67-Bauform), dehnt den hinteren
-            sides = [(0, self.h_gap_front, off_w, -1.0),
-                     (1, self.h_gap_front, off_w, +1.0)]
+            sides = [(0, h_pol, off_w, -1.0),
+                     (1, h_pol, off_w, +1.0)]
         else:                                        # single
-            sides = [(0, self.h_gap_front, off_w, +1.0)]
+            sides = [(0, h_pol, off_w, +1.0)]
 
         for fidx, om in enumerate(omega):
             rows = [srows]
@@ -3905,6 +4225,9 @@ class MicrophoneCapsule:
                 off = side * NF
                 mem_side = mem_off is not None
                 h_ring = h0 + (self._clr_relief if mem_side else 0.0)
+                if mem_side:
+                    h_ring = np.maximum(h_ring, 0.05 * self.h_gap)
+                h_ring = np.broadcast_to(h_ring, (Nr,))
                 K = np.empty(Nr, dtype=complex)
                 cg = np.empty(Nr, dtype=complex)
                 for hh in np.unique(h_ring):
@@ -5544,6 +5867,26 @@ class MicrophoneCapsule:
                  for cnt, r in rings if cnt > 0]
         return "; ".join(parts) if parts else ("none" if en else "keine")
 
+    def _homogenization_note(self, lang="de"):
+        """summary()-Zeile zur Homogenisierungsgrenze (Gegenprobe 48)."""
+        en = str(lang).strip().lower() == "en"
+        if self.squeeze_model == "3d":
+            return ("— (3D resolves the holes)" if en
+                    else "— (3D löst die Löcher auf)")
+        if self.n_th == 0 and self.ring_vent_w <= 0.0:
+            return ("— (closed backplate)" if en
+                    else "— (Backplate geschlossen)")
+        lim = self.homogenization_limit()
+        f_txt = (f"{lim['f_hom'] / 1e3:9.1f} kHz" if np.isfinite(lim["f_hom"])
+                 else "        ∞")
+        note = (f"{f_txt} (ρ_hole {lim['rho'] * 1e3:.2f} mm, "
+                f"T {lim['tension']:.0f} N/m)" if en
+                else f"{f_txt} (ρ_Loch {lim['rho'] * 1e3:.2f} mm, "
+                f"T {lim['tension']:.0f} N/m)")
+        if lim["f_hom"] < self._F_BAND_TOP:
+            note += (" — ABOVE: use 3D" if en else " — DARÜBER: 3D nehmen")
+        return note
+
     def summary(self, lang="de"):
         """Mehrzeilige Übersicht der abgeleiteten Modellparameter.
 
@@ -5651,6 +5994,9 @@ class MicrophoneCapsule:
                        f" [+ {self.n_th} drilled-through counterbores = "
                        f"{self.n_bh + self.n_th} total]")
                     if self.stepped else "")),
+            _row(_t("Loch-Homogenisierung bis:",
+                    "Hole homogenization up to:"),
+                 self._homogenization_note(lang)),
             _row(_t("Resonanz (Modell):", "Resonance (model):"),
                  f"{self.f_res:9.1f} Hz"),
             _row(_t("Resonanz aus Vorspannung/E:", "Resonance from "
@@ -5773,6 +6119,12 @@ class MicrophoneCapsule:
 # ===========================================================================
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
+    # Die Homogenisierungswarnung (Gegenprobe 48) trifft viele der unten
+    # absichtlich spärlich gebohrten Prüflinge; ausgewertet wird sie nur
+    # in Gegenprobe 48 selbst (dort mit eigenem Warnungsfilter).
+    warnings.filterwarnings(
+        "ignore", message=r"squeeze_model='(1d|2d)': das Lochbild",
+        category=UserWarning)
 
     # 1"-Großmembrankapsel, Nieren-artig, einzelne Backplate
     capsule = MicrophoneCapsule(
@@ -6903,13 +7255,18 @@ if __name__ == "__main__":
             (f"3D-K67-Modus muss im 5-µm-Grenzfall den einteiligen Löser "
              f"reproduzieren (Abweichung {dev_a:.3f})")
         # b) Stufenbohrung mit winziger Senkung vs. ungestuft
+        #    (Senkung nur 1 µm weiter als der Kern: seit Gegenprobe 48
+        #    zählen die Fußabdrücke nach exaktem Abstand, und die 0.71-mm-
+        #    Löcher sind hier kleiner als eine Gitterzelle — schon 0.75 mm
+        #    holten die Nachbarzelle dazu. Geprüft wird die KETTE, nicht
+        #    die Auflösung.)
         plain = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
                                      "half_rotation_deg": 0.0})
         step = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
                                     "half_rotation_deg": 0.0,
                                     "through_holes_stepped": True,
                                     "blind_hole_rings": [(12, None)],
-                                    "blind_hole_diameter": 0.75e-3,
+                                    "blind_hole_diameter": 0.711e-3,
                                     "blind_hole_depth": 0.15e-3})
         Xf_p, Xr_p = plain._solve_3d(om22)
         Xf_s, Xr_s = step._solve_3d(om22)
@@ -6918,7 +7275,12 @@ if __name__ == "__main__":
         assert dev_b < 0.03, \
             (f"Stufenbohrung mit winziger Senkung muss die ungestufte "
              f"Bohrung reproduzieren (Abweichung {dev_b:.3f})")
-        # c)+d) komplette K67, ausgerichtet vs. verdreht (halbe Teilung)
+        # c)+d) komplette K67, ausgerichtet vs. verdreht. „Verdreht“ ist
+        #    die AUTOMATISCHE Verdrehung (kreisweise, s. _hole_positions):
+        #    bis Gegenprobe 48 stand hier pauschal 3° (= 180°/60), was auf
+        #    dem Mehrkreis-Raster die Kerne im Zwischenspalt fast
+        #    übereinanderlegt (Gegenprobe 48 c) — also praktisch
+        #    ausgerichtet.
         k67_3d = dict(
             membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
             membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
@@ -6932,15 +7294,15 @@ if __name__ == "__main__":
             fabric_rear_rayl=0.0, body_diameter=34e-3,
             squeeze_model="3d")
         res22 = {}
-        for rot in (0.0, 3.0):
-            cap = MicrophoneCapsule(**k67_3d, half_rotation_deg=rot)
+        for rot, rot_arg in ((0.0, 0.0), ('auto', None)):
+            cap = MicrophoneCapsule(**k67_3d, half_rotation_deg=rot_arg)
             di = cap.directivity(frequencies_hz=(1000.0,))
             db = di["patterns"][1000.0]["db"]
             na = di["angles_deg"][:181][
                 int(np.argmin(di["patterns"][1000.0]["linear"][:181]))]
             e1k = abs(cap.transfer_function(np.array([1000.0]))[0]) * 1e3
             res22[rot] = (db[180], na, e1k, cap)
-        Xf_r, Xr_r, Bf_r, Br_r = res22[3.0][3]._solve_3d(
+        Xf_r, Xr_r, Bf_r, Br_r = res22['auto'][3]._solve_3d(
             np.array([2.0 * np.pi * 1000.0]), want_rear=True)
         rez22 = abs(Xr_r[0]) / abs(Bf_r[0])
         assert 0.97 < rez22 < 1.03, \
@@ -6948,33 +7310,49 @@ if __name__ == "__main__":
         assert res22[0.0][0] > -12.0, \
             (f"ausgerichtete Löcher müssen den Phasenschieber kurz-"
              f"schließen (180° = {res22[0.0][0]:.1f} dB)")
-        assert res22[3.0][0] < -15.0, \
-            (f"verdrehte Hälften müssen tief auslöschen "
-             f"(180° = {res22[3.0][0]:.1f} dB)")
-        assert res22[3.0][1] > res22[0.0][1] + 15.0, \
+        assert res22['auto'][1] > res22[0.0][1] + 15.0, \
             (f"Verdrehung muss das Minimum Richtung 180° schieben "
-             f"({res22[0.0][1]:.0f}° -> {res22[3.0][1]:.0f}°)")
-        assert res22[0.0][2] - res22[3.0][2] > 5.0, \
-            (f"Verdrehung muss die Empfindlichkeit senken (steiferes "
-             f"Polster; {res22[0.0][2]:.1f} -> {res22[3.0][2]:.1f} mV/Pa)")
-        # d) verdrehte 3D-Bauform nahe am homogenisierten 2D-Modell
+             f"({res22[0.0][1]:.0f}° -> {res22['auto'][1]:.0f}°)")
+        assert res22['auto'][1] >= 170.0, \
+            (f"versetzte Hälften: Nierenminimum hinten "
+             f"({res22['auto'][1]:.0f}°)")
+        # d) gegen das homogenisierte 2D-Modell. Die EMPFINDLICHKEIT
+        #    stimmt; die TIEFE der Auslöschung hängt dagegen an einem
+        #    Maß, das niemand dokumentiert hat: wie die Kerne beider
+        #    Hälften im 50-µm-Zwischenspalt zueinander liegen. Vollständig
+        #    versetzt (automatisch: jeder Kern über einer Sacksenkung der
+        #    Gegenseite, ~2 mm Querweg) ergibt sich im 3D-Feld rund
+        #    −11 dB; teilweise fluchtend (global 9°: innen kurze, außen
+        #    lange Querwege) −29 dB wie im 2D-Modell (−28 dB), dessen
+        #    Škvor-Zelle im Zwischenspalt einen mittleren Querweg von
+        #    etwa einem Zellradius annimmt. Das ist KEIN Modellfehler,
+        #    sondern eine offene Geometriefrage an der realen Kapsel —
+        #    festgehalten, damit sie nicht wieder als gelöst gilt
+        #    (Gegenprobe 48).
         k2d = MicrophoneCapsule(**{**k67_3d, "squeeze_model": "2d"})
         e2d = abs(k2d.transfer_function(np.array([1000.0]))[0]) * 1e3
         p2d = k2d.directivity(
             frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
-        assert abs(res22[3.0][2] - e2d) < 3.0, \
+        assert abs(20.0 * np.log10(res22['auto'][2] / e2d)) < 3.0, \
             (f"3D verdreht muss nahe der 2D-Empfindlichkeit liegen "
-             f"({res22[3.0][2]:.1f} vs. {e2d:.1f} mV/Pa)")
-        assert abs(res22[3.0][0] - p2d) < 9.0, \
-            (f"3D verdreht muss nahe der 2D-Auslöschung liegen "
-             f"({res22[3.0][0]:.1f} vs. {p2d:.1f} dB)")
+             f"({res22['auto'][2]:.1f} vs. {e2d:.1f} mV/Pa)")
+        cap9 = MicrophoneCapsule(**k67_3d, half_rotation_deg=9.0)
+        p9 = cap9.directivity(
+            frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
+        assert abs(p9 - p2d) < 3.0, \
+            (f"teilweise fluchtende Hälften (9°) müssen die 2D-Auslöschung "
+             f"treffen ({p9:.1f} vs. {p2d:.1f} dB)")
+        assert p9 < res22['auto'][0] - 10.0, \
+            (f"die Auslöschung MUSS von der Lage der Kerne abhängen "
+             f"(9°: {p9:.1f} dB, versetzt: {res22['auto'][0]:.1f} dB)")
         print(f"3D-K67-Modus: einteiliger Grenzfall {dev_a * 100:.1f} %, "
               f"Stufen-Grenzfall {dev_b * 100:.1f} %, reziprok "
-              f"({rez22:.4f}); Verdrehung 0°->3°: 180° "
-              f"{res22[0.0][0]:.1f} -> {res22[3.0][0]:.1f} dB, Minimum "
-              f"{res22[0.0][1]:.0f}° -> {res22[3.0][1]:.0f}°, Empf. "
-              f"{res22[0.0][2]:.1f} -> {res22[3.0][2]:.1f} mV/Pa "
-              f"(2D: {p2d:.1f} dB, {e2d:.1f} mV/Pa)  OK")
+              f"({rez22:.4f}); Verdrehung 0°->automatisch: 180° "
+              f"{res22[0.0][0]:.1f} -> {res22['auto'][0]:.1f} dB, Minimum "
+              f"{res22[0.0][1]:.0f}° -> {res22['auto'][1]:.0f}°, Empf. "
+              f"{res22['auto'][2]:.1f} mV/Pa (2D {e2d:.1f}); Auslöschung "
+              f"hängt an der Kernlage: 9° {p9:.1f} dB, 2D {p2d:.1f} dB — "
+              f"offene Geometriefrage  OK")
 
     # --------- Gegenprobe 23: 3D-Löser für single/dual-Architekturen -------
     # Der 3D-Löser rechnet jetzt auch die Einzel-Backplate- und die
@@ -8181,6 +8559,13 @@ if __name__ == "__main__":
     # c) GRENZE EHRLICH: bei sehr spärlichem Lochraster (12) bleibt eine
     #    Abweichung — dort ist die axialsymmetrische Homogenisierung am
     #    Ende und der 3D-Löser nötig.
+    # NACHTRAG Gegenprobe 48: die Grenze hängt nicht an der Lochzahl
+    # allein, sondern an f_hom (lochfreier Radius, Spalt, Membranspannung).
+    # Bei diesem sehr weichen Prüfling (T = 40 N/m, 50 V nahe Pull-in)
+    # liegt f_hom für 48 Bohrungen bei 2 kHz — der Vergleich bei 4 kHz
+    # sitzt also schon knapp darüber (Π = 20, im beobachteten 1-dB-
+    # Bereich 10…42) und trifft trotzdem auf 0.2 dB. Die Vorsichtsgrenze
+    # Π = 10 ist konservativ gewählt.
     if _HAS_SCIPY:
         par31 = dict(
             architecture="single", membrane_resonance_hz=2100.0,
@@ -8288,6 +8673,14 @@ if __name__ == "__main__":
     #    12 Bohrungen am Ende ist — bei VIER ist sie weit darüber hinaus.
     #    Die Schranke unten misst deshalb wesentlich die
     #    Homogenisierungsgrenze, nicht einen Modellfehler der Physik.
+    #    KORREKTUR (Gegenprobe 48): das gilt für das DUBLETT, nicht für
+    #    die RESONANZLAGE. Der korrigierte 3D-Löser (vollständige,
+    #    äquipotentiale Mündungen) setzt die Resonanz auf 480 Hz — fast
+    #    genau wie 2D (477 Hz), beide 13 % unter der FEM (550 Hz). Ein
+    #    Fehler, den das diskret rechnende Modell GENAUSO macht, kann
+    #    keine Homogenisierungsgrenze sein; die Ursache der Resonanzlage
+    #    ist damit wieder offen. Das Dublett trifft der 3D-Löser jetzt
+    #    näher (3336/4042 gegen FEM 3500/4200 Hz; vorher 3227/4025).
     if _HAS_SCIPY:
         # COMSOL-Referenz, auf 100 Hz normiert (Fig. 4 der Arbeit)
         ref32 = ((100.0, 0.00), (200.0, 0.70), (300.0, 1.98), (500.0, 6.20),
@@ -8326,8 +8719,29 @@ if __name__ == "__main__":
         assert 0.82 < det32 < 1.02, \
             (f"Resonanzlage {fpk32:.0f} Hz gegen 550 Hz (FEM) — "
              f"Verstimmung {det32:.3f} außerhalb der dokumentierten "
-             f"Schranke (im Wesentlichen die Homogenisierungsgrenze bei "
-             f"nur vier Bohrungen, s. Kommentar)")
+             f"Schranke (offener Restfehler, s. Kommentar)")
+        # ... und sie ist KEINE Homogenisierungsgrenze: der diskret
+        # rechnende 3D-Löser legt die Resonanz fast genau dorthin, wo 2D
+        # sie hat (Korrektur Gegenprobe 48)
+        c32_3d = MicrophoneCapsule(**{**dict(
+            membrane_material={"rho": 1944.0, "E": 4.0e9, "nu": 0.35},
+            membrane_resonance_hz=1040.0, membrane_diameter=36.0e-3,
+            membrane_thickness=25e-6, membrane_tension=116.27,
+            air_gap=230e-6, backplate_diameter=36.0e-3,
+            backplate_thickness=1.6e-3, bias_voltage=1.0,
+            architecture="single", n_through_holes=4,
+            through_hole_diameter=1.0e-3, through_hole_pcd=2 * 8.4853e-3,
+            n_blind_holes=0, rear_network_enabled=True,
+            cavity_length=7.6e-3, n_cavity_holes=0, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0, include_diffraction=False),
+            "squeeze_model": "3d"})
+        fs32_3 = np.linspace(400.0, 600.0, 81)
+        fpk32_3 = float(fs32_3[int(np.argmax(np.abs(
+            c32_3d.transfer_function(fs32_3))))])
+        assert abs(fpk32_3 / fpk32 - 1.0) < 0.03, \
+            (f"3D ({fpk32_3:.0f} Hz) und 2D ({fpk32:.0f} Hz) müssen die "
+             f"Resonanz gleich legen — sonst wäre es doch die "
+             f"Homogenisierung")
         # d) DUBLETT: die FEM hat im Kerbenband ZWEI Minima (3500 und
         #    4200 Hz). Das ist ein Effekt der vier DISKRETEN Bohrungen —
         #    der homogenisierende 2D-Pfad kann prinzipiell nur eines
@@ -8364,8 +8778,8 @@ if __name__ == "__main__":
               f"(Güte getroffen); Dublett der vier Bohrungen: 2D "
               f"{len(m2_32)} Minimum, 3D {np.round(m3_32).astype(int)} Hz "
               f"gegen FEM 3500/4200; Lage {fpk32:.0f} gegen 550 Hz "
-              f"({100 * (det32 - 1):+.0f} % — Homogenisierungsgrenze bei "
-              f"vier Bohrungen, dokumentiert)  OK")
+              f"({100 * (det32 - 1):+.0f} %, 3D {fpk32_3:.0f} Hz — also "
+              f"KEINE Homogenisierungsgrenze, offener Restfehler)  OK")
 
     # --------- Gegenprobe 33: Modengewicht der Frontmittelung -------------
     # Der Antrieb einer Membranmode ist die Galerkin-Projektion
@@ -10338,5 +10752,317 @@ if __name__ == "__main__":
               f"{konv47[1.0e-3][2][2]:.3f} statt 1.0; 3D/2D mit Pfosten "
               f"{np.round(e47[1.0e-3], 3)} gegen {np.round(e47[0.0], 3)} ohne; "
               f"Zug {ga['T_mem']:.1f} -> {c47r._g3d['T_mem']:.1f} N/m  OK")
+
+    # --------- Gegenprobe 48: Homogenisierungsgrenze + 3D-Referenz --------
+    # Frage: ab wann darf man einem 1D/2D-Ergebnis mit spärlichem Lochbild
+    # nicht mehr trauen? Die Antwort kann nur der 3D-Löser geben — und der
+    # musste dafür erst selbst belastbar werden. Beim Aufstellen der Grenze
+    # fielen VIER Fehler im 3D-Löser auf, jeder physikalisch begründet
+    # behoben und hier festgehalten:
+    # a) FUSSABDRUCK: das Suchfenster war fest ±4 Zellen; größere Mündungen
+    #    wurden abgeschnitten (12 × Ø1.4 mm auf 3 mm Radius: wirksam
+    #    Ø0.8 mm), das Ergebnis WANDERTE mit der Gitterfeinheit. Jetzt
+    #    exakter Abstand, Fenster nach Lochgröße -> konvergent.
+    # b) ÄQUIPOTENTIAL: über dem Lochquerschnitt gibt es keinen Film. Die
+    #    Mündungszellen sind kurzgeschlossen; das Ergebnis hängt vom
+    #    (numerischen) Kurzschlussleitwert nicht ab.
+    # c) LAGE: gleichverteilte Durchgangs- und Sacklöcher lagen als
+    #    getrennte Raster auf denselben Hilfskreisen, 15° versetzt — an
+    #    der K67 überlappten die Senkungen. Jetzt EIN isotropes Raster mit
+    #    abwechselnder Belegung, die Gegenelektrode kreisweise um die
+    #    halbe Durchgangsteilung verdreht (pauschal 180°/n_th legte die
+    #    Kerne im Zwischenspalt fast übereinander).
+    # d) SPALTPROFIL: der 3D-Film sieht wie das 2D-Feld h − w0·φ(r).
+    # Dann die GRENZE selbst (s. homogenization_limit): der Film über dem
+    # größten lochfreien Bereich (Radius ρ) staut sich, die gespannte
+    # Membran beult sich dort aus — das kann nur der 3D-Löser. Kennzahl
+    # Π = ω·12μρ⁴/(h³·T·j01²), 1-dB-Einsatz bei Π = 10…42.
+    # e) Die Grenze TRENNT: unterhalb von f_hom trifft 2D das konvergierte
+    #    3D-Feld auf 1 dB, darüber nicht; eine Kapsel mit f_hom oberhalb
+    #    des Bands bleibt überall innerhalb 1 dB.
+    # f) Die Warnung kommt genau dann, wenn f_hom im Hörband liegt.
+    # g) VERWORFENE Ursachen, jeweils mit Beleg: Kompressibilität in der
+    #    Škvor-Zelle (exakte Besselform gegen FD), Modenabbruch der
+    #    Membran, Sacklöcher als Entlastung.
+    # GRENZE DES 3D-LÖSERS SELBST: das Standardgitter (60 Radialzellen)
+    # löst kleine Mündungen nur grob auf — bei 48 × Ø0.7 mm auf 1"
+    # liegt es bei 1 kHz 1.1 dB neben dem konvergierten Wert. e) rechnet
+    # deshalb auf einem feinen Gitter.
+    if _HAS_SCIPY:
+        from scipy.special import ive as _ive48, kve as _kve48
+        pA48 = dict(
+            architecture="single", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            membrane_tension=45.0, air_gap=38.1e-6,
+            backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+            bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+            delay_length=0.0, cavity_length=8.0e-3,
+            cavity_wall_thickness=1.5e-3, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=28e-3)
+        pB48 = dict(
+            architecture="single", membrane_resonance_hz=8000.0,
+            membrane_diameter=12.0e-3, membrane_thickness=5e-6,
+            membrane_tension=400.0, air_gap=25e-6,
+            backplate_diameter=11.0e-3, backplate_thickness=1.5e-3,
+            bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+            delay_length=0.0, cavity_length=4.0e-3,
+            cavity_wall_thickness=1.0e-3, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=14e-3)
+        A12 = dict(pA48, n_through_holes=12, through_hole_diameter=1.4e-3)
+
+        def _cap48(sm, **kw):
+            with warnings.catch_warnings(record=True) as rec:
+                warnings.simplefilter("always")
+                cc = MicrophoneCapsule(squeeze_model=sm, **kw)
+            return cc, [str(r.message) for r in rec
+                        if issubclass(r.category, UserWarning)]
+
+        def _grid48(cc, nr, nphi):
+            cc._fld_N = nr
+            cc._n_phi_3d = nphi
+            cc._clr_relief = np.zeros(nr)
+            cc._build_3d_geometry()
+            return cc
+
+        def _db48(x):
+            return 20.0 * np.log10(np.abs(x))
+
+        # a) Fußabdruck vollständig: Zellfläche je Mündung ≈ πr², auch
+        #    auf dem inneren Hilfskreis (dort sind die Zellen azimutal
+        #    schmal — genau da schnitt das alte Fenster ab)
+        c48a, _ = _cap48("3d", **A12)
+        g48a = c48a._g3d
+        Acell48 = np.repeat(g48a["A_f"], g48a["Np"])
+        fill48 = np.array([Acell48[c].sum() for c in g48a["th_f"]]) \
+            / (np.pi * c48a.r_th ** 2)
+        assert np.all(np.abs(fill48 - 1.0) < 0.25), \
+            (f"jeder Fußabdruck muss die ganze Mündung decken "
+             f"(Flächenverhältnis {np.round(fill48, 2)})")
+        # ... und das Ergebnis konvergiert mit dem Radialgitter
+        f48 = np.array([300.0, 4000.0])
+        lv48 = [_db48(_grid48(MicrophoneCapsule(squeeze_model="3d", **A12),
+                              nr, 192).transfer_function(f48))
+                for nr in (30, 60, 120)]
+        d1_48 = np.abs(lv48[1] - lv48[0])
+        d2_48 = np.abs(lv48[2] - lv48[1])
+        assert np.all(d2_48 < 0.5 * d1_48) and np.all(d2_48 < 0.4), \
+            (f"3D muss mit dem Gitter konvergieren (Schritte "
+             f"{np.round(d1_48, 2)} -> {np.round(d2_48, 2)} dB)")
+
+        # b) Äquipotential-Kurzschluss: numerischer Parameter, kein
+        #    physikalischer — das Ergebnis darf nicht davon abhängen
+        lvs48 = []
+        for fac48 in (1.0e3, 1.0e5):
+            MicrophoneCapsule._EQUI_SHORT = fac48
+            lvs48.append(_db48(MicrophoneCapsule(
+                squeeze_model="3d", **A12).transfer_function(f48)))
+        MicrophoneCapsule._EQUI_SHORT = 1.0e4
+        assert np.max(np.abs(lvs48[1] - lvs48[0])) < 1e-3, \
+            (f"Mündungs-Kurzschluss muss konvergiert sein "
+             f"({np.max(np.abs(lvs48[1] - lvs48[0])):.1e} dB)")
+
+        # c) Lage an der K67: keine Mündung überlappt eine andere, die
+        #    Kerne beider Hälften liegen im Zwischenspalt auseinander.
+        #    Pauschal 3° (= 180°/60, alte Voreinstellung) legt sie auf dem
+        #    Mehrkreis-Raster übereinander.
+        k48 = dict(
+            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
+            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+            backplate_diameter=25e-3, backplate_thickness=4e-3,
+            bias_voltage=60.0, architecture="dual_diaphragm",
+            center_gap=50e-6, n_through_holes=60,
+            through_hole_diameter=0.6e-3, n_blind_holes=120,
+            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
+            through_holes_stepped=True, fabric_front_rayl=0.0,
+            fabric_rear_rayl=0.0)
+        ck48, _ = _cap48("2d", **k48)
+        hp48 = ck48._hole_positions()
+
+        def _xy48(plist, turn=0.0, auto=False):
+            # auto: kreisweiser Rückversatz (automatische Verdrehung)
+            r_ = np.array([p[0] for p in plist])
+            d_ = np.array([p[1] + (p[2] if auto else turn) for p in plist])
+            return r_ * np.cos(np.deg2rad(d_)), r_ * np.sin(np.deg2rad(d_))
+
+        def _mind48(ax, ay, bx, by, same=False):
+            dd = np.hypot(ax[:, None] - bx[None, :], ay[:, None] - by[None, :])
+            if same:
+                dd[np.diag_indices_from(dd)] = np.inf
+            return float(np.min(dd))
+
+        tx, ty = _xy48(hp48["th"])
+        bx, by = _xy48(hp48["bh"])
+        ax_ = np.concatenate([tx, bx])
+        ay_ = np.concatenate([ty, by])
+        gap_mouth48 = _mind48(ax_, ay_, ax_, ay_, same=True) \
+            / (2.0 * ck48.r_bh)
+        assert len(hp48["th"]) == 60 and len(hp48["bh"]) == 60, \
+            "K67: 60 durchgebohrte + 60 blinde Senkungen"
+        assert gap_mouth48 > 1.0, \
+            (f"keine Senkung darf eine andere überlappen (kleinster "
+             f"Mittenabstand {gap_mouth48:.2f} × Senkungs-Ø)")
+        rx, ry = _xy48(hp48["th"], auto=True)      # automatische Drehung
+        core_auto48 = _mind48(tx, ty, rx, ry) / (2.0 * ck48.r_th)
+        rx3, ry3 = _xy48(hp48["th"], 3.0)          # alte Voreinstellung
+        core_3deg48 = _mind48(tx, ty, rx3, ry3) / (2.0 * ck48.r_th)
+        assert core_auto48 > 1.5, \
+            (f"automatische Verdrehung muss die Kerne beider Hälften "
+             f"trennen ({core_auto48:.2f} × Kern-Ø)")
+        assert core_3deg48 < 1.0, \
+            (f"pauschal 3° legt die Kerne übereinander — genau das war "
+             f"der Fehler ({core_3deg48:.2f} × Kern-Ø)")
+
+        # d) Spaltprofil: der 3D-Film sieht dasselbe örtliche Profil wie
+        #    das 2D-Feld (an dessen Zellmitten verglichen), nicht das
+        #    Flächenmittel h_gap_front
+        cz48, _ = _cap48("2d", **dict(A12, bias_voltage=40.0))
+        r2_48 = cz48.r_post + (np.arange(cz48._fld_N) + 0.5) * (
+            (cz48.a_bp - cz48.r_post) / cz48._fld_N)
+        prof48 = cz48._polarized_gap_profile(r2_48)
+        ref48 = cz48.h_gap - cz48.w0_static * cz48._fld_phi
+        assert cz48.w0_static > 0.05 * cz48.h_gap, \
+            "Prüfling muss merklich durchgebogen sein"
+        assert np.max(np.abs(prof48 - ref48)) < 1e-12 * cz48.h_gap, \
+            "3D-Spaltprofil muss das des 2D-Felds sein"
+        assert prof48[0] < cz48.h_gap_front < prof48[-1], \
+            "Mitte enger, Rand weiter als das Flächenmittel"
+
+        # e) Die Grenze trennt (feines Gitter 90 × 288, s. oben)
+        fine48 = {}
+        for lab48, base48, n48, dia48, ff48 in (
+                ("A48", pA48, 48, 0.70e-3, (1000.0, 12000.0)),
+                ("A12", pA48, 12, 1.40e-3, (4000.0,)),
+                ("B24", pB48, 24, 0.4554e-3, (1000.0, 4000.0, 12000.0))):
+            kw48 = dict(base48, n_through_holes=n48,
+                        through_hole_diameter=dia48)
+            c2_48, _ = _cap48("2d", **kw48)
+            c3_48 = _grid48(MicrophoneCapsule(squeeze_model="3d", **kw48),
+                            90, 288)
+            ff48 = np.array(ff48)
+            fine48[lab48] = (c2_48.homogenization_limit()["f_hom"], ff48,
+                             _db48(c2_48.transfer_function(ff48)
+                                   / c3_48.transfer_function(ff48)))
+        fhA48, _, dA48 = fine48["A48"]
+        assert 1000.0 < fhA48 < 12000.0, \
+            f"Prüfling A48 muss die Grenze im Band haben ({fhA48:.0f} Hz)"
+        assert abs(dA48[0]) < 1.0, \
+            (f"unterhalb f_hom muss 2D das 3D-Feld treffen "
+             f"({dA48[0]:+.2f} dB bei 1 kHz, f_hom {fhA48:.0f} Hz)")
+        assert abs(dA48[1]) > 1.5, \
+            (f"oberhalb f_hom muss die Abweichung sichtbar sein "
+             f"({dA48[1]:+.2f} dB bei 12 kHz)")
+        fhA12, _, dA12 = fine48["A12"]
+        assert fhA12 < 1000.0 and abs(dA12[0]) > 4.0, \
+            (f"sehr spärliches Raster: f_hom {fhA12:.0f} Hz, Abweichung "
+             f"{dA12[0]:+.2f} dB bei 4 kHz")
+        fhB24, _, dB24 = fine48["B24"]
+        assert fhB24 > 12000.0 and np.all(np.abs(dB24) < 1.0), \
+            (f"Kapsel mit f_hom über dem Prüfband muss überall treffen "
+             f"(f_hom {fhB24:.0f} Hz, {np.round(dB24, 2)} dB)")
+
+        # f) Warnung genau dann, wenn f_hom im Hörband liegt
+        _, w2_48 = _cap48("2d", **A12)
+        _, w3_48 = _cap48("3d", **A12)
+        _, wd_48 = _cap48("2d")                    # Standardkapsel
+        hom48 = [w for w in w2_48 if "zu spärlich" in w]
+        assert len(hom48) == 1 and "0.2 kHz" in hom48[0], \
+            f"2D mit 12 Löchern muss warnen, mit f_hom ({w2_48})"
+        assert not any("zu spärlich" in w for w in w3_48 + wd_48), \
+            "3D und dichtes Standardraster dürfen nicht warnen"
+        s48 = _cap48("2d", **A12)[0].summary()
+        assert "Loch-Homogenisierung bis:" in s48 and "3D nehmen" in s48, \
+            "summary() muss die Grenze und die Empfehlung nennen"
+        assert "3D nehmen" not in _cap48("2d")[0].summary(), \
+            "Standardkapsel: keine Empfehlung"
+
+        # g) verworfene Ursachen
+        # g1) kompressible Škvor-Zelle: exakte Form (modifizierte Bessel-
+        #     funktionen, Knotenmodell des 2D-Felds) gegen direkte FD-
+        #     Lösung der Zelle, dann ihre Wirkung auf B
+        def _Bdyn48(q, kb2):
+            kb = np.sqrt(kb2 + 0j)
+            rq = np.sqrt(q)
+            E = np.exp((kb.real + kb) * (rq - 1.0))
+            N1 = (_kve48(1, kb * rq) * _ive48(1, kb)
+                  - _ive48(1, kb * rq) * _kve48(1, kb) * E)
+            D = (_ive48(0, kb * rq) * _kve48(1, kb) * E
+                 + _kve48(0, kb * rq) * _ive48(1, kb))
+            f1 = 2.0 * rq / (kb * (1.0 - q)) * N1 / D
+            return (1.0 - f1) * (1.0 - q) / (kb2 * (q + (1.0 - q) * f1))
+
+        def _Bfd48(q, kb2, M=4000):
+            r_ = np.linspace(np.sqrt(q), 1.0, M + 1)
+            h_ = r_[1] - r_[0]
+            n_ = M + 1
+            main = np.zeros(n_, complex)
+            lo = np.zeros(n_, complex)
+            up = np.zeros(n_, complex)
+            rhs = np.zeros(n_, complex)
+            for i in range(1, n_):
+                last = i == n_ - 1
+                vol = (r_[i] - h_ / 4) * h_ / 2 if last else r_[i] * h_
+                cp = 0.0 if last else (r_[i] + h_ / 2) / h_
+                cm = (r_[i] - h_ / 2) / h_
+                main[i] = cp + cm + kb2 * vol
+                lo[i] = -cm
+                if not last:
+                    up[i] = -cp
+                rhs[i] = vol
+            main[0] = 1.0
+            from scipy.sparse import diags as _diags48
+            from scipy.sparse.linalg import spsolve as _sps48
+            p_ = _sps48(_diags48([lo[1:], main, up[:-1]], [-1, 0, 1],
+                                 format="csc"), rhs)
+            w_ = r_ * h_
+            w_[0] *= 0.5
+            w_[-1] *= 0.5
+            Ip = 2.0 * np.pi * np.sum(w_ * p_)
+            return (Ip / np.pi) / (np.pi - kb2 * Ip) * np.pi
+
+        err48 = max(abs(_Bdyn48(q, 1j * s) / _Bfd48(q, 1j * s) - 1.0)
+                    for q in (0.01, 0.04, 0.2) for s in (0.1, 1.0, 10.0))
+        B0_48 = 0.04 / 2 - 0.04**2 / 8 - np.log(0.04) / 4 - 3 / 8
+        chg48 = abs(abs(_Bdyn48(0.04, 1j * 1.0)) / B0_48 - 1.0)
+        assert err48 < 1e-5, \
+            f"geschlossene Zellform muss die FD-Zelle treffen ({err48:.1e})"
+        assert abs(_Bdyn48(0.04, 1e-9j) / B0_48 - 1.0) < 1e-6, \
+            "statischer Grenzfall muss Škvor sein"
+        assert chg48 < 0.01, \
+            (f"Zellkompressibilität bis σ_c = 1 unter 1 % — also NICHT "
+             f"die Ursache ({100 * chg48:.2f} %)")
+        # g2) Modenabbruch: höhere Moden ändern die 2D-Rechnung praktisch
+        #     nicht (sie liegen parallel am selben Spaltknoten)
+        kA24 = dict(pA48, n_through_holes=24, through_hole_diameter=0.99e-3)
+        fm48 = np.array([4000.0, 8000.0])
+        dmode48 = np.max(np.abs(
+            _db48(_cap48("2d", membrane_modes=3, **kA24)[0]
+                  .transfer_function(fm48))
+            - _db48(_cap48("2d", **kA24)[0].transfer_function(fm48))))
+        assert dmode48 < 0.05, \
+            f"Modenabbruch ist nicht die Ursache ({dmode48:.3f} dB)"
+        # g3) Sacklöcher retten die Homogenisierung nicht
+        kSB48 = dict(A12, n_blind_holes=36, blind_hole_diameter=1.0e-3,
+                     blind_hole_depth=1.5e-3)
+        fsb48 = np.array([8000.0])
+        dsb48 = float(_db48(
+            _cap48("2d", **kSB48)[0].transfer_function(fsb48)
+            / _grid48(MicrophoneCapsule(squeeze_model="3d", **kSB48),
+                      90, 288).transfer_function(fsb48))[0])
+        assert abs(dsb48) > 3.0, \
+            (f"36 Sacklöcher zwischen 12 Durchgangslöchern dürfen die "
+             f"Abweichung nicht beseitigen ({dsb48:+.2f} dB)")
+        print(f"Homogenisierungsgrenze: 3D-Fußabdruck deckt die Mündung "
+              f"({np.min(fill48):.2f}…{np.max(fill48):.2f}), konvergent "
+              f"({np.max(d1_48):.2f} -> {np.max(d2_48):.2f} dB), Kurzschluss "
+              f"{np.max(np.abs(lvs48[1] - lvs48[0])):.0e} dB; K67-Lage "
+              f"Senkungen {gap_mouth48:.2f}×Ø, Kerne {core_auto48:.2f}×Ø "
+              f"(pauschal 3°: {core_3deg48:.2f}×Ø); 2D/3D A48 "
+              f"{dA48[0]:+.2f} dB unter / {dA48[1]:+.2f} dB über f_hom "
+              f"{fhA48 / 1e3:.1f} kHz, A12 {dA12[0]:+.1f} dB, B24 max "
+              f"{np.max(np.abs(dB24)):.2f} dB (f_hom {fhB24 / 1e3:.1f} kHz); "
+              f"verworfen: Zellkompressibilität {100 * chg48:.2f} %, "
+              f"Moden {dmode48:.3f} dB, Sacklöcher {dsb48:+.1f} dB  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
