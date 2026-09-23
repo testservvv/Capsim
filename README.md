@@ -870,11 +870,11 @@ f_hom. Beispiele:
 Großmembran-Kapseln mit weicher Folie liegen damit fast immer im
 Warnbereich. Π = 10 ist bewusst der vorsichtige Rand (bei üblichen
 Spalten für weiche und steife Kapseln belegt, beim weiten Spalt und bei
-Lochkreisen zu optimistisch, s. Gegenprobe 52); bei der K67 liegen 2D und 3D
-auf Achse bis zu 3,5 dB auseinander (−3,5 dB bei 8 kHz), tragen aber
-schon im Tiefton einen Versatz von ~1,2 dB, den f_hom nicht erklärt
-(Zwischenspalt-Geometrie, s. u.; vor den konturtreuen Mündungen
-−4,0 bzw. ~2 dB).
+Lochkreisen zu optimistisch, s. Gegenprobe 52); bei der K67 liegen 2D
+und 3D auf Achse bis zu 3,2 dB auseinander (−3,2 dB bei 8 kHz), tragen
+aber schon im Tiefton einen Versatz von ~1,4 dB, den f_hom nicht erklärt
+(Zwischenspalt-Geometrie, s. u.; vor den konturtreuen Mündungen −4,0
+bzw. ~2 dB, vor dem gekoppelten Membranring −3,5 bzw. ~1,2 dB).
 
 **Geprüft und verworfen** (mit Beleg in der Gegenprobe): die
 Kompressibilität *in* der Škvor-Zelle (exakte Lösung mit modifizierten
