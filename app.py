@@ -240,6 +240,9 @@ DEFAULTS = {
     # halbe Teilung des Durchgangs-Lochbilds (180°/n_th, reale K67)
     "half_rot_auto": True,
     "half_rot_deg": 3.0,
+    # Auflösung des 3D-Gitters: grob (Standard) oder fein (Gegenprobe 50;
+    # ein Vielfaches an Rechenzeit je Frequenzpunkt)
+    "grid_3d_fine": False,
     # Simulation
     "n_points": 400,
     "normalize_1khz": True,
@@ -583,6 +586,7 @@ def build_capsule(p):
         # None = automatisch eine halbe Teilung (180°/n_th)
         half_rotation_deg=(None if p.get("half_rot_auto", True)
                            else p.get("half_rot_deg", 3.0)),
+        grid_3d=("fine" if p.get("grid_3d_fine") else "coarse"),
     )
 
 
@@ -1249,7 +1253,14 @@ with st.sidebar:
         if st.session_state["p_squeeze_2d"]:
             st.caption(tr("cap_2d"))
         st.toggle(tr("lbl_3d"), key="p_squeeze_3d", help=tr("help_3d"))
+        # Immer sichtbar (ohne 3D gesperrt), damit die Wahl beim Ab- und
+        # Wiedereinschalten von 3D erhalten bleibt
+        st.toggle(tr("lbl_grid_fine"), key="p_grid_3d_fine",
+                  help=tr("help_grid_fine"),
+                  disabled=not st.session_state["p_squeeze_3d"])
         if st.session_state["p_squeeze_3d"]:
+            if st.session_state["p_grid_3d_fine"]:
+                st.caption(tr("cap_grid_fine"))
             st.toggle(tr("lbl_rot_auto"), key="p_half_rot_auto",
                       help=tr("help_rot_auto"))
             if not st.session_state["p_half_rot_auto"]:
@@ -1325,6 +1336,12 @@ if capsule.squeeze_model in ("1d", "2d"):
         st.warning(tr("warn_sparse_holes",
                       model=capsule.squeeze_model.upper(),
                       f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3))
+
+# Feines 3D-Gitter an der Obergrenze: die kleinste Mündung ist dann
+# schlechter aufgelöst als die Regel verlangt (s. Gegenprobe 50).
+if capsule.squeeze_model == "3d" and capsule._g3d["fine_capped"]:
+    st.warning(tr("warn_grid_capped", n=capsule._GRID_FINE_MAX,
+                  c=capsule._g3d["cells_rm"], k=capsule._GRID_FINE_CELLS))
 
 m1, m2, m3, m4 = st.columns(4)
 m1.metric(tr("met_sens"), f"{sens_1k * 1e3:.1f} mV/Pa",

@@ -983,6 +983,17 @@ TR = {
         "en": "in the rear end face",
         "de": "in der hinteren Stirnfläche",
     },
+    "warn_grid_capped": {
+        "en": "**Fine 3D grid capped at {n} cells per field.** The smallest "
+              "hole mouth is resolved with only {c:.1f} instead of {k:.0f} "
+              "cells per radius — finer than the coarse grid, but coarser "
+              "than the fine-grid rule requires (self-test, check 50).",
+        "de": "**Feines 3D-Gitter auf {n} Zellen je Feld begrenzt.** Die "
+              "kleinste Lochmündung ist nur mit {c:.1f} statt {k:.0f} "
+              "Zellen je Radius aufgelöst — feiner als das grobe Gitter, "
+              "aber gröber, als die Regel des feinen Gitters verlangt "
+              "(Selbsttest, Gegenprobe 50).",
+    },
     "warn_sparse_holes": {
         "en": "**Hole pattern too sparse for the {model} model above about "
               "{f:.1f} kHz.** Some areas of the electrode are up to "
@@ -1063,7 +1074,7 @@ TR = {
               "single/dual only, not combined with spacer/rear plate "
               "(K103), and in the 1D path only without through holes. "
               "The 3D solver carries the same ring channel (verified "
-              "against 2D in the piston limit, 0.14 dB). NOTE: with a "
+              "against 2D in the piston limit, 0.4 dB). NOTE: with a "
               "SOFT membrane 3D reads several dB higher — a free "
               "membrane evades the long edge path by working near the "
               "rim, which the single-mode 2D model cannot represent. "
@@ -1092,7 +1103,7 @@ TR = {
               "(K103), im 1D-Pfad nur ohne Durchgangs"
               "löcher. Der 3D-Löser führt denselben "
               "Ringkanal (gegen 2D im Kolben-Grenzfall "
-              "verifiziert, 0,14 dB). HINWEIS: bei WEICHER "
+              "verifiziert, 0,4 dB). HINWEIS: bei WEICHER "
               "Membran liegt 3D mehrere dB höher — eine "
               "freie Membran umgeht den langen Randweg, "
               "indem sie bevorzugt außen arbeitet; das kann "
@@ -1207,6 +1218,48 @@ TR = {
               "3D-Modus wirkungslos). DEUTLICH langsamer "
               "(~1–2 s, K67-Typ bis ~10 s je Frequenzpunkt) — "
               "Frequenzpunkte reduzieren!",
+    },
+    "lbl_grid_fine": {
+        "en": "Fine 3D grid",
+        "de": "Feines 3D-Gitter",
+    },
+    "help_grid_fine": {
+        "en": "Resolution of the 3D solver's (r, φ) grid. Off = COARSE "
+              "(default, fast): small hole mouths are only about one "
+              "cell per radius wide — in the test capsules the level "
+              "lies 0.5–1.5 dB off finer grids, and the 180° rejection "
+              "of the K67 type up to ~4 dB. On = FINE: every hole mouth "
+              "gets at least 2 cells per radius, radially and "
+              "azimuthally, and both directions are at least 1.5× finer "
+              "than coarse. That cuts the grid error roughly fivefold "
+              "(remainder ~0.1–0.4 dB; the stair-step outline of the "
+              "mouths converges slowly). Meant as a reference run for "
+              "the final design, with few frequency points. Only active "
+              "with the 3D field model.",
+        "de": "Auflösung des (r, φ)-Gitters des 3D-Lösers. Aus = GROB "
+              "(Standard, schnell): kleine Lochmündungen sind nur etwa "
+              "eine Zelle je Radius breit — an den Prüfkapseln liegt "
+              "der Pegel 0,5–1,5 dB neben feineren Gittern, die 180°-"
+              "Dämpfung des K67-Typs bis ~4 dB. Ein = FEIN: jede "
+              "Lochmündung bekommt mindestens 2 Zellen je Radius, "
+              "radial wie azimutal, und beide Richtungen sind mindestens "
+              "1,5-mal feiner als grob. Das drückt den Gitterfehler etwa "
+              "auf ein Fünftel (Rest ~0,1–0,4 dB; die Treppenkontur der "
+              "Mündungen konvergiert nur langsam). Als Referenzrechnung "
+              "für den Endstand gedacht, mit wenigen Frequenzpunkten. "
+              "Nur mit dem 3D-Feldmodell wirksam.",
+    },
+    "cap_grid_fine": {
+        "en": "⏳ Fine grid: 2–6× the cells, measured 1.5–25× the "
+              "computing time per frequency point (e.g. one-piece "
+              "electrode ~20 s, K67 type ~35 s per point on one core) and "
+              "up to a few GB of memory. Keep frequency points low; the "
+              "result is cached per parameter set.",
+        "de": "⏳ Feines Gitter: 2- bis 6-mal so viele Zellen, gemessen "
+              "1,5- bis 25-fache Rechenzeit je Frequenzpunkt (z. B. "
+              "einteilige Elektrode ~20 s, K67-Typ ~35 s je Punkt auf "
+              "einem Kern) und bis zu einige GB Speicher. Frequenzpunkte "
+              "klein halten; das Ergebnis wird je Parametersatz gecacht.",
     },
     "lbl_rot_auto": {
         "en": "Half rotation automatic (half hole pitch)",

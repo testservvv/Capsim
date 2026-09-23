@@ -418,9 +418,14 @@ class MicrophoneCapsule:
             :meth:`_solve_3d`. Löst die azimutale Zuströmung zu den
             einzelnen Bohrungen und die dadurch teilentkoppelten Sack-
             löcher auf (bedämpft die interne Helmholtz-Resonanz
-            realistisch). Nur für ``dual_diaphragm`` mit ``center_gap=0``
-            und ohne Stufenbohrung (einteilige Elektrode, Debenham-Typ);
-            DEUTLICH langsamer (LU-Faktorisierung je Frequenzpunkt).
+            realistisch). Alle Architekturen mit Durchgangslöchern oder
+            Randspalt; Stufenbohrung bei ``dual_diaphragm`` nur mit
+            ``center_gap > 0`` (K67-Typ). DEUTLICH langsamer (LU-
+            Faktorisierung je Frequenzpunkt).
+        grid_3d : str
+            Auflösung des 3D-Gitters (nur ``squeeze_model="3d"``):
+            ``"coarse"`` (Standard) oder ``"fine"`` — s.
+            :meth:`_grid_3d_size`.
     """
 
     # Membranmaterialien: Dichte rho [kg/m^3], E-Modul E [Pa],
@@ -444,6 +449,12 @@ class MicrophoneCapsule:
     # Numerischer Parameter, kein physikalischer: das Ergebnis muss davon
     # unabhängig sein (Gegenprobe 48 prüft 10³ gegen 10⁵).
     _EQUI_SHORT = 1.0e4
+
+    # Feines 3D-Gitter (grid_3d='fine', s. _grid_3d_size, Gegenprobe 50):
+    # Zellen je kleinstem Mündungsradius und Obergrenze der Zellen je Feld
+    # (K67-Typ fein: rund 43 000 Zellen je Feld, 5 Felder).
+    _GRID_FINE_CELLS = 2.0
+    _GRID_FINE_MAX = 50000
 
     # Homogenisierungsgrenze der 1D/2D-Modelle (Gegenprobe 48): kritische
     # lokale Kennzahl Π = ω·12μ·ρ⁴/(h³·T·j01²) über dem größten lochfreien
@@ -523,6 +534,7 @@ class MicrophoneCapsule:
         # --- Spaltfilm-Modell -----------------------------------------------
         squeeze_model="1d",
         half_rotation_deg=None,
+        grid_3d="coarse",
     ):
         # ------------------------- Membran ---------------------------------
         if isinstance(membrane_material, dict):
@@ -874,6 +886,12 @@ class MicrophoneCapsule:
 
         # Die Feldmodelle (2D/3D) brauchen SciPy.
         self.squeeze_model = sm if (sm == "1d" or _HAS_SCIPY) else "1d"
+        # Auflösung des 3D-Gitters (s. _grid_3d_size); in 1D/2D ohne
+        # Wirkung, wird aber immer geprüft (Projektdateien).
+        g3 = str(grid_3d).strip().lower()
+        if g3 not in ("coarse", "fine"):
+            raise ValueError("grid_3d muss 'coarse' oder 'fine' sein.")
+        self.grid_3d = g3
 
         # Randspalt-Gatter, die die endgültige Konfiguration brauchen:
         # K103-Spacer/Rückplatte teilen sich den Plattenrand mit dem
@@ -1122,24 +1140,12 @@ class MicrophoneCapsule:
         # CLEARANCE-RING auf dem Feldgitter (s. __init__): Relief-Karte
         # für breite Ringe, Stub-Zelle für schmale; Flags, ob Loch-
         # Mündungen im Relief liegen (dann entlastete Engstelle).
-        self._clr_relief = np.zeros(N)
-        self._clr_stub_cell = None
-        self._clr_th_relieved = False
-        self._clr_bh_relieved = False
-        if (self.clearance_ring_width > 0.0
-                and self.clearance_ring_depth > 0.0
-                and self.clearance_ring_diameter > 0.0):
-            r_ring = 0.5 * self.clearance_ring_diameter
-            if self.clearance_ring_width >= dr:
-                mask = np.abs(r_c - r_ring) <= 0.5 * self.clearance_ring_width
-                self._clr_relief[mask] = self.clearance_ring_depth
-                thr = 0.5 / float(np.sum(self._fld_area))
-                if np.any(mask & (self._fld_dens_th > thr)):
-                    self._clr_th_relieved = True
-                if np.any(mask & (self._fld_dens_bh > thr)):
-                    self._clr_bh_relieved = True
-            else:
-                self._clr_stub_cell = int(np.clip(r_ring / dr, 0, N - 1))
+        self._clr_relief, self._clr_stub_cell = self._clearance_on_grid(
+            r_c, dr, r0)
+        mask = self._clr_relief > 0.0
+        thr = 0.5 / float(np.sum(self._fld_area))
+        self._clr_th_relieved = bool(np.any(mask & (self._fld_dens_th > thr)))
+        self._clr_bh_relieved = bool(np.any(mask & (self._fld_dens_bh > thr)))
 
         # Elektrodenrand in Modenkoordinate u = r^2/a_mem^2
         self._ub = min((self.a_bp / self.a_mem) ** 2, 1.0)
@@ -3939,6 +3945,90 @@ class MicrophoneCapsule:
         return dict(rho=rho, tension=tension, pi_per_omega=coef,
                     f_hom=self._PI_HOM / (2.0 * np.pi * coef))
 
+    def _grid_3d_mouths(self):
+        """(kleinster Mündungsradius, größter Lochmitten-Radius) der
+        Mündungen, die ein 3D-Film sieht — oder None ohne Löcher.
+        Membranseitig mündet die weite Senkung (Stufenbohrung) bzw. das
+        Loch selbst, dazu die Sacklöcher; im K67-Zwischenspalt der enge
+        Kern."""
+        radii = []
+        if self.n_th > 0:
+            radii.append(self.r_bh if self.stepped else self.r_th)
+            if self.architecture == "dual_diaphragm" and self.h_center > 0.0:
+                radii.append(self.r_th)
+        if self.n_bh > 0:
+            radii.append(self.r_bh)
+        hp = self._hole_positions()
+        centers = [p[0] for p in hp["th"] + hp["bh"]]
+        if not radii or not centers:
+            return None
+        return min(radii), max(centers)
+
+    def _grid_3d_size(self):
+        """(Nr, Np) des 3D-Gitters: radiale Zellen über der Elektrode,
+        azimutale Zellen je Umlauf. ``_n_r_3d``/``_n_phi_3d`` > 0 setzen
+        die Werte direkt (Konvergenzprüfungen)."""
+        # GROB (Standard): radial das 2D-Feldgitter (60). Azimutal
+        # 96 Zellen; mit center_gap > 0 (K67-Modus — und bei single/dual,
+        # deren center_gap-Standardwert ebenfalls > 0 ist) 4 Zellen je
+        # Durchgangsloch, 96…320: der Lochabstand UND der Verdrehungs-
+        # Versatz der Hälften im Zwischenspalt müssen aufgelöst werden.
+        Nr = self._fld_N
+        if self.h_center > 0.0:
+            Np = int(max(96, min(4 * max(self.n_th, 1), 320)))
+        else:
+            Np = 96
+        if self.grid_3d == "fine":
+            # FEIN (Gegenprobe 50): Der Gitterfehler kommt von der
+            # Treppenkontur der Mündungen und fällt nur LINEAR mit der
+            # Zellweite. Welche Richtung ihn bestimmt, hängt von der
+            # Bauform ab (K67: radial, 96er-Umfangsraster: azimutal) —
+            # deshalb nach dem kleinsten Mündungsradius r_m statt mit
+            # festem Faktor: Zellweite radial und azimutal (am äußersten
+            # Lochmittenkreis) höchstens r_m/2, dazu mindestens 1.5-mal
+            # feiner als grob. Obergrenze _GRID_FINE_MAX Zellen je Feld
+            # (Speicher, Rechenzeit) — greift sie, warnt _build_3d_geometry.
+            Nr_c, Np_c = Nr, Np
+            Nr = int(np.ceil(1.5 * Nr_c))
+            Np = 2 * int(np.ceil(0.75 * Np_c))
+            m = self._grid_3d_mouths()
+            if m is not None:
+                r_m, R = m
+                k = self._GRID_FINE_CELLS
+                Nr = max(Nr, int(np.ceil(k * (self.a_bp - self.r_post)
+                                         / r_m)))
+                Np = max(Np, 2 * int(np.ceil(k * np.pi * R / r_m)))
+            if Nr * Np > self._GRID_FINE_MAX:
+                s = np.sqrt(self._GRID_FINE_MAX / float(Nr * Np))
+                Nr = max(Nr_c, int(Nr * s))
+                Np = max(Np_c, 2 * int(0.5 * Np * s))
+        n_r = int(getattr(self, "_n_r_3d", 0))
+        n_p = int(getattr(self, "_n_phi_3d", 0))
+        return (n_r if n_r > 0 else Nr), (n_p if n_p > 0 else Np)
+
+    def _clearance_on_grid(self, r_c, dr, r0):
+        """Clearance-Ring auf einem Radialgitter (Zellmitten r_c, Zell-
+        breite dr, Gitterbeginn r0): Relief-Karte (Zusatztiefe je Zelle),
+        wenn der Ring mindestens eine Zelle breit ist, sonst die Zelle
+        des Schlitz-Stubs. Gemeinsam für das 2D-Feld und das 3D-Gitter,
+        das mit ``grid_3d='fine'`` eigene Zellbreiten hat."""
+        relief = np.zeros(r_c.size)
+        stub = None
+        if (self.clearance_ring_width > 0.0
+                and self.clearance_ring_depth > 0.0
+                and self.clearance_ring_diameter > 0.0):
+            r_ring = 0.5 * self.clearance_ring_diameter
+            if self.clearance_ring_width >= dr:
+                relief[np.abs(r_c - r_ring)
+                       <= 0.5 * self.clearance_ring_width] = \
+                    self.clearance_ring_depth
+            else:
+                # Zelle, die den Ringradius enthält — gezählt ab r0 (mit
+                # Mittenterminierung beginnt das Gitter am Pfostenrand;
+                # bis Gegenprobe 50 wurde ab 0 gezählt)
+                stub = int(np.clip((r_ring - r0) / dr, 0, r_c.size - 1))
+        return relief, stub
+
     def _build_3d_geometry(self):
         """Einmalige Gitter-/Lochgeometrie für ``squeeze_model='3d'``.
 
@@ -4011,36 +4101,61 @@ class MicrophoneCapsule:
         OFFENER PUNKT: an der gemessenen B&K 4134 (Gegenprobe 38) liegt
         der 3D-Löser bei 13…20 kHz 1.9…3.1 dB über der Messung, das 2D-
         Modell höchstens 0.6 dB. Die fehlende Randumgehung ist es nicht
-        (mit a_bp = a_mem wird die Differenz 2D/3D eher größer).
+        (mit a_bp = a_mem wird die Differenz 2D/3D eher größer, auch mit
+        dem exakten Membranrand aus Gegenprobe 50), das Gitter auch nicht
+        (grid_3d='fine' ändert höchstens 0.2 dB).
+        GITTER (Gegenprobe 50): _grid_3d_size — grob (Standard) oder fein
+        (≥ 2 Zellen je kleinstem Mündungsradius); der Membranring außerhalb
+        der Elektrode hat eine eigene Zellweite, damit die Einspannung auf
+        jedem Gitter exakt bei a_mem liegt.
         """
-        # Azimutale Auflösung: einteilig genügen 96 Zellen (Debenham,
-        # 12 Löcher). Im K67-Modus müssen der Lochabstand UND der
-        # Verdrehungs-Versatz der Hälften im Zwischenspalt aufgelöst
-        # werden — mindestens ~4 Zellen je Lochteilung (Konvergenz:
-        # 180°-Wert wandert von Np=96 nach 192/288 um ~4 dB und
-        # stabilisiert sich dann auf ±1.5 dB).
-        Np_ = int(getattr(self, "_n_phi_3d", 0))
-        if Np_ <= 0:
-            if self.h_center > 0.0:
-                Np_ = int(max(96, min(4 * max(self.n_th, 1), 320)))
-            else:
-                Np_ = 96
+        Nr, Np_ = self._grid_3d_size()
         # MITTENTERMINIERUNG: beide Gitter beginnen am Pfostenrand r0.
         # Film und Membran teilen sich dr und den Startradius, weil die
         # ersten Nr Membranzellen mit den Filmzellen gekoppelt werden.
         # r0 = 0 liefert bitgleich den bisherigen Stand.
-        Nr = self._fld_N
         r0 = self.r_post
         dr = (self.a_bp - r0) / Nr
-        Nr_m = max(Nr + 1, int(round((self.a_mem - r0) / dr)))
         q0 = r0 / dr                      # Pfostenrand in Zellbreiten
         r_f = r0 + (np.arange(Nr) + 0.5) * dr
-        r_m = r0 + (np.arange(Nr_m) + 0.5) * dr
+        # MEMBRANRING außerhalb der Elektrode (a_bp … a_mem) mit EIGENER
+        # Zellbreite dr_o ≈ dr, damit die Einspannung GENAU bei a_mem
+        # liegt. Bis Gegenprobe 50 lief das Elektrodengitter einfach
+        # weiter, und die Einspannung rastete auf das nächste Vielfache
+        # von dr ein (mit a_bp = a_mem sogar eine ganze Zelle zu weit):
+        # die Membran war je nach Gitter zu groß oder zu klein, ihre
+        # Nachgiebigkeit (∝ a⁴) sprang mit der Auflösung — bei der K67
+        # zwischen 60 und 90 Radialzellen um 4 %. Ohne Überstand (a_bp
+        # >= a_mem) endet die Membran am Elektrodenrand.
+        a_out = max(self.a_mem - self.a_bp, 0.0)
+        n_out = (max(1, int(round(a_out / dr)))
+                 if a_out > 1e-9 * self.a_mem else 0)
+        dr_o = a_out / n_out if n_out else dr
+        Nr_m = Nr + n_out
+        drm = np.concatenate([np.full(Nr, dr), np.full(n_out, dr_o)])
+        r_m = np.concatenate([r_f, self.a_bp + (np.arange(n_out) + 0.5)
+                              * dr_o])
         dphi = 2.0 * np.pi / Np_
         A_f = r_f * dr * dphi                       # Zellfläche je Ring
-        A_m = r_m * dr * dphi
+        A_m = r_m * drm * dphi
         NF = Nr * Np_
         NM = Nr_m * Np_
+        # Clearance-Ring auf DIESEM Gitter (fein: eigene Zellbreite)
+        relief, stub_cell = self._clearance_on_grid(r_f, dr, r0)
+        # Auflösung der kleinsten Mündung in Zellen je Radius (die gröbere
+        # Richtung zählt, azimutal am äußersten Lochmittenkreis)
+        mouth = self._grid_3d_mouths()
+        cells_rm = (None if mouth is None
+                    else min(mouth[0] / dr, mouth[0] / (mouth[1] * dphi)))
+        fine_capped = (self.grid_3d == "fine" and cells_rm is not None
+                       and cells_rm < self._GRID_FINE_CELLS * (1.0 - 1e-9))
+        if fine_capped:
+            warnings.warn(
+                f"grid_3d='fine': Obergrenze von {self._GRID_FINE_MAX} "
+                f"Zellen je Feld erreicht — die kleinste Mündung "
+                f"(r = {mouth[0] * 1e3:.2f} mm) ist nur mit "
+                f"{cells_rm:.1f} statt {self._GRID_FINE_CELLS:.0f} Zellen "
+                f"je Radius aufgelöst.", UserWarning, stacklevel=3)
 
         # Membrankonstanten: Flächendichte, Spannung aus f_res. Mit
         # Mittenterminierung sind Kolbenfaktor, Eigenwert und Modenform
@@ -4178,10 +4293,14 @@ class MicrophoneCapsule:
             # MIT Pfosten ist dieselbe Fläche eine EINGESPANNTE Wand: sie
             # liegt eine halbe Zelle vor der ersten Zellmitte, also mit
             # dem doppelten Leitwert auf der Diagonalen. Beide Fälle
-            # fallen aus derselben Formel.
+            # fallen aus derselben Formel. Außerhalb der Elektrode haben
+            # die Ringe die Breite dr_o: Fläche bei r_i + drm_i/2, Abstand
+            # der Zellmitten r_{i+1} − r_i, Einspannung eine halbe
+            # Randzelle hinter der letzten Mitte (= a_mem).
             for i in range(Nr_m):
                 if i < Nr_m - 1:
-                    G = Tfac * (q0 + i + 1) * dphi
+                    G = (Tfac * (r_m[i] + 0.5 * drm[i]) * dphi
+                         / (r_m[i + 1] - r_m[i]))
                     for j in range(Np_):
                         k1_ = base_off + i * Np_ + j
                         k2_ = base_off + (i + 1) * Np_ + j
@@ -4189,7 +4308,8 @@ class MicrophoneCapsule:
                         cols.extend((k2_, k1_, k1_, k2_))
                         vals.extend((-G, -G, G, G))
                 else:
-                    G = Tfac * (q0 + Nr_m) * dphi * 2.0
+                    G = (Tfac * (r_m[i] + 0.5 * drm[i]) * dphi
+                         / (0.5 * drm[i]))
                     for j in range(Np_):                # geklemmter Rand
                         k1_ = base_off + i * Np_ + j
                         rows.append(k1_)
@@ -4202,7 +4322,7 @@ class MicrophoneCapsule:
                         rows.append(k1_)
                         cols.append(k1_)
                         vals.append(G)
-                Gp = Tfac * dr / (r_m[i] * dphi)
+                Gp = Tfac * drm[i] / (r_m[i] * dphi)
                 for j in range(Np_):
                     k1_ = base_off + i * Np_ + j
                     k2_ = base_off + i * Np_ + (j + 1) % Np_
@@ -4291,9 +4411,7 @@ class MicrophoneCapsule:
         # G_s liegt 10⁴-fach über dem größten Flächenleitwert des Gitters
         # (statisch — der dynamische Filmleitwert ist betragsmäßig
         # kleiner), der Restwiderstand 2/G_s ist also vernachlässigbar.
-        relief_max = (float(np.max(self._clr_relief))
-                      if np.size(self._clr_relief) else 0.0)
-        h_ref = max(self.h_gap, self.h_gap_front) + relief_max
+        h_ref = max(self.h_gap, self.h_gap_front) + float(np.max(relief))
         if n_films == 3:
             h_ref = max(h_ref, self.h_center)
         g_geo = max((q0 + Nr) * dphi, 1.0 / ((q0 + 0.5) * dphi))
@@ -4329,12 +4447,14 @@ class MicrophoneCapsule:
             _short(bhr_cells, 1)
 
         self._g3d = dict(
-            Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, dphi=dphi,
+            Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, drm=drm, dphi=dphi,
             r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM, q0=q0,
             arch=arch, n_films=n_films, n_mem=n_mem, n_nodes=n_nodes,
             sigma=sigma, T_mem=T_mem, kappa=kappa,
             th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
             th_f=th_f, th_cf=th_cf, th_r=th_r, th_cr=th_cr, G_s=G_s,
+            relief=relief, stub_cell=stub_cell, cells_rm=cells_rm,
+            fine_capped=fine_capped,
             static=(np.concatenate([np.array(rows, dtype=int)] + eq_r),
                     np.concatenate([np.array(cols, dtype=int)] + eq_c),
                     np.concatenate([np.array(vals, dtype=complex)]
@@ -4449,7 +4569,7 @@ class MicrophoneCapsule:
             for side, h0, mem_off, sgn in sides:
                 off = side * NF
                 mem_side = mem_off is not None
-                h_ring = h0 + (self._clr_relief if mem_side else 0.0)
+                h_ring = h0 + (g["relief"] if mem_side else 0.0)
                 if mem_side:
                     h_ring = np.maximum(h_ring, 0.05 * self.h_gap)
                 h_ring = np.broadcast_to(h_ring, (Nr,))
@@ -4488,7 +4608,7 @@ class MicrophoneCapsule:
                 cols += [mem_off + idx_all]
                 vals += [sgn * 1j * om * np.repeat(A_f, Np_)]
                 # Clearance-Ring als Schlitz-Stub (schmaler Ring)
-                if self._clr_stub_cell is not None:
+                if g["stub_cell"] is not None:
                     r_cst = 0.5 * self.clearance_ring_diameter
                     C_st = (2.0 * np.pi * r_cst * self.clearance_ring_width
                             * self.clearance_ring_depth / (GAMMA * P_ATM))
@@ -4496,7 +4616,7 @@ class MicrophoneCapsule:
                             / (2.0 * np.pi * r_cst
                                * self.clearance_ring_width ** 3) / 3.0)
                     y_st = 1.0 / (R_st + 1.0 / (1j * om * C_st)) / Np_
-                    cells = self._clr_stub_cell * Np_ + np.arange(Np_)
+                    cells = g["stub_cell"] * Np_ + np.arange(Np_)
                     rows += [off + cells]
                     cols += [off + cells]
                     vals += [np.full(Np_, y_st, dtype=complex)]
@@ -4568,7 +4688,12 @@ class MicrophoneCapsule:
                     ring_sides = ([(0, off_n + 1)] if arch == "single"
                                   else [(0, off_n + 0), (1, off_n + 1)])
                     for side3, node_off3 in ring_sides:
-                        Z_e3 = 1.0 / (4.0 * np.pi * Nr * K_edge_side[side3])
+                        # halbe Randzelle bei r = a_bp = (q0 + Nr)·dr (wie
+                        # _fld_gedge_geom im 2D-Feld; bis Gegenprobe 50
+                        # fehlte q0 — mit Pfosten war der Übergang zu
+                        # hochohmig)
+                        Z_e3 = 1.0 / (4.0 * np.pi * (g["q0"] + Nr)
+                                      * K_edge_side[side3])
                         B_c3 = B_l3 + Z_e3 * D_l3
                         _two_port_stamp(rows, cols, vals, edge_cells,
                                         side3 * NF, node1, node_off3,
@@ -6145,6 +6270,12 @@ class MicrophoneCapsule:
             "3d": _t("((r,phi)-Sandwich, diskrete Löcher)",
                      "((r,phi) sandwich, discrete holes)"),
         }[self.squeeze_model]
+        if self.squeeze_model == "3d":
+            g_nr, g_np = self._g3d["Nr"], self._g3d["Np"]
+            sm_note = sm_note[:-1] + _t(
+                f"; Gitter {'fein' if self.grid_3d == 'fine' else 'grob'} "
+                f"{g_nr} × {g_np})",
+                f"; {self.grid_3d} grid {g_nr} × {g_np})")
         lines = [
             _t("MicrophoneCapsule — abgeleitete Parameter",
                "MicrophoneCapsule — derived parameters"),
@@ -8625,7 +8756,9 @@ if __name__ == "__main__":
         #    NICHT verformen kann, beschreiben 1D/2D (Grundmode φ
         #    erzwungen) und 3D (freies Membranfeld) dasselbe Problem.
         #    Mit steifer Membran im quasistatischen Tiefton müssen beide
-        #    zusammenfallen — sie tun es auf 0.15 dB. Bei WEICHER Membran
+        #    zusammenfallen — sie tun es auf 0.4 dB (seit Gegenprobe 50
+        #    mit exaktem Membranrand; vorher verdeckte die um 0.4 % zu
+        #    große 3D-Membran einen Teil davon). Bei WEICHER Membran
         #    liegt 3D systematisch höher (bis ~8 dB): die freie Membran
         #    umgeht den hohen Randwiderstand, indem sie bevorzugt außen
         #    arbeitet — dieselbe Einmoden-Grenze des homogenisierten
@@ -8914,12 +9047,13 @@ if __name__ == "__main__":
     #    Homogenisierungsgrenze, nicht einen Modellfehler der Physik.
     #    KORREKTUR (Gegenprobe 48): das gilt für das DUBLETT, nicht für
     #    die RESONANZLAGE. Der korrigierte 3D-Löser (vollständige,
-    #    äquipotentiale Mündungen) setzt die Resonanz auf 480 Hz — fast
+    #    äquipotentiale Mündungen) setzt die Resonanz auf 482 Hz — fast
     #    genau wie 2D (477 Hz), beide 13 % unter der FEM (550 Hz). Ein
     #    Fehler, den das diskret rechnende Modell GENAUSO macht, kann
     #    keine Homogenisierungsgrenze sein; die Ursache der Resonanzlage
     #    ist damit wieder offen. Das Dublett trifft der 3D-Löser jetzt
-    #    näher (3336/4042 gegen FEM 3500/4200 Hz; vorher 3227/4025).
+    #    näher (3378/4127 gegen FEM 3500/4200 Hz mit exaktem Membranrand,
+    #    Gegenprobe 50; davor 3336/4042, ursprünglich 3227/4025).
     if _HAS_SCIPY:
         # COMSOL-Referenz, auf 100 Hz normiert (Fig. 4 der Arbeit)
         ref32 = ((100.0, 0.00), (200.0, 0.70), (300.0, 1.98), (500.0, 6.20),
@@ -10924,7 +11058,7 @@ if __name__ == "__main__":
         # b/c/d) reines Membranfeld gegen die geschlossene Ringlösung
         def _mem47(cap, n_r):
             """Statische Gleichlast auf das Membranfeld allein."""
-            cap._fld_N = n_r
+            cap._n_r_3d = n_r
             cap._n_phi_3d = 8                 # azimutal irrelevant, spart Zeit
             cap._build_3d_geometry()
             gg = cap._g3d
@@ -10937,7 +11071,7 @@ if __name__ == "__main__":
                         shape=(NM7, NM7)).tocsc()
             rhs = np.repeat(gg["A_m"], Np7)
             w = _spsolve47(Lm, rhs)
-            r_a = gg["r_m"][-1] + 0.5 * gg["dr"]
+            r_a = gg["r_m"][-1] + 0.5 * gg["drm"][-1]
             r_i = gg["r_m"][0] - 0.5 * gg["dr"]
             C_ex = (np.pi * r_a**4
                     * _ring_compliance_factor(r_i / r_a) / (8.0 * gg["T_mem"]))
@@ -11046,10 +11180,10 @@ if __name__ == "__main__":
     # g) VERWORFENE Ursachen, jeweils mit Beleg: Kompressibilität in der
     #    Škvor-Zelle (exakte Besselform gegen FD), Modenabbruch der
     #    Membran, Sacklöcher als Entlastung.
-    # GRENZE DES 3D-LÖSERS SELBST: das Standardgitter (60 Radialzellen)
-    # löst kleine Mündungen nur grob auf — bei 48 × Ø0.7 mm auf 1"
-    # liegt es bei 1 kHz 1.1 dB neben dem konvergierten Wert. e) rechnet
-    # deshalb auf einem feinen Gitter.
+    # GRENZE DES 3D-LÖSERS SELBST: das grobe Standardgitter löst kleine
+    # Mündungen nur mit rund einer Zelle je Radius auf — bei 48 × Ø0.7 mm
+    # auf 1" liegt es bei 1 kHz rund 1 dB neben feineren Gittern. e)
+    # rechnet deshalb mit grid_3d='fine' (Gegenprobe 50).
     if _HAS_SCIPY:
         from scipy.special import ive as _ive48, kve as _kve48
         pA48 = dict(
@@ -11082,9 +11216,8 @@ if __name__ == "__main__":
                         if issubclass(r.category, UserWarning)]
 
         def _grid48(cc, nr, nphi):
-            cc._fld_N = nr
+            cc._n_r_3d = nr
             cc._n_phi_3d = nphi
-            cc._clr_relief = np.zeros(nr)
             cc._build_3d_geometry()
             return cc
 
@@ -11191,7 +11324,7 @@ if __name__ == "__main__":
         assert prof48[0] < cz48.h_gap_front < prof48[-1], \
             "Mitte enger, Rand weiter als das Flächenmittel"
 
-        # e) Die Grenze trennt (feines Gitter 90 × 288, s. oben)
+        # e) Die Grenze trennt (feines 3D-Gitter, s. oben und GP 50)
         fine48 = {}
         for lab48, base48, n48, dia48, ff48 in (
                 ("A48", pA48, 48, 0.70e-3, (1000.0, 12000.0)),
@@ -11200,8 +11333,8 @@ if __name__ == "__main__":
             kw48 = dict(base48, n_through_holes=n48,
                         through_hole_diameter=dia48)
             c2_48, _ = _cap48("2d", **kw48)
-            c3_48 = _grid48(MicrophoneCapsule(squeeze_model="3d", **kw48),
-                            90, 288)
+            c3_48 = MicrophoneCapsule(squeeze_model="3d", grid_3d="fine",
+                                      **kw48)
             ff48 = np.array(ff48)
             fine48[lab48] = (c2_48.homogenization_limit()["f_hom"], ff48,
                              _db48(c2_48.transfer_function(ff48)
@@ -11462,5 +11595,152 @@ if __name__ == "__main__":
               f"K67: U_PI {k49.U_pullin:.1f} V (Ein-Moden 74.4), w0 "
               f"{k49.w0_static * 1e6:.1f} µm, C0 {k49.C_elec_0 * 1e12:.1f} pF, "
               f"Erweichung {100 * k49.softening_ratio:.1f} %  OK")
+
+    # --------- Gegenprobe 50: 3D-Gitter grob/fein -------------------------
+    # grid_3d='coarse' (Standard) ist das bisherige Gitter; 'fine' löst
+    # die kleinste Mündung mit mindestens 2 Zellen je Radius auf (radial
+    # und azimutal am äußersten Lochmittenkreis) und ist in beiden
+    # Richtungen mindestens 1.5-mal feiner. Der Gitterfehler kommt von der
+    # Treppenkontur der Mündungen; welche Richtung ihn bestimmt, hängt von
+    # der Bauform ab (K67: radial, 96er-Umfangsraster: azimutal).
+    # a) Regel: grob = 60 × 96…320, fein erfüllt die Mündungsregel
+    # b) KONVERGENZ: gegen ein nochmals 1.5-mal feineres Referenzgitter
+    #    liegt fein bei ~0.1 dB, grob bei ~1 dB (12 × Ø1.4 mm auf 1").
+    #    GRENZE: die Treppenkontur konvergiert langsam und unregelmäßig —
+    #    ein 2-mal feineres Gitter (180 × 324) liegt weitere 0.15 dB
+    #    daneben. Fein drückt den Gitterfehler um etwa den Faktor 5
+    #    (1.2 -> 0.25 dB gegen 180 × 324), beseitigt ihn aber nicht.
+    # c) MEMBRANRAND: die Einspannung liegt auf jedem Gitter exakt bei
+    #    a_mem. Bis hier rastete sie auf das nächste Vielfache von dr ein
+    #    (mit a_bp = a_mem eine ganze Zelle zu weit) — die Nachgiebigkeit
+    #    sprang mit der Auflösung, der lochfreie Kolben-Grenzfall streute
+    #    zwischen den Gittern um 0.3 dB statt zu konvergieren.
+    # d) Clearance-Ring auf dem 3D-Gitter (fein: als Relief aufgelöst,
+    #    wo das 2D-Feld einen Stub braucht; Stub-Zelle ab Pfostenrand)
+    # e) Obergrenze der Zellen: winzige Löcher -> Warnung statt Absturz
+    if _HAS_SCIPY:
+        p50 = dict(
+            architecture="single", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            membrane_tension=45.0, air_gap=38.1e-6,
+            backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+            bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+            delay_length=0.0, cavity_length=8.0e-3,
+            cavity_wall_thickness=1.5e-3, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=28e-3, n_through_holes=12,
+            through_hole_diameter=1.4e-3)
+        c50 = MicrophoneCapsule(squeeze_model="3d", **p50)
+        f50 = MicrophoneCapsule(squeeze_model="3d", grid_3d="fine", **p50)
+        g50c, g50f = c50._g3d, f50._g3d
+
+        # a) Regel
+        assert c50.grid_3d == "coarse" and (g50c["Nr"], g50c["Np"]) == (
+            c50._fld_N, 96), "Standard muss das bisherige grobe Gitter sein"
+        r_m50, R50 = f50._grid_3d_mouths()
+        assert abs(r_m50 - 0.7e-3) < 1e-12, "kleinste Mündung = Loch"
+        assert (g50f["Nr"] >= 1.5 * g50c["Nr"]
+                and g50f["Np"] >= 1.5 * g50c["Np"]), \
+            "fein muss in beiden Richtungen mindestens 1.5-mal feiner sein"
+        assert g50f["cells_rm"] >= 2.0 > g50c["cells_rm"], \
+            (f"fein: ≥ 2 Zellen je Mündungsradius ({g50f['cells_rm']:.2f}), "
+             f"grob darunter ({g50c['cells_rm']:.2f})")
+
+        # b) Konvergenz gegen ein 1.5-mal feineres Referenzgitter
+        ref50 = MicrophoneCapsule(squeeze_model="3d", **p50)
+        ref50._n_r_3d = int(np.ceil(1.5 * g50f["Nr"]))
+        ref50._n_phi_3d = 2 * int(np.ceil(0.75 * g50f["Np"]))
+        ref50._build_3d_geometry()
+        fq50 = [1000.0]
+        l_ref50 = 20.0 * np.log10(abs(ref50.transfer_function(fq50)[0]))
+        e_c50 = 20.0 * np.log10(abs(c50.transfer_function(fq50)[0])) - l_ref50
+        e_f50 = 20.0 * np.log10(abs(f50.transfer_function(fq50)[0])) - l_ref50
+        assert abs(e_f50) < 0.25 and abs(e_c50) > 0.5 \
+            and abs(e_f50) < 0.25 * abs(e_c50), \
+            (f"fein muss nahe am Referenzgitter liegen ({e_f50:+.2f} dB), "
+             f"grob sichtbar daneben ({e_c50:+.2f} dB)")
+
+        # c) Membranrand exakt bei a_mem, Fläche exakt — grob, fein und
+        #    a_bp = a_mem (kein Überstand)
+        for cc50 in (c50, f50, MicrophoneCapsule(
+                squeeze_model="3d", **dict(p50, backplate_diameter=25.4e-3))):
+            gg50 = cc50._g3d
+            edge50 = gg50["r_m"][-1] + 0.5 * gg50["drm"][-1]
+            S50 = float(np.sum(gg50["A_m"])) * gg50["Np"]
+            assert abs(edge50 / cc50.a_mem - 1.0) < 1e-12, \
+                f"Einspannung muss bei a_mem liegen ({edge50 * 1e3:.4f} mm)"
+            assert abs(S50 / (np.pi * cc50.a_mem**2) - 1.0) < 1e-12, \
+                "Membranfläche des Gitters muss π·a_mem² sein"
+        # ... und der lochfreie Kolben-Grenzfall (steife Membran, nur
+        # Randspalt; mit und ohne Mittenpfosten) konvergiert jetzt glatt
+        st50 = dict(p50, membrane_resonance_hz=50.0e3,
+                    membrane_tension=25600.0, bias_voltage=45.0,
+                    n_through_holes=0, ring_vent_width=50e-6)
+        spread50 = []
+        for d_post50 in (0.0, 8e-3):
+            kw50 = dict(st50, center_post_diameter=d_post50)
+            v2_50 = MicrophoneCapsule(squeeze_model="2d",
+                                      **kw50).transfer_function([200.0])[0]
+            lv50 = []
+            for nr50 in (30, 60, 90, 135):
+                cp50 = MicrophoneCapsule(squeeze_model="3d", **kw50)
+                cp50._n_r_3d, cp50._n_phi_3d = nr50, 8
+                cp50._build_3d_geometry()
+                lv50.append(20.0 * np.log10(abs(
+                    cp50.transfer_function([200.0])[0] / v2_50)))
+            lv50 = np.array(lv50)
+            assert np.all(np.diff(lv50) <= 1e-4) \
+                    and abs(lv50[-1] - lv50[-2]) < 5e-3, \
+                (f"Kolben-Grenzfall muss monoton konvergieren (3D−2D "
+                 f"{np.round(lv50, 3)} dB)")
+            assert abs(lv50[-1]) < 1.0, \
+                f"3D und 2D müssen im Kolben-Grenzfall zusammenliegen"
+            spread50.append(float(np.ptp(lv50)))
+
+        # d) Clearance-Ring schmaler als eine 2D-Zelle, breiter als eine
+        #    feine 3D-Zelle; mit Mittenpfosten
+        clr50 = dict(p50, clearance_ring_diameter=16e-3,
+                     clearance_ring_width=0.17e-3,
+                     clearance_ring_depth=38e-6,
+                     center_post_diameter=2e-3)
+        cl2_50 = MicrophoneCapsule(squeeze_model="2d", **clr50)
+        cl3_50 = MicrophoneCapsule(squeeze_model="3d", **clr50)
+        cl3f_50 = MicrophoneCapsule(squeeze_model="3d", grid_3d="fine",
+                                    **clr50)
+        dr2_50 = (cl2_50.a_bp - cl2_50.r_post) / cl2_50._fld_N
+        assert cl2_50._clr_stub_cell is not None \
+            and cl3_50._g3d["stub_cell"] == cl2_50._clr_stub_cell, \
+            "grob: Stub wie im 2D-Feld"
+        i50 = cl2_50._clr_stub_cell
+        assert (cl2_50.r_post + i50 * dr2_50 <= 8e-3
+                < cl2_50.r_post + (i50 + 1) * dr2_50), \
+            "Stub-Zelle muss den Ringradius enthalten (gezählt ab Pfosten)"
+        assert cl3f_50._g3d["stub_cell"] is None \
+            and cl3f_50._g3d["relief"].max() == 38e-6, \
+            "fein: Ring als Relief aufgelöst"
+
+        # e) Obergrenze: 24 × Ø0.1 mm verlangte ~250 000 Zellen je Feld
+        with warnings.catch_warnings(record=True) as rec50:
+            warnings.simplefilter("always")
+            cap50 = MicrophoneCapsule(
+                squeeze_model="3d", grid_3d="fine",
+                **dict(p50, n_through_holes=24, through_hole_diameter=0.1e-3))
+        g50x = cap50._g3d
+        assert g50x["Nr"] * g50x["Np"] <= MicrophoneCapsule._GRID_FINE_MAX \
+            and any("Obergrenze" in str(r.message) for r in rec50) \
+            and g50x["fine_capped"] and not g50f["fine_capped"], \
+            "Obergrenze muss greifen und warnen (und nur dann)"
+        try:
+            MicrophoneCapsule(grid_3d="medium")
+            raise AssertionError("unbekannte Gitterstufe muss scheitern")
+        except ValueError:
+            pass
+        print(f"3D-Gitter grob/fein: grob {g50c['Nr']}×{g50c['Np']} "
+              f"({g50c['cells_rm']:.2f} Zellen je Mündungsradius) "
+              f"{e_c50:+.2f} dB, fein {g50f['Nr']}×{g50f['Np']} "
+              f"({g50f['cells_rm']:.2f}) {e_f50:+.2f} dB gegen "
+              f"{ref50._g3d['Nr']}×{ref50._g3d['Np']}; Membranrand exakt, "
+              f"Kolben-Grenzfall über Nr 30…135 innerhalb "
+              f"{max(spread50):.3f} dB; Clearance/Obergrenze  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
