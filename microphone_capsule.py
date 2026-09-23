@@ -464,19 +464,28 @@ class MicrophoneCapsule:
     _SHORTLEY_WELLER = True
     _SW_CAP = 20.0
 
+    # Membranring außerhalb der Platte (a_bp < r < a_mem) im 3D-Löser an
+    # den Ringraum gekoppelt (Gegenprobe 52). Abschaltbar nur für den
+    # Vergleich.
+    _ANNULUS_COUPLED = True
+
     # Homogenisierungsgrenze der 1D/2D-Modelle (Gegenprobe 48): kritische
     # lokale Kennzahl Π = ω·12μ·ρ⁴/(h³·T·j01²) über dem größten lochfreien
     # Bereich. Gegen den 3D-Löser setzt die 1-dB-Abweichung bei Π = 10…42
     # ein (zwei Kapseln, drei Spalthöhen) — hier der VORSICHTIGE Rand.
-    # NACHGEPRÜFT mit konturtreuen Mündungen (Gegenprobe 51), gleich-
-    # verteilte Lochbilder, gemessen gegen das dichte Raster gleicher
-    # Lochfläche: weiche Kapsel (T ≈ 40 N/m, Spalt 20/38 µm) Einsatz bei
-    # Π ≥ 14 — bestätigt. Steife Kapsel oder weiter Spalt (65 µm): schon
-    # bei Π ≈ 3…9; dort mischen sich die Streuung der Škvor-Zellregel
-    # und der Hochtonüberschuss des 3D-Lösers ein, die Grenzfrequenz ist
-    # dort NICHT belegt (offener Punkt, README). Gewarnt wurde trotzdem
-    # in jedem gerechneten Fall mit > 1 dB (f_hom stets im Band).
-    # Oberhalb von _F_BAND_TOP interessiert die Grenze nicht mehr.
+    # NACHGEPRÜFT mit konturtreuen Mündungen (Gegenprobe 51) und
+    # gekoppeltem Membranring (Gegenprobe 52), gleichverteilte Lochbilder,
+    # gemessen gegen das dichte Raster gleicher Lochfläche: bei üblichen
+    # Spalten (20…38 µm) Einsatz bei Π ≥ 15 für die weiche 1"-Kapsel
+    # (T ≈ 45 N/m) UND die steife ½"-Kapsel (T = 400 N/m) — bestätigt
+    # (die frühere Streuung der steifen Kapsel, Π ≈ 3…9, war der
+    # unbelastete Membranring). Beim weiten Spalt (65 µm) setzt sie schon
+    # bei Π ≈ 1,6…10 ein, bei Lochkreisen (auch bei üblichen Spalten)
+    # teils bei Π ≈ 1,3…3,4: dort ist die Grenzfrequenz zu optimistisch.
+    # Gewarnt wurde in allen gerechneten Fällen mit > 1 dB bis auf zwei
+    # (steife Kapsel, 65 µm, 12/16 Löcher: 1,1/1,3 dB bei 17…18 kHz,
+    # f_hom 59/107 kHz). Oberhalb von _F_BAND_TOP interessiert die Grenze
+    # nicht mehr.
     _PI_HOM = 10.0
     _F_BAND_TOP = 20.0e3
 
@@ -4118,18 +4127,22 @@ class MicrophoneCapsule:
         polarisierten Seite sieht das örtliche Spaltprofil h − w0·φ(r)
         wie im 2D-Modell. Strahlungsimpedanz und Gewebe vor den
         Membranaußenseiten tragen die Sammelknoten (seit Gegenprobe 27).
-        NICHT enthalten ist die Randumgehung des 2D-Modells (Gegenprobe
-        37): Membranfläche außerhalb der Backplate (a_bp < a_mem) ist im
-        3D-Feld nicht an den Ringraum gekoppelt.
+        RANDUMGEHUNG (Gegenprobe 52): der Membranring außerhalb der
+        Backplate (a_bp < a_mem) liegt über dem Ringraum, spürt dessen
+        Druck und speist dort ein — mit Randspalt über einen eigenen
+        Ringknoten, sonst in die äußerste Filmzelle (bis Gegenprobe 51
+        war er hinten unbelastet). Gegen einen unabhängigen axial-
+        symmetrischen Löser auf 0.001 dB.
+        HOCHTON (Gegenprobe 52): oberhalb der Membranresonanz liegt der
+        3D-Löser über dem 2D-Modell — kein Fehler: die Membran weicht dem
+        Filmdruck aus (das Einmodenbild kann das nicht), und für Löcher
+        auf einem Lochkreis überschätzt das 2D-Feld den Filmwiderstand.
         OFFENER PUNKT: an der gemessenen B&K 4134 (Gegenprobe 38) liegt
-        der 3D-Löser bei 13…20 kHz 2.2…3.7 dB über der Messung (mit
-        konturtreuen Mündungen; vorher 1.9…3.1 dB), das 2D-Modell
-        höchstens 0.6 dB. Derselbe Hochtonüberschuss zeigt sich bei
-        DICHTEN Lochbildern (Gegenprobe 48 e/51).
-        Die fehlende Randumgehung ist es nicht
-        (mit a_bp = a_mem wird die Differenz 2D/3D eher größer, auch mit
-        dem exakten Membranrand aus Gegenprobe 50), das Gitter auch nicht
-        (grid_3d='fine' ändert höchstens 0.2 dB).
+        der 3D-Löser bei 13…20 kHz 2.2…3.8 dB über der Messung, das 2D-
+        Modell höchstens 0.6 dB — die reale Kapsel dämpft also stärker
+        als der Reynolds-Film, oder die Aktuatormessung weicht im Hochton
+        vom Druckfrequenzgang ab. Das Gitter ist es nicht (grid_3d='fine'
+        ändert höchstens 0.2 dB).
         GITTER (Gegenprobe 50): _grid_3d_size — grob (Standard) oder fein
         (≥ 2 Zellen je kleinstem Mündungsradius); der Membranring außerhalb
         der Elektrode hat eine eigene Zellweite, damit die Einspannung auf
@@ -4627,7 +4640,16 @@ class MicrophoneCapsule:
         n_films, n_mem, n_nodes = g["n_films"], g["n_mem"], g["n_nodes"]
         off_w = n_films * NF
         off_n = off_w + n_mem * NM
-        N_tot = off_n + n_nodes
+        # RINGRAUM (Gegenprobe 52): mit Randspalt je Filmseite ein eigener
+        # Knoten p_ring zwischen Filmrand und Schlitzleitung (nur single/
+        # dual; die Doppelmembran hat keinen Randspalt)
+        ring_sides = []
+        if self.ring_vent_w > 0.0 and arch != "dual_diaphragm":
+            ring_sides = ([(0, off_n + 1)] if arch == "single"
+                          else [(0, off_n + 0), (1, off_n + 1)])
+        off_ring = off_n + n_nodes
+        ring_of = {s_: off_ring + k_ for k_, (s_, _) in enumerate(ring_sides)}
+        N_tot = off_ring + len(ring_sides)
         # Ausgangs- (Elektrodenbereich) und Anregungs-Gewichte (Vollfläche).
         # Vorzeichen: die interne w-Konvention (positiv = von der Elektrode
         # weg) ist der 1D/2D-Flussrichtung (q_mem front -> rück) entgegen-
@@ -4736,6 +4758,27 @@ class MicrophoneCapsule:
                 rows += [off + idx_all]
                 cols += [mem_off + idx_all]
                 vals += [sgn * 1j * om * np.repeat(A_f, Np_)]
+                # MEMBRANRING außerhalb der Platte (a_bp < r < a_mem,
+                # Gegenprobe 52): er liegt über dem tiefen Ringraum
+                # zwischen Plattenrand und Einspannung, dessen Druck der
+                # Randdruck ist — er spürt diesen Druck und speist seinen
+                # Volumenfluss dort ein (wie die RANDUMGEHUNG des 2D-Felds,
+                # Gegenprobe 37). Mit Randspalt ist das der Ringknoten,
+                # sonst die äußerste Filmzelle desselben Winkels (der
+                # Ringraum ist dann eine Sackgasse, die über den Filmrand
+                # entleert). Bis hier war die Ringrückseite UNBELASTET —
+                # als läge Vakuum hinter ihr.
+                if Nr_m > Nr and self._ANNULUS_COUPLED:
+                    I_, J_ = np.meshgrid(np.arange(Nr, Nr_m), np.arange(Np_),
+                                         indexing="ij")
+                    I_, J_ = I_.ravel(), J_.ravel()
+                    tgt = (np.full(I_.size, ring_of[side]) if side in ring_of
+                           else off + (Nr - 1) * Np_ + J_)
+                    mw = mem_off + I_ * Np_ + J_
+                    rows += [tgt, mw]
+                    cols += [mw, tgt]
+                    vals += [sgn * 1j * om * A_m[I_].astype(complex),
+                             -sgn * A_m[I_].astype(complex)]
                 # Clearance-Ring als Schlitz-Stub (schmaler Ring)
                 if g["stub_cell"] is not None:
                     r_cst = 0.5 * self.clearance_ring_diameter
@@ -4807,27 +4850,35 @@ class MicrophoneCapsule:
                     for cr_ in g["th_r"]:
                         _two_port_stamp(rows, cols, vals, cr_, NF,
                                         node1, off_n + 1, Y11, Y12, Y22)
-                if self.ring_vent_w > 0.0:
+                if ring_sides:
                     T_l3 = self._slit_line_abcd(
                         om_a, self.ring_vent_w, 2.0 * np.pi * self.a_bp,
                         self.ring_vent_L)
                     A_l3 = complex(T_l3[0, 0][0]); B_l3 = complex(T_l3[0, 1][0])
-                    C_l3 = complex(T_l3[1, 0][0]); D_l3 = complex(T_l3[1, 1][0])
+                    D_l3 = complex(T_l3[1, 1][0])
                     edge_cells = (Nr - 1) * Np_ + np.arange(Np_)
-                    ring_sides = ([(0, off_n + 1)] if arch == "single"
-                                  else [(0, off_n + 0), (1, off_n + 1)])
                     for side3, node_off3 in ring_sides:
-                        # halbe Randzelle bei r = a_bp = (q0 + Nr)·dr (wie
-                        # _fld_gedge_geom im 2D-Feld; bis Gegenprobe 50
-                        # fehlte q0 — mit Pfosten war der Übergang zu
-                        # hochohmig)
-                        Z_e3 = 1.0 / (4.0 * np.pi * (g["q0"] + Nr)
-                                      * K_edge_side[side3])
-                        B_c3 = B_l3 + Z_e3 * D_l3
-                        _two_port_stamp(rows, cols, vals, edge_cells,
-                                        side3 * NF, node1, node_off3,
-                                        D_l3 / B_c3, -1.0 / B_c3,
-                                        (A_l3 + Z_e3 * C_l3) / B_c3)
+                        # Filmrand -> Ringknoten: je Randzelle die halbe
+                        # Randzelle bei r = a_bp = (q0 + Nr)·dr (Summe wie
+                        # _fld_gedge_geom im 2D-Feld); der Ringraum ist
+                        # druckgleich. Ringknoten -> Sammelknoten: die
+                        # Schlitzleitung (reziprokes Zweitor, det T = 1).
+                        kr = np.array([ring_of[side3]])
+                        ke = side3 * NF + edge_cells
+                        Ge = np.full(Np_, 2.0 * (g["q0"] + Nr) * dphi
+                                     * K_edge_side[side3], dtype=complex)
+                        krr = np.full(Np_, kr[0])
+                        rows += [ke, krr, ke, krr]
+                        cols += [krr, ke, ke, krr]
+                        vals += [-Ge, -Ge, Ge, Ge]
+                        rows += [kr, kr, np.array([node_off3]),
+                                 np.array([node_off3])]
+                        cols += [kr, np.array([node_off3]), kr,
+                                 np.array([node_off3])]
+                        vals += [np.array([D_l3 / B_l3]),
+                                 np.array([-1.0 / B_l3]),
+                                 np.array([-1.0 / B_l3]),
+                                 np.array([A_l3 / B_l3])]
                 # Frontknoten-Abschluss: single = Strahlung + Gewebe VOR
                 # der Membran (Grenzfall Z -> 0: p_node = p_front); dual =
                 # dieselbe Kette vor der vorderen Backplate.
@@ -8418,8 +8469,8 @@ if __name__ == "__main__":
     #        zwar mit ERSTER ORDNUNG (Z zehnfach kleiner -> Abstand zum
     #        Grenzwert zehnfach kleiner) — beweist Vorzeichen und Struktur,
     #      - Passivität: Gewebe dämpft monoton (nie Verstärkung),
-    #      - Topologie-Konsistenz: dieselbe Dämpfung wie im 1D/2D-Pfad,
     #      - Reziprozität X_r = -B_f bleibt erhalten.
+    #    Die Dämpfung im 1D/2D-Pfad wird nur zum Vergleich ausgegeben (s. u.).
     if _HAS_SCIPY:
         from scipy.special import j1 as _j1_27, struve as _struve_27
         cap27 = MicrophoneCapsule(
@@ -8514,11 +8565,21 @@ if __name__ == "__main__":
                 f"{mdl27}: Gewebe muss im 3D-Modus überhaupt wirken ({lv[0]})"
             assert lv[0] > lv[1] > lv[2], \
                 f"{mdl27}: Gewebe muss monoton dämpfen (Passivität) {lv}"
-        # Dämpfung gegen die 1D/2D-Kette: bei 100 Hz. Dieser Prüfling hat
-        # nur 12 Durchgangslöcher (f_hom 38 Hz, Gegenprobe 48) — bei 1 kHz
-        # misst der Vergleich deshalb vor allem die Homogenisierung (seit
-        # den konturtreuen Mündungen, Gegenprobe 51: −9.0 gegen −7.7 dB),
-        # nicht den Außenknoten. Unterhalb davon muss er aufgehen.
+        # Dämpfung gegen die 1D/2D-Kette bei 100 Hz — nur AUSGEGEBEN, kein
+        # Gleichheitstest mehr. Bis Gegenprobe 51 trafen sich beide auf
+        # 0,04 dB; das war Zufall. Beim Druckgradientenempfänger ist die
+        # Gewebedämpfung im Tiefton die Differenz aus Gradientenantrieb
+        # (∝ jkd) und dem Gleichtakt-Druckabfall am Gewebe (∝ jω·Z·Y_gl);
+        # beide sind hier vergleichbar groß, die Differenz verstärkt jeden
+        # Unterschied der inneren Gleichtaktantwort. Die bestimmt bei
+        # diesem Prüfling (12 gestufte Löcher, Zwischenspalt) der innere
+        # Widerstandspfad, den 2D (Škvor-Zellregel) und 3D verschieden
+        # rechnen: Gleichtaktantwort im 3D bei 10 Hz um 34 % größer
+        # (dichte einteilige Platte, 96 Löcher: 4 %). Bis Gegenprobe 52
+        # glich das der unbelastete Membranring zufällig aus; jetzt
+        # −4,9 gegen −6,0 dB, statisch (10 Hz: −4,7 gegen −5,9, bei 1 V
+        # Vorspannung ebenso). Der Außenknoten selbst ist durch Grenzfall,
+        # Passivität und Reziprozität belegt.
         att100 = {}
         for mdl27 in ("2d", "3d"):
             h27 = [abs(MicrophoneCapsule(
@@ -8526,11 +8587,9 @@ if __name__ == "__main__":
                 fabric_rear_rayl=0.0, **par27).transfer_function([100.0])[0])
                 for r27 in (0.0, 1.0e5)]
             att100[mdl27] = float(20.0 * np.log10(h27[1] / h27[0]))
-        assert att100["3d"] < -3.0 \
-            and abs(att100["3d"] - att100["2d"]) < 0.25, \
-            (f"3D-Außenknoten muss dieselbe Dämpfung liefern wie die "
-             f"1D/2D-Kette ({att100['3d']:.2f} vs. {att100['2d']:.2f} dB "
-             f"bei 100 Hz)")
+        assert att100["3d"] < -3.0 and att100["2d"] < -3.0, \
+            (f"Gewebe (10⁵ Rayl) muss in beiden Modellen deutlich dämpfen "
+             f"({att100['3d']:.2f} vs. {att100['2d']:.2f} dB bei 100 Hz)")
         # Reziprozität der Membranports bleibt erhalten
         c27r = MicrophoneCapsule(squeeze_model="3d", fabric_front_rayl=0.0,
                                  fabric_rear_rayl=0.0, **par27)
@@ -8543,8 +8602,8 @@ if __name__ == "__main__":
               f"-> {M_hf:.2f} bei 16 kHz; 3D-Grenzfall Z->0 konvergiert "
               f"1. Ordnung ({d2 / d1:.3f}); Gewebe wirkt jetzt im 3D "
               f"({att100['3d']:.2f} dB vs. 2D {att100['2d']:.2f} dB bei "
-              f"100 Hz; 1 kHz {att['3d'][2]:.1f} vs. {att['2d'][2]:.1f} dB "
-              f"— Homogenisierung, f_hom 38 Hz); reziprok  OK")
+              f"100 Hz, 1 kHz {att['3d'][2]:.1f} vs. {att['2d'][2]:.1f} dB "
+              f"— innerer Gleichtaktpfad, nur ausgegeben); reziprok  OK")
 
     # --------- Gegenprobe 28: Spaltmündung + Mehrmoden-Membran ------------
     # a) KEINE DOPPELZÄHLUNG DER LATERALEN SPALTMASSE. Der Škvor-Term
@@ -9079,14 +9138,14 @@ if __name__ == "__main__":
     # 48 Bohrungen bei 2.5 kHz — der Vergleich bei 4 kHz sitzt also schon
     # darüber (Π = 16, im beobachteten 1-dB-Bereich 10…42) und trifft
     # trotzdem auf 0.2 dB. Die Vorsichtsgrenze Π = 10 ist konservativ.
-    # NACHTRAG Gegenprobe 51: mit konturtreuen Mündungen zeigt der 3D-
-    # Löser oberhalb der Membranresonanz einen Hochtonüberschuss, der vom
-    # Lochbild NICHT abhängt (96 Bohrungen, f_hom 9.9 kHz: 2D/3D −1.6 dB
-    # bei 4 kHz) — derselbe wie an der B&K 4134 gegen die Messung. Bei
-    # 4 kHz misst der Vergleich deshalb diesen Überschuss, nicht die
-    # Filmdämpfung; verglichen wird bei 1 kHz (die 45-V-Kapsel ist stark
-    # erweicht, ihre Resonanz liegt unter 300 Hz — 1 kHz ist also schon
-    # der dämpfungsbestimmte Bereich darüber). Der 4-kHz-Wert wird
+    # NACHTRAG Gegenproben 51/52: oberhalb der Membranresonanz liegt der
+    # 3D-Löser über 2D, unabhängig vom Lochbild (96 Bohrungen, f_hom
+    # 9.9 kHz: 2D/3D −0.8 dB bei 4 kHz; vor der Ringkopplung aus
+    # Gegenprobe 52 −1.6 dB). Das ist die FORMANPASSUNG der Membran, die
+    # das 2D-Einmodenbild nicht kann (Gegenprobe 52), nicht die Film-
+    # dämpfung. Verglichen wird deshalb bei 1 kHz (die 45-V-Kapsel ist
+    # stark erweicht, ihre Resonanz liegt unter 300 Hz — 1 kHz ist also
+    # schon der dämpfungsbestimmte Bereich darüber). Der 4-kHz-Wert wird
     # ausgegeben.
     if _HAS_SCIPY:
         # (45 V: mit dem EXAKTEN Arbeitspunkt, Gegenprobe 49, liegt der
@@ -9146,7 +9205,8 @@ if __name__ == "__main__":
               f"{dev31[48]:+.2f}/{dev31[96]:+.2f} dB bei 48/96 Bohrungen "
               f"(12 Bohrungen: {dev31[12]:+.1f} dB — Homogenisierungs"
               f"grenze); 4 kHz {dev31_4k[48]:+.2f}/{dev31_4k[96]:+.2f} dB "
-              f"= 3D-Hochtonüberschuss, lochbildunabhängig  OK")
+              f"= Formanpassung der Membran (Einmodenbild), lochbild"
+              f"unabhängig  OK")
 
     # --------- Gegenprobe 32: EXTERNE Referenz (FEM, veröffentlicht) ------
     # Erste Verankerung des Modells an einer fremden, in sich konsistenten
@@ -11523,11 +11583,11 @@ if __name__ == "__main__":
             (f"sehr spärliches Raster: f_hom {fhA12:.0f} Hz, Abweichung "
              f"{dA12[0]:+.2f} dB bei 4 kHz")
         fhB24, ffB24, dB24 = fine48["B24"]
-        # B24: f_hom über dem Prüfband. Seit den konturtreuen Mündungen
-        # (Gegenprobe 51) liegt 3D im Hochton auch bei DICHTEN Lochbildern
-        # über 2D (12 kHz: ~1.4 dB bei 24, 48 und 96 Löchern gleicher
-        # Lochfläche) — das ist der Hochtonüberschuss des 3D-Lösers (B&K
-        # 4134, offener Punkt), keine Homogenisierung. Deren Anteil ist,
+        # B24: f_hom über dem Prüfband. Oberhalb der Membranresonanz liegt
+        # 3D auch bei DICHTEN Lochbildern über 2D (gleich bei 24, 48 und 96
+        # Löchern gleicher Lochfläche) — die Formanpassung der Membran,
+        # die das 2D-Einmodenbild nicht kann (Gegenprobe 52), keine
+        # Homogenisierung. Deren Anteil ist,
         # was beim AUSDÜNNEN dazukommt: gegen das doppelt so dichte Raster
         # gleicher Lochfläche bleibt er unter 1 dB; unterhalb des
         # Hochtons trifft 2D auch absolut.
@@ -11642,7 +11702,7 @@ if __name__ == "__main__":
               f"{dA48[0]:+.2f} dB unter / {dA48[1]:+.2f} dB über f_hom "
               f"{fhA48 / 1e3:.1f} kHz, A12 {dA12[0]:+.1f} dB, B24 "
               f"Homogenisierungsanteil max {np.max(np.abs(dB24 - dB48)):.2f} "
-              f"dB (f_hom {fhB24 / 1e3:.1f} kHz; 3D-Hochtonüberschuss "
+              f"dB (f_hom {fhB24 / 1e3:.1f} kHz; Formanpassung "
               f"{dB48[-1]:+.2f} dB bei 12 kHz); "
               f"verworfen: Zellkompressibilität {100 * chg48:.2f} %, "
               f"Moden {dmode48:.3f} dB, Sacklöcher {dsb48:+.1f} dB  OK")
@@ -12045,5 +12105,226 @@ if __name__ == "__main__":
                   for e, r, o, a, b in rows51)
               + "; Faktoren nur am Mündungsrand, in [1, "
               f"{MicrophoneCapsule._SW_CAP:.0f}]  OK")
+
+    # --------- Gegenprobe 52: Hochtonüberschuss des 3D-Lösers aufgeklärt --
+    # Oberhalb der Membranresonanz lag 3D 1…2 dB über 2D, auch bei dichten
+    # Lochbildern (an der B&K 4134 3.7 dB über der Messung). Zerlegt:
+    # a) EIN FEHLER des 3D-Lösers: der Membranring außerhalb der Platte
+    #    (a_bp < r < a_mem) war hinten UNBELASTET. Er liegt über dem tiefen
+    #    Ringraum, dessen Druck der Randdruck ist; jetzt spürt er ihn und
+    #    speist seinen Volumenfluss dort ein (mit Randspalt: eigener
+    #    Ringknoten zwischen Filmrand und Schlitzleitung) — wie die
+    #    Randumgehung des 2D-Felds.
+    #    Referenz: ein UNABHÄNGIGER axialsymmetrischer Löser (knoten-
+    #    zentrierte Differenzen statt Zell-FV, eigene Assemblierung) für
+    #    Membranfeld + Reynolds-Film + Ringknoten + Schlitz + Rückkette +
+    #    Frontknoten, dazu die geschlossene Tieftonform
+    #    V = f_in·C_m/(1 + C_m/C_b). Prüfling: B&K-4134-Geometrie nur mit
+    #    Randschlitz (axialsymmetrisch).
+    # b) KEIN FEHLER: die FORMANPASSUNG der Membran. Wo die Filmkraft
+    #    gegen die Spannung zählt, weicht die Membran dem Filmdruck aus —
+    #    beim Randschlitz (Druck in der Mitte am größten) bis zum
+    #    Ringbuckel. 3D und unabhängiger Löser zeigen das gleich; das
+    #    2D-Einmodenbild (feste Form) kann es nicht und liegt bei 20 kHz
+    #    1.8 dB tiefer. Auch mehrere 2D-Moden helfen nicht (sie teilen
+    #    sich einen Spaltknoten).
+    # c) KEIN FEHLER: bei erzwungener Grundmodenform (sehr steife Membran)
+    #    ist der Filmwiderstand von 3D und 2D für gleichverteilte Löcher
+    #    IDENTISCH. Für Löcher auf EINEM Lochkreis überschätzt das 2D-Feld
+    #    ihn (B&K 4134: 1.7-fach) — es löst die radiale Zuströmung zum
+    #    Lochring selbst auf und addiert die volle Škvor-Zelle.
+    # OFFEN: die B&K-Messung (Zuckerwar 1978, Aktuator) folgt dem 2D-
+    #    Modell. Der 3D-Löser rechnet die Modellgleichungen nachweislich
+    #    richtig — also dämpft die reale Kapsel stärker als der Reynolds-
+    #    Film, oder die Aktuatormessung weicht im Hochton vom Druck-
+    #    frequenzgang ab (für die 4134 in der Literatur untersucht).
+    if _HAS_SCIPY:
+        from functools import reduce as _red52
+        from scipy.sparse import lil_matrix as _lil52
+        from scipy.sparse.linalg import spsolve as _sps52
+        _NI52 = {"rho": 8900.0, "E": 200.0e9, "nu": 0.31}
+        bk52 = dict(
+            membrane_material=_NI52, membrane_resonance_hz=None,
+            membrane_diameter=2 * 4.445e-3, membrane_thickness=5.0e-6,
+            membrane_tension=3162.3, air_gap=2.077e-5,
+            backplate_diameter=2 * 3.607e-3, backplate_thickness=0.843e-3,
+            bias_voltage=1.0, architecture="single", n_through_holes=6,
+            through_hole_diameter=2 * 5.080e-4,
+            through_hole_pcd=2 * 2.032e-3, n_blind_holes=0,
+            ring_vent_width=0.838e-3, ring_vent_length=3.048e-4,
+            rear_network_enabled=True, delay_length=0.0,
+            cavity_length=1.264e-7 / (np.pi * 3.607e-3**2),
+            n_cavity_holes=0, fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            include_diffraction=False)
+
+        def _radial52(c, f, M=300):
+            """Unabhängiger axialsymmetrischer Löser (nur Randschlitz):
+            Volumenverschiebung über der Elektrode je Pa Quelldruck."""
+            g = c._g3d
+            T, sig = g["T_mem"], g["sigma"]
+            a, b = c.a_mem, c.a_bp
+            Mb = int(round(M * b / a))
+            r = np.concatenate([np.linspace(0.0, b, Mb + 1),
+                                np.linspace(b, a, M - Mb + 1)[1:]])
+            n = r.size
+            rm = np.concatenate([[0.0], 0.5 * (r[1:] + r[:-1]), [a]])
+            A = np.pi * (rm[1:] ** 2 - rm[:-1] ** 2)
+            nf = Mb + 1
+            Ab = A.copy()
+            Ab[nf - 1] = np.pi * (b ** 2 - rm[nf - 1] ** 2)
+            out = []
+            for fq in f:
+                om = 2 * np.pi * fq
+                om_a = np.array([om])
+                av = 0.5 * c.h_gap * np.sqrt(1j * om * RHO0 / MU_AIR)
+                K = c.h_gap / (1j * om * RHO0) * (1.0 - np.tanh(av) / av)
+                at = av * np.sqrt(PRANDTL)
+                cg = c.h_gap / (GAMMA / (1.0 + (GAMMA - 1.0) * np.tanh(at)
+                                         / at) * P_ATM)
+                iw, ip = 0, n
+                ir, ib, ifr = n + nf, n + nf + 1, n + nf + 2
+                S = _lil52((n + nf + 3,) * 2, dtype=complex)
+                rhs = np.zeros(n + nf + 3, dtype=complex)
+                mq = -om ** 2 * sig * (1 - 1j / c._Q_MEMBRANE_INTERNAL)
+                # Membran (w zur Platte hin): K·w − ω²M·w = A(p_f − p_r)
+                for i in range(n - 1):
+                    S[iw + i, iw + i] += mq * A[i]
+                    for j in (i - 1, i + 1):
+                        if 0 <= j < n:
+                            G = T * np.pi * (r[i] + r[j]) / abs(r[j] - r[i])
+                            S[iw + i, iw + i] += G
+                            if j < n - 1:
+                                S[iw + i, iw + j] -= G
+                    S[iw + i, ifr] -= A[i]
+                    S[iw + i, ip + i if i < nf else ir] += A[i]
+                S[iw + n - 1, iw + n - 1] = 1.0
+                # Film: Σ K·2πr/dr (p_i − p_j) + jωc·A·p = jω·A·w
+                for i in range(nf - 1):
+                    S[ip + i, ip + i] += 1j * om * cg * Ab[i]
+                    S[ip + i, iw + i] -= 1j * om * Ab[i]
+                    for j in (i - 1, i + 1):
+                        if 0 <= j < nf:
+                            G = K * np.pi * (r[i] + r[j]) / abs(r[j] - r[i])
+                            S[ip + i, ip + i] += G
+                            S[ip + i, ip + j] -= G
+                S[ip + nf - 1, ip + nf - 1] = 1.0          # Rand = Ringraum
+                S[ip + nf - 1, ir] = -1.0
+                # Ringknoten: letztes Filmsegment, Randknoten, Membranring,
+                # Schlitzleitung zum Rückknoten
+                Tl = c._slit_line_abcd(om_a, c.ring_vent_w, 2 * np.pi * b,
+                                       c.ring_vent_L)
+                Al, Bl, Dl = (complex(Tl[0, 0][0]), complex(Tl[0, 1][0]),
+                              complex(Tl[1, 1][0]))
+                G = K * np.pi * (r[nf - 1] + r[nf - 2]) / (r[nf - 1]
+                                                          - r[nf - 2])
+                S[ir, ir] += G + 1j * om * cg * Ab[nf - 1] + Dl / Bl
+                S[ir, ip + nf - 2] -= G
+                for k in range(nf - 1, n - 1):
+                    S[ir, iw + k] -= 1j * om * A[k]
+                S[ir, ib] -= 1.0 / Bl
+                Tb = _red52(c._mmul, c._rear_chain_mats(om_a))
+                S[ib, ib] += Al / Bl + complex(Tb[1, 0][0]) / complex(Tb[0, 0][0])
+                S[ib, ir] -= 1.0 / Bl
+                Zf = (c._radiation_impedance_membrane(om_a)[0]
+                      + c.rayl_front / c.S_mem)
+                S[ifr, ifr] += 1.0 / Zf
+                for k in range(n - 1):
+                    S[ifr, iw + k] += 1j * om * A[k]
+                rhs[ifr] = 1.0 / Zf
+                x = _sps52(S.tocsr(), rhs)
+                out.append(np.sum(Ab[:nf] * x[iw:iw + nf]))
+            return np.array(out)
+
+        def _cap3d52(p, np_=8):
+            cc = MicrophoneCapsule(squeeze_model="3d", **p)
+            cc._n_phi_3d = np_                   # axialsymmetrisch
+            cc._build_3d_geometry()
+            return cc
+
+        # a) unabhängige Referenz (nur Randschlitz), mit und ohne Ring-
+        #    kopplung; dazu die geschlossene Tieftonform
+        slit52 = dict(bk52, n_through_holes=0)
+        f52 = np.array([20.0, 1000.0, 5000.0, 10000.0, 20000.0])
+        c52 = _cap3d52(slit52)
+        X52 = c52._solve_3d(2 * np.pi * f52)[0]
+        V52 = _radial52(c52, f52)
+        dev52 = np.abs(20 * np.log10(np.abs(X52 / V52)))
+        assert np.all(dev52 < 0.02), \
+            (f"3D muss den unabhängigen radialen Löser treffen "
+             f"({np.round(dev52, 3)} dB)")
+        MicrophoneCapsule._ANNULUS_COUPLED = False
+        X52o = _cap3d52(slit52)._solve_3d(2 * np.pi * f52)[0]
+        MicrophoneCapsule._ANNULUS_COUPLED = True
+        dev52o = np.abs(20 * np.log10(np.abs(X52o / V52)))
+        assert dev52o[0] > 5.0 * max(dev52[0], 1e-4) and dev52o[0] > 0.03, \
+            (f"ohne Ringkopplung muss der Tiefton sichtbar abweichen "
+             f"({dev52o[0]:.3f} dB)")
+        # geschlossene Tieftonform mit weitem Schlitz (keine Druckdifferenz
+        # Ring/Rückraum): Membran gegen Rückvolumen + Film
+        wide52 = dict(slit52, air_gap=300e-6, ring_vent_width=3e-3)
+        cw52 = _cap3d52(wide52)
+        om20 = np.array([2 * np.pi * 20.0])
+        Tb52 = _red52(cw52._mmul, cw52._rear_chain_mats(om20))
+        Cb52 = (complex(Tb52[1, 0][0]) / complex(Tb52[0, 0][0])).imag / om20[0]
+        av20 = 0.5 * cw52.h_gap * np.sqrt(1j * om20[0] * RHO0 / MU_AIR)
+        at20 = av20 * np.sqrt(PRANDTL)
+        Cb52 += (cw52.h_gap / (GAMMA / (1 + (GAMMA - 1) * np.tanh(at20)
+                                        / at20) * P_ATM)).real \
+            * np.pi * cw52.a_bp ** 2
+        Cm52 = np.pi * cw52.a_mem ** 4 / (8 * cw52._g3d["T_mem"])
+        u52 = (cw52.a_bp / cw52.a_mem) ** 2
+        V_ex52 = u52 * (2 - u52) * Cm52 / (1 + Cm52 / Cb52)
+        e_ex52 = abs(abs(cw52._solve_3d(om20)[0][0]) / V_ex52 - 1)
+        assert e_ex52 < 0.01, \
+            f"Tiefton gegen die geschlossene Form ({100 * e_ex52:.2f} %)"
+
+        # b) Formanpassung: 2D (feste Form) liegt bei 20 kHz deutlich
+        #    tiefer als 3D und die unabhängige Referenz (a)
+        h2_52 = MicrophoneCapsule(squeeze_model="2d",
+                                  **slit52).transfer_function(f52)
+        n52 = lambda x: 20 * np.log10(np.abs(x / x[0]))
+        gap52 = float((n52(X52) - n52(h2_52))[-1])
+        assert gap52 > 1.5, \
+            (f"Einmodenbild muss oberhalb der Filmgrenze zurückbleiben "
+             f"({gap52:+.2f} dB bei 20 kHz)")
+
+        # c) Filmwiderstand bei erzwungener Form (sehr steife Membran):
+        #    tan(Phase) ≈ −ω·R·C im Steifigkeitsbereich
+        def _Rratio52(p):
+            q = dict(p, membrane_resonance_hz=300e3)
+            q.pop("membrane_tension", None)
+            ff = np.array([1000.0])
+            ph = {}
+            for sm in ("2d", "3d"):
+                cc = MicrophoneCapsule(squeeze_model=sm, **q)
+                ph[sm] = np.angle(cc.transfer_function(ff)[0]
+                                  / cc.transfer_function([20.0])[0])
+            return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
+
+        a24_52 = dict(
+            architecture="single", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            air_gap=38.1e-6, backplate_diameter=23.9e-3,
+            backplate_thickness=3.125e-3, bias_voltage=1.0,
+            n_blind_holes=0, rear_network_enabled=True, delay_length=0.0,
+            cavity_length=8.0e-3, cavity_wall_thickness=1.5e-3,
+            n_cavity_holes=0, fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=28e-3, n_through_holes=24,
+            through_hole_diameter=0.99e-3)
+        rr_uni52 = _Rratio52(a24_52)
+        rr_bk52 = _Rratio52(bk52)
+        assert abs(rr_uni52 - 1.0) < 0.01, \
+            (f"gleichverteilte Löcher: Filmwiderstand 3D == 2D "
+             f"({rr_uni52:.3f})")
+        assert rr_bk52 < 0.7, \
+            (f"Lochkreis (B&K 4134): 2D überschätzt den Filmwiderstand "
+             f"(R_3D/R_2D = {rr_bk52:.2f})")
+        print(f"3D-Hochtonüberschuss aufgeklärt: gegen unabhängigen "
+              f"radialen Löser max {np.max(dev52):.3f} dB (Ring frei: "
+              f"{dev52o[0]:.3f} dB im Tiefton), Tiefton gegen geschlossene "
+              f"Form {100 * e_ex52:.2f} %; Formanpassung: 2D-Einmodenbild "
+              f"{gap52:+.2f} dB unter 3D bei 20 kHz; Filmwiderstand bei "
+              f"erzwungener Form 3D/2D = {rr_uni52:.3f} (gleichverteilt), "
+              f"{rr_bk52:.2f} (B&K-Lochkreis)  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

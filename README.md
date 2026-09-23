@@ -428,11 +428,18 @@ dieselbe Kette wie der 1D/2D-Pfad (vorn Z_rad + rayl_front/S_mem, hinten
 rayl_rear/S_mem + Z_rad). Verankert (Gegenprobe 27): der Grenzfall
 Z_außen → 0 reproduziert den Direktantrieb mit **erster Ordnung**
 (zehnfach kleineres Z ⇒ zehnfach kleinerer Abstand — beweist Vorzeichen
-und Struktur), Gewebe dämpft **monoton** (Passivität), die Dämpfung
-stimmt mit der 1D/2D-Kette überein (−6,07 vs. −6,03 dB bei 10⁵ Rayl und
-100 Hz; bei 1 kHz misst der Vergleich an diesem 12-Loch-Prüfling vor
-allem die Homogenisierung, s. Gegenprobe 51), und
-die Reziprozität X_r = −B_f bleibt erhalten.
+und Struktur), Gewebe dämpft **monoton** (Passivität), und die
+Reziprozität X_r = −B_f bleibt erhalten. Die Dämpfung der 1D/2D-Kette
+wird nur noch zum Vergleich ausgegeben (seit Gegenprobe 52: −4,9 gegen
+−6,0 dB bei 10⁵ Rayl und 100 Hz). Beim Druckgradientenempfänger ist die
+Gewebedämpfung im Tiefton die Differenz aus Gradientenantrieb und
+Gleichtakt-Druckabfall am Gewebe; beide sind vergleichbar groß, und die
+Differenz verstärkt jeden Unterschied der inneren Gleichtaktantwort.
+Die bestimmt an diesem Prüfling (12 gestufte Löcher, Zwischenspalt) der
+innere Widerstandspfad, den 2D und 3D verschieden rechnen (3D bei 10 Hz
+34 % größer, bei dichter einteiliger Platte 4 %). Die frühere
+Übereinstimmung auf 0,04 dB war Zufall: der unbelastete Membranring
+glich den Unterschied aus.
 
 ### Spaltmündung ohne Doppelzählung (Gegenprobe 28)
 
@@ -641,13 +648,14 @@ genau auf seinem Pull-in) lautet die Zeile „einmal gezählt" −5,8 /
 −1,2 / +0,2 / +0,3 / −0,5 dB; die Entscheidung bleibt dieselbe, und
 die frühere Unstimmigkeit bei 192 Bohrungen (+2,5 dB) ist verschwunden.
 
-*Nachtrag (Gegenprobe 51):* mit konturtreuen Mündungen liegt 3D bei
-4 kHz für 48 und 96 Bohrungen 1,8 bzw. 1,6 dB über 2D — auch bei 96
-Bohrungen, deren f_hom (9,9 kHz) weit darüber liegt. Das ist der
-lochbildunabhängige Hochtonüberschuss des 3D-Lösers oberhalb der
-Membranresonanz, nicht die Filmdämpfung. Verglichen wird deshalb bei
+*Nachtrag (Gegenproben 51, 52):* mit konturtreuen Mündungen und
+gekoppeltem Membranring liegt 3D bei 4 kHz für 48 und 96 Bohrungen
+1,0 bzw. 0,8 dB über 2D — auch bei 96 Bohrungen, deren f_hom (9,9 kHz)
+weit darüber liegt. Das ist die lochbildunabhängige Formanpassung der
+Membran oberhalb der Resonanz, die das 2D-Einmodenbild nicht kann
+(Gegenprobe 52), nicht die Filmdämpfung. Verglichen wird deshalb bei
 1 kHz (die stark erweichte 45-V-Kapsel hat ihre Resonanz unter 300 Hz):
-−2,4 / −0,7 / −0,04 dB bei 12 / 48 / 96 Bohrungen. Die Entscheidung
+−2,2 / −0,2 / +0,3 dB bei 12 / 48 / 96 Bohrungen. Die Entscheidung
 „einmal gezählt" bleibt.
 
 ### Externe Referenzen: FEM und Messung (Gegenproben 32, 38)
@@ -860,8 +868,9 @@ f_hom. Beispiele:
 | Standardkapsel (60 Durchgangs- + 30 Sacklöcher, 8 kHz) | 2,1 mm | 440 N/m | 58 kHz |
 
 Großmembran-Kapseln mit weicher Folie liegen damit fast immer im
-Warnbereich. Π = 10 ist bewusst der vorsichtige Rand (für steife
-Kapseln nicht belegt, s. Gegenprobe 51); bei der K67 liegen 2D und 3D
+Warnbereich. Π = 10 ist bewusst der vorsichtige Rand (bei üblichen
+Spalten für weiche und steife Kapseln belegt, beim weiten Spalt und bei
+Lochkreisen zu optimistisch, s. Gegenprobe 52); bei der K67 liegen 2D und 3D
 auf Achse bis zu 3,5 dB auseinander (−3,5 dB bei 8 kHz), tragen aber
 schon im Tiefton einen Versatz von ~1,2 dB, den f_hom nicht erklärt
 (Zwischenspalt-Geometrie, s. u.; vor den konturtreuen Mündungen
@@ -923,12 +932,15 @@ fielen auf, jeder physikalisch begründet behoben:
   gibt es das feine Gitter (Schalter, s. u.), seit Gegenprobe 51
   konturtreue Mündungen — das grobe Gitter liegt damit meist auf
   ~0,2 dB. Gegenprobe 48 rechnet ihre Trennprobe fein.
-* **B&K 4134 im 3D:** bei 13…20 kHz liegt der 3D-Löser 2,2…3,7 dB über
-  der Messung (mit konturtreuen Mündungen, grob wie fein), das 2D-Modell
-  höchstens 0,6 dB. Die im 3D fehlende Randumgehung ist es nicht (mit
-  a_bp = a_mem wird die Differenz eher größer — nach der Randkorrektur
-  aus Gegenprobe 50 nachgerechnet), das Gitter auch nicht. Derselbe
-  Hochtonüberschuss zeigt sich bei dichten Lochbildern (Gegenprobe 51).
+* **B&K 4134 im 3D:** bei 13…20 kHz liegt der 3D-Löser 2,2…3,8 dB über
+  der Messung (mit konturtreuen Mündungen und gekoppeltem Membranring,
+  grob wie fein), das 2D-Modell höchstens 0,6 dB. Aufgeklärt in
+  Gegenprobe 52: der 3D-Löser rechnet die Modellgleichungen richtig
+  (unabhängige Referenz auf 0,001 dB); das 2D-Modell überschätzt für
+  den Lochkreis der 4134 den Filmwiderstand 1,7-fach, was den Hochton
+  senkt. Dass es damit die Messung trifft, heißt: die reale Kapsel
+  dämpft stärker als der Reynolds-Film — oder die Aktuatormessung weicht
+  im Hochton vom Druckfrequenzgang ab. Das ist offen.
 
 ### 3D-Gitter grob/fein (Gegenprobe 50)
 
@@ -1034,29 +1046,84 @@ fein stimmen überein):
   Bohrungen erklären damit rund ein Viertel der Verstimmung; der Rest
   bleibt offen.
 * **Gewebe am 3D-Außenknoten (Gegenprobe 27):** der Vergleich mit der
-  1D/2D-Kette gilt bei 100 Hz auf 0,04 dB. Bei 1 kHz liegen beide 1,3 dB
-  auseinander — der Prüfling hat nur 12 Durchgangslöcher (f_hom 38 Hz),
-  dort misst der Vergleich die Homogenisierung.
+  1D/2D-Kette galt bei 100 Hz auf 0,04 dB. Seit Gegenprobe 52 zeigt
+  sich das als Zufall (−4,9 gegen −6,0 dB); er wird nur noch
+  ausgegeben, s. Gegenprobe 27.
 * **B&K 4134:** 3D liegt bei 20 kHz jetzt 3,7 dB über der Messung (vorher
   3,1 dB), grob wie fein. Der Hochtonüberschuss des 3D-Lösers ist damit
   kein Gitterfehler mehr, sondern ein Modellbefund — und er zeigt sich
   jetzt auch bei **dichten** Lochbildern: bei der steifen ½"-Kapsel liegt
   3D oberhalb der Membranresonanz 1–1,4 dB über 2D, gleich ob 24, 48
   oder 96 Löcher. Die Treppenkontur hatte das bisher im Mittelband
-  teilweise überdeckt.
+  teilweise überdeckt. (Aufgeklärt in Gegenprobe 52: bis auf den
+  unbelasteten Membranring kein Fehler des 3D-Lösers.)
 * **Homogenisierungsgrenze (Gegenprobe 48):** nachgeprüft über
   gleichverteilte Lochbilder, gemessen gegen das dichte Raster gleicher
-  Lochfläche (so fällt der gemeinsame 3D-Hochtonanteil heraus). Für die
-  weiche 1"-Kapsel (T ≈ 40 N/m, Spalt 20/38 µm) setzt die 1-dB-
-  Abweichung bei Π ≥ 14 ein — Π = 10 bleibt der vorsichtige Rand. Bei
-  der steifen ½"-Kapsel und beim weiten Spalt (65 µm) weichen 2D und 3D
-  schon bei Π ≈ 3…9 um 1 dB ab. Dort wirken Effekte, die Π nicht
-  erfasst (Streuung der Škvor-Zellregel bei sehr spärlichen Rastern,
-  der 3D-Hochtonüberschuss, ein von der Lochzahl abhängiger Anteil an
-  den Mündungen); **für steife Kapseln ist die Grenzfrequenz deshalb
-  nicht belegt** — offener Punkt. Die Warnung selbst kam in allen
-  gerechneten Fällen mit mehr als 1 dB Homogenisierungsanteil (f_hom lag
-  dort stets im Band); zu optimistisch ist nur die genannte Frequenz.
+  Lochfläche (so fällt die gemeinsame Formanpassung heraus), mit
+  konturtreuen Mündungen und gekoppeltem Membranring. Bei üblichen
+  Spalten (20…38 µm) setzt die 1-dB-Abweichung bei Π ≥ 15 ein, für die
+  weiche 1"-Kapsel (T ≈ 45 N/m) **und** die steife ½"-Kapsel
+  (T = 400 N/m) — Π = 10 ist dort der vorsichtige Rand. Die frühere
+  Streuung der steifen Kapsel (Π ≈ 3…9) war der unbelastete Membranring
+  (Gegenprobe 52). Nicht belegt bleibt die Grenzfrequenz beim **weiten
+  Spalt** (65 µm: Einsatz schon bei Π ≈ 1,6…10) und bei **Lochkreisen**
+  (teils ab Π ≈ 1,3…3,4) — dort ist sie zu optimistisch. Gewarnt wurde in
+  allen gerechneten Fällen mit mehr als 1 dB bis auf zwei: steife Kapsel,
+  65 µm, 12 bzw. 16 Löcher, 1,1/1,3 dB bei 17…18 kHz (f_hom 59/107 kHz).
+
+### Hochtonüberschuss des 3D-Lösers aufgeklärt (Gegenprobe 52)
+
+Oberhalb der Membranresonanz lag der 3D-Löser 1–2 dB über dem 2D-
+Modell, auch bei dichten Lochbildern, und an der B&K 4134 2–4 dB über
+der Messung. Zerlegt in drei Teile:
+
+**1. Ein Fehler des 3D-Lösers — behoben.** Der Membranring außerhalb
+der Backplate (a_bp < r < a_mem) war hinten **unbelastet**, als läge
+Vakuum hinter ihm. Er liegt aber über dem tiefen Ringraum zwischen
+Plattenrand und Einspannung, dessen Druck der Randdruck ist. Jetzt spürt
+er diesen Druck und speist seinen Volumenfluss dort ein — mit Randspalt
+über einen eigenen **Ringknoten** zwischen Filmrand und Schlitzleitung,
+sonst in die äußerste Filmzelle. Das ist dieselbe Physik wie die
+Randumgehung des 2D-Felds (Gegenprobe 37). Wirkung: bei geschlossenem
+Rand bis 2 dB (B&K-Geometrie ohne Randschlitz), bei der dichten
+1"-Kapsel 0,4 dB.
+
+**Belegt mit einem unabhängigen Löser:** axialsymmetrisch (B&K-4134-
+Geometrie nur mit Randschlitz), knotenzentrierte Differenzen statt
+Zell-FV, eigene Assemblierung von Membranfeld, Reynolds-Film,
+Ringknoten, Schlitzleitung, Rückkette und Frontknoten. 3D trifft ihn
+über 20 Hz…20 kHz auf **0,001 dB** (ohne Ringkopplung 0,08 dB daneben),
+die geschlossene Tieftonform V = f_in·C_m/(1 + C_m/C_b) auf 0,6 %.
+
+**2. Kein Fehler: die Formanpassung der Membran.** Wo die Filmkraft
+gegen die Membranspannung zählt, weicht die Membran dem Filmdruck aus.
+Beim Randschlitz ist der Druck in der Mitte am größten; die Membran
+arbeitet dann bevorzugt außen, bei 20 kHz bis zu einem Ringbuckel mit
+dem 2,25-Fachen der Mittenauslenkung. 3D und unabhängiger Löser zeigen
+das übereinstimmend. Das 2D-Modell hält die Grundmodenform fest und
+liegt bei 20 kHz 1,8 dB tiefer. Mehrere 2D-Moden helfen nicht, weil sie
+sich einen Spaltknoten teilen. Bei der dichten, weich gespannten 1"-
+Kapsel (96 Löcher) ist das der ganze verbleibende Unterschied (1,2–1,5 dB
+zwischen 5 und 16 kHz): bei erzwungener Grundmodenform, also sehr
+steifer Membran, ist der Filmwiderstand von 3D und 2D **identisch**
+(Verhältnis 1,000).
+
+**3. Kein Fehler: Löcher auf einem Lochkreis.** Bei erzwungener Form
+ist der Filmwiderstand der B&K 4134 im 3D nur das **0,57-Fache** des
+2D-Werts. Das 2D-Feld löst die radiale Zuströmung zum Lochring selbst
+auf und addiert zusätzlich die volle Škvor-Zelle, die diese Konvergenz
+nochmals enthält.
+
+**Offen:** Die B&K-Messung (Zuckerwar 1978, Aktuatorverfahren) folgt dem
+2D-Modell. Da der 3D-Löser die Modellgleichungen nachweislich richtig
+rechnet, dämpft entweder die reale Kapsel stärker als der Reynolds-Film
+(um etwa den Faktor 1,7 im Widerstand), oder der Aktuator-Frequenzgang
+weicht im Hochton vom Druckfrequenzgang ab. Diese Abweichung ist für
+die 4134 in der Literatur untersucht ("The accuracy of the electrostatic
+actuator method of determining the frequency response of condenser
+microphones", J. Sound Vib.); ihr Betrag ist hier nicht nachgeprüft.
+Das 2D-Modell bleibt Standard: es trifft die Messung, ist aber im
+Hochton aus zwei ausgleichenden Näherungen zusammengesetzt.
 
 ## Verlustmechanismen (vollständig erfasst)
 
