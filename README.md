@@ -95,8 +95,8 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   durch den Zwischenspalt — das Minimum wandert auf ~106°. Versetzte
   Hälften legen es auf 180°; wie TIEF es wird, hängt an der nicht
   dokumentierten Kernlage im Zwischenspalt (vollständig versetzt
-  −11 dB, teilweise fluchtend −29 dB wie im 2D-Modell, s. Gegenprobe
-  48; auf dem feinen Gitter −14,6 bzw. −28,5 dB, s. Gegenprobe 50). Die früher hier genannten −20 dB bei „3°" stammten aus einem
+  −16,5 dB, global 12° −28 dB wie im 2D-Modell; s. Gegenproben 48 und
+  51). Die früher hier genannten −20 dB bei „3°" stammten aus einem
   3D-Stand, in dem die Mündungen abgeschnitten und nicht äquipotential
   waren und die Kerne sich überlappten.
   Verifiziert über Reziprozität (±1 %), Gitterkonvergenz, die
@@ -429,7 +429,9 @@ rayl_rear/S_mem + Z_rad). Verankert (Gegenprobe 27): der Grenzfall
 Z_außen → 0 reproduziert den Direktantrieb mit **erster Ordnung**
 (zehnfach kleineres Z ⇒ zehnfach kleinerer Abstand — beweist Vorzeichen
 und Struktur), Gewebe dämpft **monoton** (Passivität), die Dämpfung
-stimmt mit der 1D/2D-Kette überein (−8,4 vs. −7,7 dB bei 10⁵ Rayl), und
+stimmt mit der 1D/2D-Kette überein (−6,07 vs. −6,03 dB bei 10⁵ Rayl und
+100 Hz; bei 1 kHz misst der Vergleich an diesem 12-Loch-Prüfling vor
+allem die Homogenisierung, s. Gegenprobe 51), und
 die Reziprozität X_r = −B_f bleibt erhalten.
 
 ### Spaltmündung ohne Doppelzählung (Gegenprobe 28)
@@ -639,6 +641,15 @@ genau auf seinem Pull-in) lautet die Zeile „einmal gezählt" −5,8 /
 −1,2 / +0,2 / +0,3 / −0,5 dB; die Entscheidung bleibt dieselbe, und
 die frühere Unstimmigkeit bei 192 Bohrungen (+2,5 dB) ist verschwunden.
 
+*Nachtrag (Gegenprobe 51):* mit konturtreuen Mündungen liegt 3D bei
+4 kHz für 48 und 96 Bohrungen 1,8 bzw. 1,6 dB über 2D — auch bei 96
+Bohrungen, deren f_hom (9,9 kHz) weit darüber liegt. Das ist der
+lochbildunabhängige Hochtonüberschuss des 3D-Lösers oberhalb der
+Membranresonanz, nicht die Filmdämpfung. Verglichen wird deshalb bei
+1 kHz (die stark erweichte 45-V-Kapsel hat ihre Resonanz unter 300 Hz):
+−2,4 / −0,7 / −0,04 dB bei 12 / 48 / 96 Bohrungen. Die Entscheidung
+„einmal gezählt" bleibt.
+
 ### Externe Referenzen: FEM und Messung (Gegenproben 32, 38)
 
 Zwei fremde, in sich vollständige Quellen verankern das Modell von
@@ -651,11 +662,12 @@ außen:
   (< 1 dB) und — die eigentliche Dämpfungsprobe — die
   Resonanzüberhöhung (+6,4 gegen +6,7 dB). Das **Dublett** der FEM im
   Kerbenband (3500/4200 Hz) kann der homogenisierende 2D-Pfad
-  prinzipiell nicht haben; der 3D-Löser zeigt es (3378/4127 Hz).
-  **Offen** bleibt die Resonanzlage: 2D und 3D liegen beide 13 % unter
-  der FEM (477/482 gegen 550 Hz). Früher stand hier, das sei die
-  Homogenisierungsgrenze — ein Fehler, den das diskret rechnende Modell
-  genauso macht, kann das nicht sein (korrigiert in Gegenprobe 48).
+  prinzipiell nicht haben; der 3D-Löser zeigt es (3421/4127 Hz).
+  **Offen** bleibt die Resonanzlage: 2D liegt 13 % unter der FEM
+  (477 gegen 550 Hz), der gitterkonvergente 3D-Löser mit konturtreuen
+  Mündungen 10 % (495 Hz). Die diskreten Bohrungen erklären also rund
+  ein Viertel der Verstimmung, der Rest ist keine Homogenisierung
+  (Gegenproben 48, 51).
 * **Messung (Gegenprobe 38):** Zuckerwar, JASA 64, 1278 (1978), B&K
   4134 und 4146 — Tabelle I vollständig, Tabelle II die Ersatzelemente,
   Fig. 6/7 Amplitude **und** Phase gegen Messwerte. M und C_M treffen
@@ -848,10 +860,12 @@ f_hom. Beispiele:
 | Standardkapsel (60 Durchgangs- + 30 Sacklöcher, 8 kHz) | 2,1 mm | 440 N/m | 58 kHz |
 
 Großmembran-Kapseln mit weicher Folie liegen damit fast immer im
-Warnbereich. Π = 10 ist bewusst der vorsichtige Rand; bei der K67
-liegen 2D und 3D auf Achse bis zu 4 dB auseinander (−4,0 dB bei
-8 kHz), tragen aber schon im Tiefton einen Versatz von ~2 dB, den
-f_hom nicht erklärt (Zwischenspalt-Geometrie, s. u.).
+Warnbereich. Π = 10 ist bewusst der vorsichtige Rand (für steife
+Kapseln nicht belegt, s. Gegenprobe 51); bei der K67 liegen 2D und 3D
+auf Achse bis zu 3,5 dB auseinander (−3,5 dB bei 8 kHz), tragen aber
+schon im Tiefton einen Versatz von ~1,2 dB, den f_hom nicht erklärt
+(Zwischenspalt-Geometrie, s. u.; vor den konturtreuen Mündungen
+−4,0 bzw. ~2 dB).
 
 **Geprüft und verworfen** (mit Beleg in der Gegenprobe): die
 Kompressibilität *in* der Škvor-Zelle (exakte Lösung mit modifizierten
@@ -869,7 +883,8 @@ fielen auf, jeder physikalisch begründet behoben:
    Zellen. Größere Mündungen wurden abgeschnitten (12 × ⌀1,4 mm auf
    3 mm Radius wirkten wie ⌀0,8 mm), das Ergebnis **wanderte** mit der
    Gitterfeinheit statt zu konvergieren. Jetzt exakter Abstand, Fenster
-   nach Lochgröße: konvergent (0,97 → 0,34 dB je Halbierung).
+   nach Lochgröße: konvergent (0,97 → 0,34 dB je Halbierung; mit
+   konturtreuen Mündungen, Gegenprobe 51, 0,12 → 0,00 dB).
 2. **Äquipotentiale Mündung:** über dem Lochquerschnitt gibt es keinen
    Film. Die Mündungszellen waren gewöhnliche Filmzellen mit
    gleichverteiltem Zufluss — ein Aufschlag von +1/8 auf Škvors B
@@ -895,24 +910,25 @@ fielen auf, jeder physikalisch begründet behoben:
   Hälften im 50-µm-Zwischenspalt zueinander liegen, ist nirgends
   dokumentiert — und genau das bestimmt die Tiefe der Auslöschung:
   vollständig versetzt (automatisch, jeder Kern über einer Sacksenkung
-  der Gegenseite, ~2 mm Querweg) −11 dB bei 180°/1 kHz; teilweise
-  fluchtend (global 9°) −29 dB wie im 2D-Modell (−28 dB), dessen
-  Škvor-Zelle einen Querweg von etwa einem Zellradius annimmt; fluchtend
-  (0°) wandert das Minimum auf 106°. Das ist eine Geometriefrage an der
-  realen Kapsel, kein Modellfehler — `half_rotation_deg` stellt sie ein.
-  (Werte auf dem groben Gitter; fein: versetzt −14,6 dB, 9° −28,5 dB —
-  der Befund bleibt, der Abstand schrumpft von 18 auf 14 dB.)
+  der Gegenseite, ~2 mm Querweg) −16,5 dB bei 180°/1 kHz; global
+  gedreht 6°/9°/12° −11/−22/−28 dB — 12° trifft das 2D-Modell (−28 dB),
+  dessen Škvor-Zelle einen Querweg von etwa einem Zellradius annimmt;
+  fluchtend (0°) wandert das Minimum auf ~106°. Das ist eine
+  Geometriefrage an der realen Kapsel, kein Modellfehler —
+  `half_rotation_deg` stellt sie ein. (Mit konturtreuen Mündungen,
+  Gegenprobe 51, grob und fein auf ~0,5 dB gleich; vorher versetzt
+  −11 dB, 9° −29 dB.)
 * **Standardgitter des 3D-Lösers:** das grobe Gitter löst kleine
-  Mündungen nur mit rund einer Zelle je Radius auf (48 × ⌀0,7 mm auf
-  1": rund 1 dB neben feineren Gittern). Seit Gegenprobe 50 gibt es
-  dafür das feine Gitter (Schalter, s. u.); Gegenprobe 48 rechnet ihre
-  Trennprobe damit.
-* **B&K 4134 im 3D:** bei 13…20 kHz liegt der 3D-Löser 1,9…3,1 dB über
-  der Messung, das 2D-Modell höchstens 0,6 dB. Die im 3D fehlende
-  Randumgehung ist es nicht (mit a_bp = a_mem wird die Differenz eher
-  größer — nach der Randkorrektur aus Gegenprobe 50 nachgerechnet),
-  und das Gitter auch nicht (fein weicht von grob um höchstens 0,2 dB
-  ab).
+  Mündungen nur mit rund einer Zelle je Radius auf. Seit Gegenprobe 50
+  gibt es das feine Gitter (Schalter, s. u.), seit Gegenprobe 51
+  konturtreue Mündungen — das grobe Gitter liegt damit meist auf
+  ~0,2 dB. Gegenprobe 48 rechnet ihre Trennprobe fein.
+* **B&K 4134 im 3D:** bei 13…20 kHz liegt der 3D-Löser 2,2…3,7 dB über
+  der Messung (mit konturtreuen Mündungen, grob wie fein), das 2D-Modell
+  höchstens 0,6 dB. Die im 3D fehlende Randumgehung ist es nicht (mit
+  a_bp = a_mem wird die Differenz eher größer — nach der Randkorrektur
+  aus Gegenprobe 50 nachgerechnet), das Gitter auch nicht. Derselbe
+  Hochtonüberschuss zeigt sich bei dichten Lochbildern (Gegenprobe 51).
 
 ### 3D-Gitter grob/fein (Gegenprobe 50)
 
@@ -922,9 +938,11 @@ im Abschnitt Spaltfilm-Modell (in der Klasse `grid_3d="fine"`) schaltet
 auf das **feine** Gitter um; er ist nur mit dem 3D-Modell aktiv, die
 Wahl wandert in die Projektdatei, und `summary()` nennt das Gitter.
 
-**Regel.** Der Gitterfehler kommt von der Treppenkontur der Mündungen:
-eine Zelle gehört zur Mündung, wenn ihre Mitte darin liegt. Wie stark
-das wirkt, hängt am Verhältnis Zellweite zu Mündungsradius — und
+**Regel.** Der Gitterfehler sitzt an den Mündungen: eine Zelle gehört
+zur Mündung, wenn ihre Mitte darin liegt. Seit Gegenprobe 51 rechnen
+die Randflächen mit dem wahren Abstand zur Kreiskontur (s. u.); eine
+Mündung, die kleiner als eine Zelle ist, bleibt aber unkorrigiert. Wie
+stark das wirkt, hängt am Verhältnis Zellweite zu Mündungsradius — und
 welche Richtung es bestimmt, an der Bauform (K67: radial, das 96er-
 Umfangsraster einteiliger Elektroden: azimutal). Das feine Gitter
 richtet sich deshalb nach der kleinsten Mündung, die ein Film sieht
@@ -934,28 +952,24 @@ radial und azimutal (dort am äußersten Lochmittenkreis), und in beiden
 Richtungen mindestens 1,5-mal feiner als grob. Obergrenze 50 000
 Zellen je Feld; greift sie (winzige Löcher), warnen Modell und GUI.
 
-**Wirkung** (1 kHz, Abweichung gegen das feinste gerechnete Gitter;
-Zeit je Frequenzpunkt auf einem Kern, allein gemessen):
+**Wirkung** (1 kHz, mit konturtreuen Mündungen, Abweichung gegen das
+feinste gerechnete Gitter; Zeit je Frequenzpunkt auf einem Kern, allein
+gemessen):
 
 | Kapsel | grob | fein | Referenz | Abw. grob | Abw. fein | Zeit grob → fein |
 |---|---|---|---|---|---|---|
-| 12 × ⌀1,4 mm auf 1" | 60 × 96 | 90 × 162 | 180 × 324 | 1,2 dB | 0,25 dB | 0,5 → 3 s |
-| 24 × ⌀0,46 mm auf ½" (1/4/12 kHz) | 60 × 96 | 90 × 254 | 135 × 380 | 0,9…1,7 dB | 0,1…0,2 dB | 0,4 → 5 s |
-| 48 × ⌀0,7 mm auf 1" | 60 × 192 | 90 × 376 | 135 × 564 | 1,4 dB | 0,4 dB | 2 → 11 s |
-| Debenham (einteilig), Pegel / 180° | 60 × 96 | 90 × 388 | 120 × 512 | 0,5 / 1,2 dB | < 0,06 dB | 0,8 → 20 s |
-| K67, Pegel / 180° | 60 × 240 | 90 × 480 | 135 × 480, 90 × 720 | 0,6 / 3,3…3,8 dB | 0,05 / 0,2…0,3 dB | 22 → 34 s |
+| 12 × ⌀1,4 mm auf 1" | 60 × 96 | 90 × 162 | 180 × 324 | 0,10 dB | 0,03 dB | 0,5 → 3 s |
+| 24 × ⌀0,46 mm auf ½" (1/4/12 kHz) | 60 × 96 | 90 × 254 | 135 × 380 | 0,09…0,23 dB | < 0,02 dB | 0,4 → 5 s |
+| 48 × ⌀0,7 mm auf 1" | 60 × 192 | 90 × 376 | 135 × 564 | 0,16 dB | 0,03 dB | 2 → 11 s |
+| Debenham (einteilig), Pegel / 180° | 60 × 96 | 90 × 388 | 120 × 512 | 0,45 / 1,0 dB | 0,04 / 0,1 dB | 0,8 → 20 s |
+| K67, Pegel / 180° (gegen fein) | 60 × 240 | 90 × 480 | — | 0,05 / 0,4 dB | — | 22 → 34 s |
 
-Speicher: fein bis etwa 3 GB (K67-Typ), grob etwa 1 GB. Für die K67
-heißt das: die 180°-Dämpfung des groben Gitters (−11 dB bei 1 kHz mit
-automatischer Verdrehung) ist nicht konvergiert — fein liegt sie bei
-−14,6 dB.
-
-Das feine Gitter drückt den Gitterfehler etwa auf ein Fünftel,
-beseitigt ihn aber nicht: die Treppenkontur konvergiert langsam und
-unregelmäßig (bei 12 × ⌀1,4 mm liegt 180 × 324 noch 0,15 dB neben
-135 × 244). Eine konturtreue Mündung (Flächenleitwerte am Rand mit dem
-wahren Abstand zur Kreiskontur, Shortley–Weller) würde die Konvergenz
-auf zweite Ordnung heben — noch nicht umgesetzt.
+Speicher: fein bis etwa 3 GB (K67-Typ), grob etwa 1 GB. Das grobe
+Gitter reicht damit meist auf ~0,2 dB; wo die Mündungen azimutal
+kleiner als eine Zelle sind (Debenham: 12 Löcher ⌀0,71 mm auf dem
+96er-Raster), braucht es das feine. Vor der Konturkorrektur lag grob
+bei 1–1,6 dB, die K67-Rückdämpfung bei 3–4 dB daneben, und selbst
+sehr feine Gitter wanderten noch um einige Zehntel dB.
 
 **Dabei behobene Gitterfehler:**
 
@@ -975,6 +989,74 @@ auf zweite Ordnung heben — noch nicht umgesetzt.
   zu weit außen).
 * **Randspalt mit Mittenpfosten:** der Randleitwert im 3D nimmt den
   Randradius (q0 + Nr)·dr wie das 2D-Feld (Wirkung < 0,01 dB).
+
+### Konturtreue Mündungen im 3D-Löser (Gegenprobe 51)
+
+Jede Lochmündung ist im 3D-Gitter die Menge der Zellen, deren Mitte in
+ihr liegt — eine Treppe, deren wirksamer Rand je nach Lage um einen
+Bruchteil der Zellweite neben der Kreiskontur liegt. Auf den
+Filmflächen zwischen einer Mündungs- und einer Filmzelle strömt die
+Luft aber nicht über den vollen Mittenabstand Δ durch Film, sondern nur
+über das Stück ℓ außerhalb der Kontur. Nach Shortley–Weller wird der
+Flächenleitwert dort mit **Δ/ℓ** skaliert; den Schnittpunkt liefert
+radial der Strahl, azimutal der Bogen durch die Zellmitten (zwei
+Mündungen beiderseits einer Fläche: ℓ = Steg dazwischen). Abseits der
+Mündungsränder bleibt der Faktor exakt 1; er ist auf 20 begrenzt, und
+der Mündungskurzschluss wird mit dem größten Faktor mitskaliert.
+
+**Exakte Referenz:** eine Äquipotentialscheibe exzentrisch in einer
+Kreisscheibe mit festem Randdruck. Der Leitwert ist in bipolaren
+Koordinaten geschlossen, G = 2πK / arcosh((a² + r² − e²)/(2ar)).
+Gerechnet mit den Fußabdrücken und Faktoren des Modells selbst:
+
+| Mündung | ohne Korrektur (60 × 96) | mit (60 × 96) | mit (120 × 192) |
+|---|---|---|---|
+| ⌀1,4 mm bei e = 6 mm | −6,0 % | −0,30 % | −0,06 % |
+| ⌀2,0 mm bei e = 3 mm | −3,2 % | −0,08 % | −0,02 % |
+
+Der Fehler viertelt sich jetzt mit halbierter Zellweite (zweite
+Ordnung), vorher fiel er linear und unregelmäßig. Akustisch (Gegenprobe
+50 b): das grobe Gitter liegt bei 12 × ⌀1,4 mm auf 1" 0,1 dB neben dem
+Referenzgitter, ohne Korrektur 1,6 dB. **Grenze:** eine Mündung, die
+kleiner als eine Zelle ist (die Mitte der einzigen Zelle liegt außerhalb
+der Kontur), bleibt unkorrigiert — dafür das feine Gitter.
+
+**Was sich dadurch verschoben hat** (jeweils gitterkonvergent, grob und
+fein stimmen überein):
+
+* **K67-Rückdämpfung** (1 kHz): automatische Verdrehung −16,5 dB statt
+  −11 dB; global 6°/9°/12° −11/−22/−28 dB. Das 2D-Modell (−28 dB)
+  entspricht jetzt der 12°-Lage (vorher 9°). Der Befund bleibt: die
+  Tiefe der Auslöschung hängt an der undokumentierten Kernlage.
+* **FEM-Referenz (Gegenprobe 32):** die 3D-Resonanz liegt bei 495 Hz
+  statt 482 Hz — 4 % über 2D (477 Hz), 10 % unter der FEM (550 Hz). Ohne
+  Korrektur wanderte sie mit dem Gitter (482…488 Hz). Die diskreten
+  Bohrungen erklären damit rund ein Viertel der Verstimmung; der Rest
+  bleibt offen.
+* **Gewebe am 3D-Außenknoten (Gegenprobe 27):** der Vergleich mit der
+  1D/2D-Kette gilt bei 100 Hz auf 0,04 dB. Bei 1 kHz liegen beide 1,3 dB
+  auseinander — der Prüfling hat nur 12 Durchgangslöcher (f_hom 38 Hz),
+  dort misst der Vergleich die Homogenisierung.
+* **B&K 4134:** 3D liegt bei 20 kHz jetzt 3,7 dB über der Messung (vorher
+  3,1 dB), grob wie fein. Der Hochtonüberschuss des 3D-Lösers ist damit
+  kein Gitterfehler mehr, sondern ein Modellbefund — und er zeigt sich
+  jetzt auch bei **dichten** Lochbildern: bei der steifen ½"-Kapsel liegt
+  3D oberhalb der Membranresonanz 1–1,4 dB über 2D, gleich ob 24, 48
+  oder 96 Löcher. Die Treppenkontur hatte das bisher im Mittelband
+  teilweise überdeckt.
+* **Homogenisierungsgrenze (Gegenprobe 48):** nachgeprüft über
+  gleichverteilte Lochbilder, gemessen gegen das dichte Raster gleicher
+  Lochfläche (so fällt der gemeinsame 3D-Hochtonanteil heraus). Für die
+  weiche 1"-Kapsel (T ≈ 40 N/m, Spalt 20/38 µm) setzt die 1-dB-
+  Abweichung bei Π ≥ 14 ein — Π = 10 bleibt der vorsichtige Rand. Bei
+  der steifen ½"-Kapsel und beim weiten Spalt (65 µm) weichen 2D und 3D
+  schon bei Π ≈ 3…9 um 1 dB ab. Dort wirken Effekte, die Π nicht
+  erfasst (Streuung der Škvor-Zellregel bei sehr spärlichen Rastern,
+  der 3D-Hochtonüberschuss, ein von der Lochzahl abhängiger Anteil an
+  den Mündungen); **für steife Kapseln ist die Grenzfrequenz deshalb
+  nicht belegt** — offener Punkt. Die Warnung selbst kam in allen
+  gerechneten Fällen mit mehr als 1 dB Homogenisierungsanteil (f_hom lag
+  dort stets im Band); zu optimistisch ist nur die genannte Frequenz.
 
 ## Verlustmechanismen (vollständig erfasst)
 
