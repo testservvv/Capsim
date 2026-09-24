@@ -98,8 +98,8 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   durch den Zwischenspalt — das Minimum wandert auf ~106°. Versetzte
   Hälften legen es auf 180°; wie TIEF es wird, hängt an der nicht
   dokumentierten Kernlage im Zwischenspalt (vollständig versetzt
-  −16,5 dB, global 12° −28 dB wie im 2D-Modell; s. Gegenproben 48 und
-  51). Die früher hier genannten −20 dB bei „3°" stammten aus einem
+  −17 dB, global 9°/12° −19/−37 dB, dazwischen eine Lage mit −28 dB wie
+  im 2D-Modell; s. Gegenproben 48, 51 und 54). Die früher hier genannten −20 dB bei „3°" stammten aus einem
   3D-Stand, in dem die Mündungen abgeschnitten und nicht äquipotential
   waren und die Kerne sich überlappten.
   Verifiziert über Reziprozität (±1 %), Gitterkonvergenz, die
@@ -433,8 +433,8 @@ Z_außen → 0 reproduziert den Direktantrieb mit **erster Ordnung**
 (zehnfach kleineres Z ⇒ zehnfach kleinerer Abstand — beweist Vorzeichen
 und Struktur), Gewebe dämpft **monoton** (Passivität), und die
 Reziprozität X_r = −B_f bleibt erhalten. Die Dämpfung der 1D/2D-Kette
-wird nur noch zum Vergleich ausgegeben (seit Gegenprobe 52: −4,9 gegen
-−6,0 dB bei 10⁵ Rayl und 100 Hz). Beim Druckgradientenempfänger ist die
+wird nur noch zum Vergleich ausgegeben (seit Gegenprobe 54: −5,3 gegen
+−6,0 dB bei 10⁵ Rayl und 100 Hz; nach Gegenprobe 52 −4,9 dB). Beim Druckgradientenempfänger ist die
 Gewebedämpfung im Tiefton die Differenz aus Gradientenantrieb und
 Gleichtakt-Druckabfall am Gewebe; beide sind vergleichbar groß, und die
 Differenz verstärkt jeden Unterschied der inneren Gleichtaktantwort.
@@ -661,6 +661,16 @@ Membran oberhalb der Resonanz, die das 2D-Einmodenbild nicht kann
 −2,2 / −0,2 / +0,3 dB bei 12 / 48 / 96 Bohrungen. Die Entscheidung
 „einmal gezählt" bleibt.
 
+*Nachtrag (Gegenprobe 54):* mit der Θ-konsistenten 3D-Wandlung
+verschwindet der Tieftonversatz (20 Hz: +0,02 / −0,02 dB bei 48 / 96
+Bohrungen). Bei 4 kHz liegt 3D nur noch 0,5 bzw. 0,3 dB über 2D, bei
+1 kHz sind es −1,8 / +0,3 / +0,8 dB bei 12 / 48 / 96 Bohrungen. Die
+Kapsel läuft bei 45 V mit 24 % Durchbiegung; die Spannung gewichtet die
+Membranmitte (1/g²), wo der Film am steifsten ist und die Mitte
+zurückbleibt. Für 12 Bohrungen prüft die Gegenprobe jetzt die
+1-dB-Toleranz der Homogenisierungswarnung (f_hom 133 Hz) statt einer
+frei gewählten 2-dB-Grenze.
+
 ### Externe Referenzen: FEM und Messung (Gegenproben 32, 38)
 
 Zwei fremde, in sich vollständige Quellen verankern das Modell von
@@ -777,6 +787,13 @@ Das reine Membranfeld trifft die geschlossene Ring-Nachgiebigkeit
 gitterkonvergent, 3D und 2D passen mit Pfosten so gut zusammen wie
 ohne.
 
+*Nachtrag (Gegenprobe 54):* die Spannung einer Ringmembran lag in 1D/2D
+um den Faktor 2·m₁ zu hoch — der Wandlerkoeffizient rechnete auch mit
+Pfosten mit der Parabel (mittlere Auslenkung 1/2), die Ringform hat
+m₁ = 0,62…0,63 (1–3 mm Pfosten auf 25 mm): +1,9…2,0 dB. Der frühere
+3D-Pfad nutzte denselben Koeffizienten und verdeckte den Fehler; die
+Mechanik (Nachgiebigkeit, Moden, Pull-in) war davon nicht betroffen.
+
 ### Laufzeit und Rauschintegral (Gegenprobe 46)
 
 Die K67 mit BEM-Kopf und -Körper lief 24 Minuten, davon 19 still bei
@@ -877,14 +894,14 @@ f_ring und die kleinere f_limit. Beispiele:
 |---|---|---|---|---|---|
 | K67 (60 Durchgangs-Senkungen) | 3,2 mm | 13 N/m | 4,7 kHz | 1,0 kHz | — |
 | Debenham (12 Bohrungen auf Lochkreisen) | 6,0 mm | 40 N/m | 4,4 kHz | 43 Hz | ≤ 20 Hz |
-| B&K 4134 (6 Bohrungen auf einem Kreis + Randspalt) | 2,0 mm | 3300 N/m | 51 kHz | 34 kHz | 6,0 kHz |
+| B&K 4134 (6 Bohrungen auf einem Kreis + Randspalt) | 2,0 mm | 3160 N/m | 50 kHz | 33 kHz | 6,0 kHz |
 | Standardkapsel (60 Durchgangs- + 30 Sacklöcher, 8 kHz) | 2,1 mm | 440 N/m | 42 kHz | 23 kHz | — |
 
 Vorher (rein viskos, ohne Lochkreis-Grenze) lagen K67, B&K und
 Standardkapsel bei 1,1 / 73 / 58 kHz. Die B&K 4134 bekommt damit eine
-Warnung ab 6 kHz — vorsichtig: gegenüber dem Tiefton (dort liegen 2D
-und 3D statisch 1,4 dB auseinander) ändert sich die Abweichung bis
-6 kHz um 0,3 dB, bis 10 kHz um 0,9 dB und bis 20 kHz um 3,3 dB.
+Warnung ab 6 kHz — vorsichtig: 2D und 3D liegen dort 0,3 dB
+auseinander, bei 10 kHz 0,9 dB und bei 20 kHz 3,0 dB (im Tiefton
+gleich, s. Gegenprobe 54).
 
 Großmembran-Kapseln mit weicher Folie liegen damit fast immer im
 Warnbereich. Π = 10 ist bewusst der vorsichtige Rand; bei der K67
@@ -936,22 +953,26 @@ fielen auf, jeder physikalisch begründet behoben:
   Hälften im 50-µm-Zwischenspalt zueinander liegen, ist nirgends
   dokumentiert — und genau das bestimmt die Tiefe der Auslöschung:
   vollständig versetzt (automatisch, jeder Kern über einer Sacksenkung
-  der Gegenseite, ~2 mm Querweg) −16,5 dB bei 180°/1 kHz; global
-  gedreht 6°/9°/12° −11/−22/−28 dB — 12° trifft das 2D-Modell (−28 dB),
-  dessen Škvor-Zelle einen Querweg von etwa einem Zellradius annimmt;
+  der Gegenseite, ~2 mm Querweg) −17 dB bei 180°/1 kHz; global
+  gedreht 6°/9°/12°/15°/18° −10/−19/−37/−31/−14 dB — zwischen 9° und
+  12° liegt eine Lage, die das 2D-Modell (−28 dB) trifft, dessen
+  Škvor-Zelle einen Querweg von etwa einem Zellradius annimmt;
   fluchtend (0°) wandert das Minimum auf ~106°. Das ist eine
   Geometriefrage an der realen Kapsel, kein Modellfehler —
   `half_rotation_deg` stellt sie ein. (Mit konturtreuen Mündungen,
-  Gegenprobe 51, grob und fein auf ~0,5 dB gleich; vorher versetzt
-  −11 dB, 9° −29 dB.)
+  Gegenprobe 51, grob und fein auf ~0,5 dB gleich, und Θ-konsistenter
+  Wandlung, Gegenprobe 54; vorher traf 12° mit −29 dB, vor der
+  Konturkorrektur versetzt −11 dB, 9° −29 dB.)
 * **Standardgitter des 3D-Lösers:** das grobe Gitter löst kleine
   Mündungen nur mit rund einer Zelle je Radius auf. Seit Gegenprobe 50
   gibt es das feine Gitter (Schalter, s. u.), seit Gegenprobe 51
   konturtreue Mündungen — das grobe Gitter liegt damit meist auf
   ~0,2 dB. Gegenprobe 48 rechnet ihre Trennprobe fein.
-* **B&K 4134 im 3D:** bei 13…20 kHz liegt der 3D-Löser 2,2…3,8 dB über
-  der Messung (mit konturtreuen Mündungen und gekoppeltem Membranring,
-  grob wie fein), das 2D-Modell höchstens 0,6 dB. Aufgeklärt in
+* **B&K 4134 im 3D:** bei 13…20 kHz liegt der 3D-Löser 2,2…3,5 dB über
+  der Messung (mit konturtreuen Mündungen, gekoppeltem Membranring und
+  physikalischer Membranspannung, grob wie fein; mit der aus der
+  Kettenresonanz zurückgerechneten Spannung 2,2…3,8 dB), das 2D-Modell
+  höchstens 0,6 dB. Aufgeklärt in
   Gegenprobe 52: der 3D-Löser rechnet die Modellgleichungen richtig
   (unabhängige Referenz auf 0,001 dB); das 2D-Modell überschätzt für
   den Lochkreis der 4134 den Filmwiderstand 1,7-fach, was den Hochton
@@ -1056,8 +1077,9 @@ fein stimmen überein):
 
 * **K67-Rückdämpfung** (1 kHz): automatische Verdrehung −16,5 dB statt
   −11 dB; global 6°/9°/12° −11/−22/−28 dB. Das 2D-Modell (−28 dB)
-  entspricht jetzt der 12°-Lage (vorher 9°). Der Befund bleibt: die
-  Tiefe der Auslöschung hängt an der undokumentierten Kernlage.
+  entspricht jetzt der 12°-Lage (vorher 9°; seit Gegenprobe 54 einer
+  Lage zwischen 9° und 12°). Der Befund bleibt: die Tiefe der
+  Auslöschung hängt an der undokumentierten Kernlage.
 * **FEM-Referenz (Gegenprobe 32):** die 3D-Resonanz liegt bei 495 Hz
   statt 482 Hz — 4 % über 2D (477 Hz), 10 % unter der FEM (550 Hz). Ohne
   Korrektur wanderte sie mit dem Gitter (482…488 Hz). Die diskreten
@@ -1065,7 +1087,7 @@ fein stimmen überein):
   bleibt offen.
 * **Gewebe am 3D-Außenknoten (Gegenprobe 27):** der Vergleich mit der
   1D/2D-Kette galt bei 100 Hz auf 0,04 dB. Seit Gegenprobe 52 zeigt
-  sich das als Zufall (−4,9 gegen −6,0 dB); er wird nur noch
+  sich das als Zufall (heute −5,3 gegen −6,0 dB); er wird nur noch
   ausgegeben, s. Gegenprobe 27.
 * **B&K 4134:** 3D liegt bei 20 kHz jetzt 3,7 dB über der Messung (vorher
   3,1 dB), grob wie fein. Der Hochtonüberschuss des 3D-Lösers ist damit
@@ -1147,7 +1169,7 @@ Plattengeometrie liegt nicht vor; selbst mit großzügigen 10 mm
 wirksamer Luftsäule hebt diese Last die 4134 bei 13–20 kHz nur um
 höchstens 0,6 dB an (3D; 2D höchstens 0,3 dB). Die Aktuator-Antwort
 läge damit sogar leicht **über** der Druckantwort. Das ist zu klein und
-hat das falsche Vorzeichen, um die 2,2–3,8 dB zu erklären, um die 3D
+hat das falsche Vorzeichen, um die 2,2–3,5 dB zu erklären, um die 3D
 über der Messung liegt (Gegenprobe 52 d). Es bleibt die stärkere
 Dämpfung der realen Kapsel; ihre Ursache ist offen.
 
@@ -1158,16 +1180,18 @@ Hochton aus zwei ausgleichenden Näherungen zusammengesetzt.
 
 Die Homogenisierungsgrenze war beim weiten Spalt (65 µm) und bei
 Lochkreisen zu optimistisch; zwei Fälle mit mehr als 1 dB blieben ganz
-ohne Warnung. Neu vermessen gegen den 3D-Löser: 202 Fälle, zwei Kapseln
-(1" mit T ≈ 45 N/m, ½" mit 109 N/m), Spalte 20/25/38/65 µm,
-gleichverteilte Löcher sowie ein und zwei Lochkreise. Drei Befunde:
+ohne Warnung. Neu vermessen gegen den 3D-Löser: 114 Fälle (42
+gleichverteilt, 72 auf ein oder zwei Lochkreisen), zwei Kapseln (1" mit
+T ≈ 45 N/m, ½" mit 109 N/m), Spalte 20/25/38/65 µm. Nach der
+Korrektur der 3D-Wandlung (Gegenprobe 54) ist alles neu gerechnet; die
+Befunde bleiben. Drei Befunde:
 
 **1. Das Messmaß war schief.** Verglichen wurde die vorzeichenrichtige
 Differenz zum dichten Raster gleicher Lochfläche. Beim weiten Spalt hat
 das dichte Raster aber eine scharfe Resonanz, und dort liegen 2D und 3D
 selbst ±1,5 dB auseinander. Diese Abweichung landete im Befund: bei der
 1"-Kapsel mit 16 Löchern und 1,2 kHz weicht das spärliche Lochbild
-selbst nur um 0,2 dB ab, das dichte um 1,4 dB. Gemessen wird jetzt die
+selbst nur um 0,1 dB ab, das dichte um 1,3 dB. Gemessen wird jetzt die
 **Mehrabweichung** |2D/3D| − |2D/3D dicht|, also was das Ausdünnen
 verschlechtert.
 
@@ -1177,7 +1201,8 @@ und die Membranfläche zwischen den Löchern hat eine eigene Resonanz
 f_ρ = f_res·a_mem/ρ, bei der ihre Steifigkeit verschwindet. Mit der
 vollen Filmleitfähigkeit K(ω) und der dynamischen Steifigkeit der Beule
 liegt die Grenze der ½"-Kapsel mit 65 µm und 16 Löchern bei 17,6 statt
-107 kHz; 3D weicht ab 18,5 kHz um mehr als 1 dB ab. Die Schwelle Π = 10
+107 kHz; 2D weicht dort ab etwa 19 kHz um mehr als 1 dB von 3D ab. Die
+Schwelle Π = 10
 bleibt, im Tiefton ändert sich nichts. Alle 42 gleichverteilten Fälle
 werden jetzt vor dem 1-dB-Einsatz gewarnt.
 
@@ -1194,24 +1219,99 @@ plus Konvergenzwiderstand ln(s/(2π·r))/(2πK) je Loch) trifft 3D nicht
 besser. Die Warnung prüft deshalb die **Selbstkonsistenz**: sie gilt ab
 der Frequenz, bei der Band und Liniensenke um mehr als 0,5 dB
 auseinanderliegen (halbe Toleranz, weil die 3D-Abweichung bis zum
-Doppelten dieser Spanne erreichte). Damit kam die Warnung in allen 64
+Doppelten dieser Spanne erreichte). Damit kam die Warnung in allen 72
 Lochkreis-Fällen vor dem 1-dB-Einsatz; im knappsten Fall (½"-Kapsel,
 65 µm, 48 Löcher auf einem Kreis) beträgt die Mehrabweichung an der
 Warnfrequenz 2,20 kHz 0,91 dB. Die Prüfung ist vorsichtig: bei zwei
-Lochkreisen warnt sie bis zu 38-fach zu früh.
+Lochkreisen warnt sie bis zu 40-fach zu früh.
 
 Die Gegenprobe hält die tragenden Stichproben fest: das Messmaß
-(+0,22 dB spärlich gegen +1,40 dB dicht), die weite Spalte (Grenze
-17,6 kHz, Mehrabweichung dort 0,89 dB, bei 20 kHz 1,29 dB), den
+(+0,10 dB spärlich gegen +1,29 dB dicht), die weite Spalte (Grenze
+17,6 kHz, eigene Abweichung dort 0,68 dB, bei 20 kHz 1,13 dB), den
 Lochkreis mit 48 Löchern (Grenze 137 Hz statt 390 Hz, Mehrabweichung
-0,68 gegen 2,19 dB, Filmwiderstand 3D/2D 0,988) und die Spanne der
-Darstellungen (7,3 dB). Die Prüfung kostet beim Aufbau einer Kapsel mit
-Lochkreisen höchstens 0,12 s.
+0,69 gegen 2,23 dB, Filmwiderstand 3D/2D 0,988) und die Spanne der
+Darstellungen (7,3 dB). Bei der weiten Spalte prüft sie die eigene
+Abweichung: das dichte Raster kreuzt dort die Null, die Mehrabweichung
+bleibt bei 20 kHz mit 0,96 dB knapp unter 1 dB. Die Prüfung kostet
+beim Aufbau einer Kapsel mit Lochkreisen höchstens 0,12 s.
 
 **Offen:** Die physikalische Verbesserung wäre eine Lochkreis-
 Darstellung im 2D-Feld, die die Formanpassung an das radiale Druckfeld
 mitnimmt. Das würde validierte Ergebnisse (B&K 4134, Debenham) ändern
 und ist deshalb nicht Teil dieser Änderung.
+
+### Statischer Versatz 2D/3D aufgeklärt (Gegenprobe 54)
+
+An der B&K 4134 lagen 2D und 3D schon im Tiefton 1,38 dB auseinander,
+über alle Frequenzen gleich. Das waren zwei Fehler im 3D-Pfad, keine
+Physik der Kapsel:
+
+**1. Spannungsbildung (1,08 dB).** Die Kette rechnet e = Θ·V. V ist die
+Volumenverschiebung ihrer Grundmode über der **ganzen** Membran; das
+Elektrodenintegral (Spaltprofil, Porosität, Elektrodenrand) steckt in Θ.
+Der 3D-Löser setzte stattdessen die Volumenverschiebung **über der
+Elektrode** ein. Bei kleinerer Elektrode (a_bp < a_mem) war er damit um
+den Faktor u·(2 − u), u = (a_bp/a_mem)², zu leise: an der B&K
+(a_bp/a_mem = 0,81) genau 1,08 dB, bei der Standardkapsel 0,27 dB. Jetzt
+wandelt der 3D-Löser sein eigenes Auslenkungsfeld mit demselben
+Elektrodenintegral wie Θ in Spannung; für die Grundmodenform ist das
+exakt die Kette.
+
+**2. Membranspannung (0,31 dB).** Bei vorgegebener Vorspannung (B&K:
+3162 N/m) rechnete der 3D-Löser die Spannung aus der Resonanz der Kette
+zurück. Die liegt mit dem Kolbenfaktor 4/3 der statischen Form 1,9 % zu
+hoch (23,4 statt 23,0 kHz), die Spannung damit 3,75 %. Jetzt nimmt der
+3D-Löser die physikalische Spannung, über die exakte Modalfrequenz
+(Vorspannung plus Biegeanteil der Folie).
+
+Ergebnis an der B&K: **−0,003 dB** im Tiefton. Im Vergleich mit der
+Messung (auf 250 Hz normiert) fällt der konstante Faktor heraus; die
+etwas tiefere Resonanz senkt die Abweichung bei 13/16/20 kHz auf
+2,2/2,6/3,5 dB (vorher 2,2/2,7/3,8 dB).
+
+**Rest bei vorgegebener Resonanz.** Ist statt der Vorspannung die
+Resonanz vorgegeben, bleibt ein kleiner Versatz (½"-Kapsel 0,12 dB,
+Standardkapsel 0,19 dB). Das ist keine 3D-Frage, sondern die
+Ein-Moden-Kalibrierung der Kette: sie trifft f_res mit dem Kolbenfaktor
+4/3 und ist dadurch statisch 3,75 % zu nachgiebig (höchstens 0,32 dB,
+durch die Steifigkeit des Rückvolumens weniger). Dieselbe Kapsel über
+ihre Vorspannung vorgegeben: 2D und 3D gleich auf 0,001 dB. Behoben
+wäre das mit dem Massenfaktor 8/j₀₁² = 1,383 statt 4/3 (statisch und in
+der Resonanz exakt). Das verschöbe aber alle 2D-Ergebnisse mit
+vorgegebener Resonanz um bis zu −0,3 dB, auch validierte wie die
+K67-Empfindlichkeit, und ist deshalb nicht Teil dieser Änderung.
+
+**3. Dabei aufgedeckt: Θ der Ringmembran (2D, +1,9…2,0 dB).** Die
+Kette rechnete auch mit Mittelpfosten dw = 2V/S, also mit der
+mittleren Auslenkung der Parabel (1/2). Die Ringform hat m₁ = 0,62…0,63
+(1–3 mm Pfosten auf 25 mm); die 2D-Spannung lag um 2·m₁ zu hoch. Jetzt
+dw = V/S_eff mit der schon vorhandenen wirksamen Fläche S_eff = S·m₁.
+Der alte 3D-Pfad nutzte denselben Koeffizienten und verdeckte den
+Fehler. Probe: bei 1 V und 20 Hz ändert ein 3-mm-Pfosten das Verhältnis
+3D/2D nicht (0,997 → 0,998); mit dem alten Koeffizienten wären es 0,80.
+
+**Folgen für andere Gegenproben.** Wo die Membran bei hoher Vorspannung
+stark durchgebogen ist, gewichtet die physikalisch richtige Wandlung die
+Mitte (∝ 1/g²). Die Formanpassung wird dort sichtbar, die die reine
+Volumenverschiebung verdeckte. Drei Prüfungen sind deshalb ehrlich
+umformuliert, keine Schwelle ist angepasst:
+- **K67 (Gegenprobe 22):** Die 2D-Auslöschung von −28 dB liegt jetzt
+  zwischen den Kernlagen 9° und 12° statt genau bei 12°.
+- **K103 (Gegenprobe 23):** Die Struktur wird an der Volumenverschiebung
+  geprüft. Bei 1 kHz liegt die 3D-Spannung wegen 26 % Durchbiegung 9 %
+  unter der Kette.
+- **Ringmembran-Prüfling (Gegenprobe 45):** 60 V, 32 % Durchbiegung,
+  weit über f_hom. Die Mechanik wird an der Volumenverschiebung geprüft,
+  die Spannung ausgegeben.
+
+Außerdem gilt in Gegenprobe 31 für 12 Bohrungen die 1-dB-Toleranz der
+Warnung statt einer frei gewählten 2-dB-Grenze.
+
+Die Gegenprobe prüft das Ausgangsgewicht an der Grundmode (Einzel- und
+Doppel-Backplate, mit Arbeitspunkt, Ringmembran), die Zerlegung an der
+B&K (1,38 = 1,08 aus u·(2 − u) + 0,31 → −0,003 dB), die ½"-Kapsel einmal
+über die Resonanz, einmal über die Vorspannung vorgegeben, und Θ der
+Ringmembran gegen das 3D-Feld.
 
 ## Verlustmechanismen (vollständig erfasst)
 
