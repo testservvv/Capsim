@@ -469,25 +469,46 @@ class MicrophoneCapsule:
     # Vergleich.
     _ANNULUS_COUPLED = True
 
-    # Homogenisierungsgrenze der 1D/2D-Modelle (Gegenprobe 48): kritische
-    # lokale Kennzahl Π = ω·12μ·ρ⁴/(h³·T·j01²) über dem größten lochfreien
-    # Bereich. Gegen den 3D-Löser setzt die 1-dB-Abweichung bei Π = 10…42
-    # ein (zwei Kapseln, drei Spalthöhen) — hier der VORSICHTIGE Rand.
-    # NACHGEPRÜFT mit konturtreuen Mündungen (Gegenprobe 51) und
-    # gekoppeltem Membranring (Gegenprobe 52), gleichverteilte Lochbilder,
-    # gemessen gegen das dichte Raster gleicher Lochfläche: bei üblichen
-    # Spalten (20…38 µm) Einsatz bei Π ≥ 15 für die weiche 1"-Kapsel
-    # (T ≈ 45 N/m) UND die steife ½"-Kapsel (T = 400 N/m) — bestätigt
-    # (die frühere Streuung der steifen Kapsel, Π ≈ 3…9, war der
-    # unbelastete Membranring). Beim weiten Spalt (65 µm) setzt sie schon
-    # bei Π ≈ 1,6…10 ein, bei Lochkreisen (auch bei üblichen Spalten)
-    # teils bei Π ≈ 1,3…3,4: dort ist die Grenzfrequenz zu optimistisch.
-    # Gewarnt wurde in allen gerechneten Fällen mit > 1 dB bis auf zwei
-    # (steife Kapsel, 65 µm, 12/16 Löcher: 1,1/1,3 dB bei 17…18 kHz,
-    # f_hom 59/107 kHz). Oberhalb von _F_BAND_TOP interessiert die Grenze
-    # nicht mehr.
+    # Homogenisierungsgrenze der 1D/2D-Modelle (Gegenproben 48/53):
+    # kritische lokale Kennzahl über dem größten lochfreien Bereich
+    # (Radius ρ), das Verhältnis der Filmkraft zur Membransteifigkeit auf
+    # dieser Skala. Im Tiefton Π = ω·12μ·ρ⁴/(h³·T·j01²); allgemein mit der
+    # VOLLEN Filmleitfähigkeit K(ω) (Reibung + Trägheit der Spaltluft) und
+    # der dynamischen Steifigkeit der Beule (Membranmasse, Beulresonanz
+    # f_ρ = f_res·a_mem/ρ), s. homogenization_limit. Gegen den 3D-Löser
+    # (konturtreue Mündungen, gekoppelter Membranring) setzt die 1-dB-
+    # Mehrabweichung bei gleichverteilten Lochbildern oberhalb von Π = 10
+    # ein — zwei Kapseln (T ≈ 45 und 109 N/m), Spalte 20/25/38/65 µm, 42
+    # Fälle; knappster Fall steife Kapsel, 65 µm, 16 Löcher: Warnung ab
+    # 17,7 kHz, Einsatz 18,5 kHz. Π = 10 ist der VORSICHTIGE Rand.
+    # Gemessen als Mehrabweichung gegen das dichte
+    # Raster gleicher Lochfläche, |2D/3D| − |2D/3D dicht|: die frühere
+    # vorzeichenrichtige Differenz schob beim weiten Spalt die eigene
+    # Resonanzabweichung des dichten Rasters (±1,5 dB) in den Befund.
+    # Die frühere Streuung der steifen Kapsel (Π ≈ 3…9) war der unbelastete
+    # Membranring (Gegenprobe 52), die Lücke beim weiten Spalt (65 µm:
+    # bis 107 kHz statt 18 kHz) die fehlende Filmträgheit und Beulresonanz.
+    # Oberhalb von _F_BAND_TOP interessiert die Grenze nicht mehr.
     _PI_HOM = 10.0
     _F_BAND_TOP = 20.0e3
+
+    # Lochkreis-Darstellung (Gegenprobe 53): das Radialfeld verschmiert
+    # jeden Lochkreis zu einem Gaußband der Breite _RING_BAND·a_bp — eine
+    # Darstellungswahl ohne eindeutigen physikalischen Wert. Bei Kreisen
+    # mit vielen Löchern (Liniensenke) hängt das Ergebnis davon um mehrere
+    # dB ab, und dort weicht es auch vom 3D-Löser ab (Filmwiderstand bei
+    # erzwungener Form dagegen auf 3 % gleich: Formanpassung an das radial
+    # stark gegliederte Druckfeld). Gewarnt wird, wo das Ergebnis mit dem
+    # schmalsten darstellbaren Band (Liniensenke, 1,5 Zellen) um mehr als
+    # _RING_REPR_DB abweicht — die halbe 1-dB-Toleranz, weil die Wahrheit
+    # nicht zwischen beiden Darstellungen liegen muss (3D-Abweichung bis
+    # zum Doppelten der Spanne). Damit kam die Warnung in allen 64
+    # Lochkreis-Fällen der Sweeps vor dem 1-dB-Einsatz; knappster Fall
+    # steife Kapsel, 65 µm, 48 Löcher auf einem Kreis: Warnung ab 2,20 kHz,
+    # Mehrabweichung dort 0,91 dB (direkt nachgerechnet). Die Prüfung ist
+    # vorsichtig — bei zwei Lochkreisen warnt sie bis zu 38-fach zu früh.
+    _RING_BAND = 0.10
+    _RING_REPR_DB = 0.5
 
     # Nullstellen von J0 — die axialsymmetrischen (0,m)-Membranmoden.
     # Konstanten, deshalb ohne SciPy hinterlegt.
@@ -1146,10 +1167,13 @@ class MicrophoneCapsule:
         # Lochkreis: gleichmäßig über die Elektrode) und mit seinem Anteil
         # an der Gesamt-Lochzahl gewichtet — ein einzelner Ring reproduziert
         # exakt das bisherige Ein-PCD-Verhalten.
-        def _hole_density(rings, n_total):
+        def _hole_density(rings, n_total, line=False):
             if n_total <= 0:
                 return np.ones(N) / float(np.sum(self._fld_area))
-            width = max(0.10 * self.a_bp, 1.5 * dr)
+            # line: schmalstes darstellbares Band (Liniensenke) — nur für
+            # die Prüfung der Lochkreis-Darstellung (Gegenprobe 53)
+            width = (1.5 * dr if line
+                     else max(self._RING_BAND * self.a_bp, 1.5 * dr))
             dens = np.zeros(N)
             for cnt, r_pcd in rings:
                 if cnt <= 0:
@@ -1160,6 +1184,8 @@ class MicrophoneCapsule:
             return dens / n_total
 
         self._fld_dens_th = _hole_density(self._th_rings, self.n_th)
+        self._fld_dens_th_line = _hole_density(self._th_rings, self.n_th,
+                                               line=True)
         self._fld_dens_bh = _hole_density(self._bh_rings, self.n_bh)
 
         # CLEARANCE-RING auf dem Feldgitter (s. __init__): Relief-Karte
@@ -1789,11 +1815,24 @@ class MicrophoneCapsule:
         if self.squeeze_model == "3d":
             self._build_3d_geometry()
         elif self.n_th > 0 or self.ring_vent_w > 0.0:
-            # HOMOGENISIERUNGSGRENZE (Gegenprobe 48): 1D/2D verschmieren
+            # HOMOGENISIERUNGSGRENZE (Gegenproben 48/53): 1D/2D verschmieren
             # die Löcher. Liegt die Grenze im Hörband, wird gerechnet,
             # aber gewarnt — der 3D-Löser löst den Fall auf.
             lim = self.homogenization_limit()
-            if lim["f_hom"] < self._F_BAND_TOP:
+            if lim["f_limit"] < self._F_BAND_TOP and lim["cause"] == "ring":
+                warnings.warn(
+                    f"squeeze_model='{self.squeeze_model}': die Lochkreis-"
+                    f"Darstellung ist oberhalb von etwa "
+                    f"{lim['f_ring'] / 1e3:.2f} kHz nicht belastbar. Das "
+                    f"Radialfeld verschmiert jeden Lochkreis zu einem Band; "
+                    f"ab dort hängt das Ergebnis um mehr als "
+                    f"{self._RING_REPR_DB:.1f} dB von dieser Darstellungs"
+                    f"wahl ab (Liniensenke statt Band), und gegen den 3D-"
+                    f"Löser erreicht die Abweichung 1 dB und mehr — bei "
+                    f"Kreisen mit vielen Löchern bis 5 dB (Gegenprobe 53). "
+                    f"Für diesen Bereich squeeze_model='3d' verwenden.",
+                    UserWarning, stacklevel=3)
+            elif lim["f_hom"] < self._F_BAND_TOP:
                 warnings.warn(
                     f"squeeze_model='{self.squeeze_model}': das Lochbild "
                     f"ist für die Homogenisierung zu spärlich — lochfreie "
@@ -3920,27 +3959,39 @@ class MicrophoneCapsule:
 
     def homogenization_limit(self):
         """Obere Frequenz, bis zu der die Loch-Homogenisierung der 1D/2D-
-        Modelle gegen den 3D-Löser abgesichert ist (Gegenprobe 48).
+        Modelle gegen den 3D-Löser abgesichert ist (Gegenproben 48/53).
 
         PHYSIK. 1D und 2D verschmieren die Bohrungen zu einer Senken-
         dichte und zwingen der Membran über jeder Lochzelle die GLOBALE
         Modenform auf. Über einem lochfreien Bereich vom Radius ρ (der
         Überdeckungsradius, s. _drain_coverage_radius) staut sich aber
         der Film, und die gespannte Membran weicht ihm örtlich aus — sie
-        beult sich zwischen den Löchern. Das Verhältnis der viskosen
-        Filmkraft zur Spannungssteifigkeit der Membran auf dieser Skala
-        ist die dimensionslose Kennzahl
+        beult sich zwischen den Löchern. Maßgeblich ist das Verhältnis der
+        Filmkraft zur Steifigkeit der Beule auf dieser Skala (k = j01/ρ):
 
-            Π(ω) = ω · 12μ·ρ⁴ / (h³ · T · j01²),
+            Π(ω) = j01² · (ω / (|K(ω)|·k²)) / |T·k² − ω²·σ|.
 
-        (der Atmosphärendruck kürzt sich heraus: es zählt die Viskosität,
-        nicht die Kompressibilität). Gegen den 3D-Löser, der Löcher und
-        Membranfeld diskret auflöst, wächst die Abweichung mit Π; die
-        1-dB-Grenze lag über zwei Kapseln (T = 40 und 109 N/m) und drei
-        Spalthöhen (20/38/65 µm) bei Π = 10…42. Mit dem vorsichtigen Rand
-        Π = 10 folgt
+        K(ω) ist die volle Filmleitfähigkeit (Reibung UND Trägheit der
+        Spaltluft, dieselbe wie im Feld- und 3D-Modell), σ die Flächen-
+        masse der Membran. Im Tiefton bleibt die bisherige Form
 
-            f_hom = 10 / (2π · 12μ·ρ⁴ / (h³·T·j01²)).
+            Π = ω · 12μ·ρ⁴ / (h³ · T · j01²);
+
+        beim weiten Spalt wächst |K0/K| mit der Schubzahl (die Luft im
+        Spalt wird träge), und nahe der Beulresonanz
+
+            f_ρ = f_res · (j01/z1) · a_mem/ρ
+
+        verschwindet die Steifigkeit der Beule — dort reicht jede Film-
+        kraft (steife ½"-Kapsel, 65 µm, 16 Löcher: 3D weicht bei 18,5 kHz
+        ab, f_ρ = 25,9 kHz; die rein viskose Grenze lag bei 107 kHz).
+        Der Atmosphärendruck kürzt sich heraus; die Kompressibilität senkt
+        die Filmkraft und bleibt deshalb auf der sicheren Seite weg. f_hom
+        ist die Frequenz mit Π = _PI_HOM (10, vorsichtiger Rand, s. dort);
+        Π wächst unterhalb f_ρ monoton, die Grenze ist eindeutig.
+
+        LOCHKREISE: zusätzlich die Grenze der Lochkreis-Darstellung
+        (s. _ring_repr_limit); ``f_limit`` ist die kleinere der beiden.
 
         GEPRÜFT UND VERWORFEN: (a) die Kompressibilität INNERHALB der
         Škvor-Zelle — die exakte Lösung (modifizierte Besselfunktionen)
@@ -3954,21 +4005,105 @@ class MicrophoneCapsule:
         (wie im 3D-Löser), h der wirksame Frontspalt.
 
         Rückgabe: dict mit ``rho`` [m], ``tension`` [N/m],
-        ``pi_per_omega`` [s] und ``f_hom`` [Hz] (inf, wenn es keinen
-        lochfreien Bereich gibt, der die Grenze setzt).
+        ``pi_per_omega`` [s] (Tieftonform Π/ω), ``f_rho`` [Hz]
+        (Beulresonanz), ``f_hom`` [Hz] (lokale Grenze), ``f_ring`` [Hz]
+        (Lochkreis-Darstellung), ``f_limit`` [Hz] (die kleinere) und
+        ``cause`` ('local' oder 'ring'); inf, wo nichts die Grenze setzt.
         """
         rho = self._drain_coverage_radius()
         sigma = self.M_A_mem * self.S_mem * (1.0 / self._piston_factor)
         z1 = float(self._ring_modes()["z"][0])
         tension = sigma * (2.0 * np.pi * self.f_res * self.a_mem / z1) ** 2
+        f_ring = self._ring_repr_limit()
+        inf = float("inf")
         if not np.isfinite(rho) or rho <= 0.0:
             return dict(rho=rho, tension=tension, pi_per_omega=0.0,
-                        f_hom=float("inf"))
+                        f_rho=inf, f_hom=inf, f_ring=f_ring,
+                        f_limit=f_ring,
+                        cause="ring" if np.isfinite(f_ring) else "local")
         h = self.h_gap_front
-        coef = (12.0 * MU_AIR * rho ** 4
-                / (h ** 3 * tension * 2.404825557695773 ** 2))
+        j01 = 2.404825557695773
+        coef = 12.0 * MU_AIR * rho ** 4 / (h ** 3 * tension * j01 ** 2)
+        f_rho = self.f_res * (j01 / z1) * self.a_mem / rho
+
+        def _pi(f):
+            om = 2.0 * np.pi * f
+            a_v = 0.5 * h * np.sqrt(1j * om * RHO0 / MU_AIR)
+            K = h / (1j * om * RHO0) * (1.0 - np.tanh(a_v) / a_v)
+            k_rel = (h ** 3 / (12.0 * MU_AIR)) / abs(K)
+            return om * coef * k_rel / abs(1.0 - (f / f_rho) ** 2)
+
+        # Klammer: die rein viskose Grenze ist eine obere Schranke
+        # (|K| ≤ K0, Beulfaktor ≥ 1 unterhalb f_ρ), f_ρ ebenso
+        f_hi = min(self._PI_HOM / (2.0 * np.pi * coef),
+                   f_rho * (1.0 - 1e-9))
+        while _pi(f_hi) < self._PI_HOM and f_hi < f_rho * (1.0 - 1e-6):
+            f_hi = min(2.0 * f_hi, f_rho * (1.0 - 1e-9))
+        f_lo = 1e-6 * f_hi
+        for _ in range(80):                      # Bisektion in log f
+            f_mid = np.sqrt(f_lo * f_hi)
+            if _pi(f_mid) < self._PI_HOM:
+                f_lo = f_mid
+            else:
+                f_hi = f_mid
+        f_hom = float(f_hi)
         return dict(rho=rho, tension=tension, pi_per_omega=coef,
-                    f_hom=self._PI_HOM / (2.0 * np.pi * coef))
+                    f_rho=float(f_rho), f_hom=f_hom, f_ring=f_ring,
+                    f_limit=min(f_hom, f_ring),
+                    cause="ring" if f_ring < f_hom else "local")
+
+    def _ring_repr_limit(self):
+        """Grenze der LOCHKREIS-Darstellung der 1D/2D-Modelle [Hz]
+        (Gegenprobe 53).
+
+        Das Radialfeld verschmiert jeden Lochkreis zu einem Gaußband der
+        Breite _RING_BAND·a_bp. Der reale Kreis aus vielen Löchern wirkt
+        aber als Liniensenke; die Bandbreite ist eine Darstellungswahl
+        ohne eindeutigen Wert, und bei Kreisen mit vielen Löchern hängt
+        das Ergebnis davon um mehrere dB ab — genau dort weicht es auch
+        vom 3D-Löser ab (Formanpassung an das radial stark gegliederte
+        Druckfeld; der Filmwiderstand bei erzwungener Form stimmt dagegen
+        auf 3 %). Geprüft wird die Selbstkonsistenz: der Membran-Volumen-
+        fluss auf Achse (Quelldrücke wie in transfer_function) mit dem
+        Standardband gegen das schmalste darstellbare Band (1,5 Zellen,
+        Liniensenke); die Grenze ist die erste Frequenz mit einer Spanne
+        über _RING_REPR_DB. Immer über das 2D-Feld — auch für 1D, das
+        die Lochkreise noch gröber zusammenfasst.
+
+        inf ohne explizite Lochkreise (gleichverteilte Löcher) und im 3D.
+        """
+        cached = getattr(self, "_f_ring_cache", None)
+        if cached is not None:
+            return cached
+        f_ring = float("inf")
+        if (self.squeeze_model != "3d" and self.n_th > 0
+                and any(c > 0 and r is not None for c, r in self._th_rings)):
+            ff = np.logspace(np.log10(20.0), np.log10(self._F_BAND_TOP), 64)
+            om = 2.0 * np.pi * ff
+            p_f, p_r = self._source_pressures(om, np.array([0.0]))
+            keep = (self.squeeze_model, self._fld_dens_th)
+            q = []
+            try:
+                self.squeeze_model = "2d"
+                for dens in (keep[1], self._fld_dens_th_line):
+                    self._fld_dens_th = dens
+                    T_total, T_rear = self._assemble_network(om)
+                    q.append(self._membrane_volume_velocity(
+                        om, T_total, T_rear, p_f[:, 0], p_r[:, 0]))
+            finally:
+                self.squeeze_model, self._fld_dens_th = keep
+            d = np.abs(20.0 * np.log10(np.abs(q[0] / q[1])))
+            over = np.nonzero(d > self._RING_REPR_DB)[0]
+            if over.size:
+                k = over[0]
+                if k == 0:
+                    f_ring = float(ff[0])
+                else:
+                    x0, x1 = d[k - 1], d[k]
+                    f_ring = float(ff[k - 1] * (ff[k] / ff[k - 1]) ** (
+                        (self._RING_REPR_DB - x0) / (x1 - x0)))
+        self._f_ring_cache = f_ring
+        return f_ring
 
     def _grid_3d_mouths(self):
         """(kleinster Mündungsradius, größter Lochmitten-Radius) der
@@ -6410,13 +6545,19 @@ class MicrophoneCapsule:
             return ("— (closed backplate)" if en
                     else "— (Backplate geschlossen)")
         lim = self.homogenization_limit()
-        f_txt = (f"{lim['f_hom'] / 1e3:9.1f} kHz" if np.isfinite(lim["f_hom"])
-                 else "        ∞")
-        note = (f"{f_txt} (ρ_hole {lim['rho'] * 1e3:.2f} mm, "
-                f"T {lim['tension']:.0f} N/m)" if en
-                else f"{f_txt} (ρ_Loch {lim['rho'] * 1e3:.2f} mm, "
-                f"T {lim['tension']:.0f} N/m)")
-        if lim["f_hom"] < self._F_BAND_TOP:
+        f_txt = (f"{lim['f_limit'] / 1e3:9.1f} kHz"
+                 if np.isfinite(lim["f_limit"]) else "        ∞")
+        if lim["cause"] == "ring":
+            note = (f"{f_txt} (hole-circle representation, local limit "
+                    f"{lim['f_hom'] / 1e3:.1f} kHz)" if en
+                    else f"{f_txt} (Lochkreis-Darstellung, lokale Grenze "
+                    f"{lim['f_hom'] / 1e3:.1f} kHz)")
+        else:
+            note = (f"{f_txt} (ρ_hole {lim['rho'] * 1e3:.2f} mm, "
+                    f"T {lim['tension']:.0f} N/m)" if en
+                    else f"{f_txt} (ρ_Loch {lim['rho'] * 1e3:.2f} mm, "
+                    f"T {lim['tension']:.0f} N/m)")
+        if lim["f_limit"] < self._F_BAND_TOP:
             note += (" — ABOVE: use 3D" if en else " — DARÜBER: 3D nehmen")
         return note
 
@@ -6658,12 +6799,13 @@ class MicrophoneCapsule:
 # ===========================================================================
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    # Die Homogenisierungswarnung (Gegenprobe 48) trifft viele der unten
-    # absichtlich spärlich gebohrten Prüflinge; ausgewertet wird sie nur
-    # in Gegenprobe 48 selbst (dort mit eigenem Warnungsfilter).
+    # Die Homogenisierungswarnungen (Gegenproben 48/53) treffen viele der
+    # unten absichtlich spärlich gebohrten oder auf Lochkreisen gebohrten
+    # Prüflinge; ausgewertet werden sie nur in Gegenprobe 48 bzw. 53
+    # selbst (dort mit eigenem Warnungsfilter).
     warnings.filterwarnings(
-        "ignore", message=r"squeeze_model='(1d|2d)': das Lochbild",
-        category=UserWarning)
+        "ignore", message=r"squeeze_model='(1d|2d)': (das Lochbild|die "
+        r"Lochkreis-Darstellung)", category=UserWarning)
 
     # 1"-Großmembrankapsel, Nieren-artig, einzelne Backplate
     capsule = MicrophoneCapsule(
@@ -9140,7 +9282,7 @@ if __name__ == "__main__":
     # trotzdem auf 0.2 dB. Die Vorsichtsgrenze Π = 10 ist konservativ.
     # NACHTRAG Gegenproben 51/52: oberhalb der Membranresonanz liegt der
     # 3D-Löser über 2D, unabhängig vom Lochbild (96 Bohrungen, f_hom
-    # 9.9 kHz: 2D/3D −0.8 dB bei 4 kHz; vor der Ringkopplung aus
+    # 7.5 kHz: 2D/3D −0.8 dB bei 4 kHz; vor der Ringkopplung aus
     # Gegenprobe 52 −1.6 dB). Das ist die FORMANPASSUNG der Membran, die
     # das 2D-Einmodenbild nicht kann (Gegenprobe 52), nicht die Film-
     # dämpfung. Verglichen wird deshalb bei 1 kHz (die 45-V-Kapsel ist
@@ -11400,9 +11542,9 @@ if __name__ == "__main__":
     # Dann die GRENZE selbst (s. homogenization_limit): der Film über dem
     # größten lochfreien Bereich (Radius ρ) staut sich, die gespannte
     # Membran beult sich dort aus — das kann nur der 3D-Löser. Kennzahl
-    # Π = ω·12μρ⁴/(h³·T·j01²), 1-dB-Einsatz bei Π = 10…42 (nachgeprüft
-    # mit konturtreuen Mündungen: für weiche Kapseln bestätigt, s.
-    # _PI_HOM).
+    # im Tiefton Π = ω·12μρ⁴/(h³·T·j01²), 1-dB-Einsatz oberhalb Π = 10
+    # (allgemein mit Filmträgheit und Beulresonanz, dazu die Grenze der
+    # Lochkreis-Darstellung: Gegenprobe 53; s. _PI_HOM).
     # e) Die Grenze TRENNT: unterhalb von f_hom trifft 2D das konvergierte
     #    3D-Feld auf 1 dB, darüber nicht; bei einer Kapsel mit f_hom
     #    oberhalb des Bands bleibt der Homogenisierungsanteil (gegen das
@@ -11583,22 +11725,25 @@ if __name__ == "__main__":
             (f"sehr spärliches Raster: f_hom {fhA12:.0f} Hz, Abweichung "
              f"{dA12[0]:+.2f} dB bei 4 kHz")
         fhB24, ffB24, dB24 = fine48["B24"]
-        # B24: f_hom über dem Prüfband. Oberhalb der Membranresonanz liegt
-        # 3D auch bei DICHTEN Lochbildern über 2D (gleich bei 24, 48 und 96
-        # Löchern gleicher Lochfläche) — die Formanpassung der Membran,
-        # die das 2D-Einmodenbild nicht kann (Gegenprobe 52), keine
-        # Homogenisierung. Deren Anteil ist,
-        # was beim AUSDÜNNEN dazukommt: gegen das doppelt so dichte Raster
-        # gleicher Lochfläche bleibt er unter 1 dB; unterhalb des
-        # Hochtons trifft 2D auch absolut.
+        # B24: f_hom am oberen Rand des Prüfbands (rein viskos 13,5 kHz,
+        # mit Filmträgheit und Beulresonanz 11,4 kHz, Gegenprobe 53).
+        # Oberhalb der Membranresonanz liegt 3D auch bei DICHTEN Loch-
+        # bildern über 2D (gleich bei 24, 48 und 96 Löchern gleicher
+        # Lochfläche) — die Formanpassung der Membran, die das 2D-Einmoden-
+        # bild nicht kann (Gegenprobe 52), keine Homogenisierung. Deren
+        # Anteil ist, was beim AUSDÜNNEN dazukommt: gegen das doppelt so
+        # dichte Raster gleicher Lochfläche bleibt er bis 12 kHz unter
+        # 1 dB — auch knapp über f_hom, die Grenze liegt auf der sicheren
+        # Seite; unterhalb des Hochtons trifft 2D auch absolut.
         kwB48 = dict(pB48, n_through_holes=48,
                      through_hole_diameter=0.4554e-3 / np.sqrt(2.0))
         dB48 = _db48(_cap48("2d", **kwB48)[0].transfer_function(ffB24)
                      / MicrophoneCapsule(squeeze_model="3d", grid_3d="fine",
                                          **kwB48).transfer_function(ffB24))
-        assert fhB24 > 12000.0 and np.all(np.abs(dB24 - dB48) < 1.0) \
+        assert 4000.0 < fhB24 < 20000.0 \
+                and np.all(np.abs(dB24 - dB48) < 1.0) \
                 and np.all(np.abs(dB24[:2]) < 1.0), \
-            (f"Kapsel mit f_hom über dem Prüfband: Homogenisierungsanteil "
+            (f"Kapsel mit f_hom am Rand des Prüfbands: Homogenisierungsanteil "
              f"unter 1 dB (f_hom {fhB24:.0f} Hz, 2D/3D {np.round(dB24, 2)} "
              f"dB, doppelt so dicht {np.round(dB48, 2)} dB)")
 
@@ -12326,5 +12471,194 @@ if __name__ == "__main__":
               f"{gap52:+.2f} dB unter 3D bei 20 kHz; Filmwiderstand bei "
               f"erzwungener Form 3D/2D = {rr_uni52:.3f} (gleichverteilt), "
               f"{rr_bk52:.2f} (B&K-Lochkreis)  OK")
+
+    # --------- Gegenprobe 53: Warnlücke weiter Spalt / Lochkreise --------
+    # Die Homogenisierungsgrenze (Gegenprobe 48) war beim weiten Spalt und
+    # bei Lochkreisen zu optimistisch; zwei Fälle mit > 1 dB blieben ganz
+    # ohne Warnung. Neu vermessen gegen den 3D-Löser (202 Fälle: zwei
+    # Kapseln, Spalte 20/25/38/65 µm, gleichverteilt, ein und zwei
+    # Lochkreise) mit einem robusteren Maß und zwei Ursachen:
+    # a) MESSMASS: Mehrabweichung E = |2D/3D| − |2D/3D dicht| gegen das
+    #    dichte Raster gleicher Lochfläche. Die vorzeichenrichtige
+    #    Differenz schob beim weiten Spalt die eigene Resonanzabweichung des
+    #    dichten Rasters (scharfe Resonanz, ±1,5 dB) in den Befund: bei der
+    #    1"-Kapsel mit 65 µm und 16 Löchern weicht das spärliche Lochbild
+    #    bei 1,2 kHz selbst kaum ab.
+    # b) WEITER SPALT: die Filmkraft über der Beule ist nicht rein viskos.
+    #    Mit der vollen Filmleitfähigkeit K(ω) (Trägheit der Spaltluft)
+    #    und der dynamischen Steifigkeit der Beule (Beulresonanz
+    #    f_ρ = f_res·a_mem/ρ) liegt die Grenze der steifen Kapsel mit 65 µm
+    #    und 16 Löchern bei 17,7 statt 107 kHz — vor dem Einsatz (18,5 kHz).
+    #    Die Schwelle Π = 10 bleibt; im Tiefton ändert sich nichts.
+    # c) LOCHKREISE: das Radialfeld verschmiert jeden Lochkreis zu einem
+    #    Band; bei vielen Löchern (Liniensenke) hängt das Ergebnis von
+    #    dieser Darstellungswahl um mehrere dB ab, der Filmwiderstand bei
+    #    erzwungener Form stimmt dagegen auf 3 % mit 3D überein. Gewarnt
+    #    wird, wo Band und Liniensenke um mehr als 0,5 dB auseinander-
+    #    liegen (s. _RING_REPR_DB). Die alte Grenze der steifen Kapsel mit
+    #    48 Löchern auf einem Kreis (390 Hz) lag über dem Einsatz.
+    # d) Vollständigkeit über alle 202 Fälle steht im README (knappster
+    #    Fall 0,91 dB an der Warnfrequenz); hier die tragenden Stichproben.
+    if _HAS_SCIPY:
+        pA53 = dict(
+            architecture="single", membrane_resonance_hz=2100.0,
+            membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+            membrane_tension=45.0, air_gap=38.1e-6,
+            backplate_diameter=23.9e-3, backplate_thickness=3.125e-3,
+            bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+            delay_length=0.0, cavity_length=8.0e-3,
+            cavity_wall_thickness=1.5e-3, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=28e-3)
+        pB53 = dict(
+            architecture="single", membrane_resonance_hz=8000.0,
+            membrane_diameter=12.0e-3, membrane_thickness=5e-6,
+            membrane_tension=400.0, air_gap=25e-6,
+            backplate_diameter=11.0e-3, backplate_thickness=1.5e-3,
+            bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+            delay_length=0.0, cavity_length=4.0e-3,
+            cavity_wall_thickness=1.0e-3, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=14e-3)
+
+        def _pat53(base, n, ring=None, **extra):
+            # gleiche Lochfläche wie 48 Löcher Ø0.35 mm·a/11.95 mm
+            a_ = 0.5 * base["backplate_diameter"]
+            A_ = 48 * np.pi * (0.35e-3 * a_ / 11.95e-3) ** 2
+            q = dict(base, n_through_holes=n,
+                     through_hole_diameter=2.0 * np.sqrt(A_ / (n * np.pi)),
+                     **extra)
+            if ring is not None:
+                q["through_hole_rings"] = [(n, ring * 2.0 * a_)]
+            return q
+
+        def _dev53(q, f):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                c2 = MicrophoneCapsule(squeeze_model="2d", **q)
+            c3 = MicrophoneCapsule(squeeze_model="3d", **q)
+            return (20.0 * np.log10(np.abs(c2.transfer_function(f)
+                                           / c3.transfer_function(f))),
+                    c2.homogenization_limit())
+
+        # a) Messmaß: 1"-Kapsel, 65 µm — bei 1.2 kHz trägt das DICHTE
+        #    Raster die Resonanzabweichung, nicht das spärliche
+        fa53 = np.array([1185.0])
+        rawA16, _ = _dev53(_pat53(pA53, 16, air_gap=65e-6), fa53)
+        rawA96, _ = _dev53(_pat53(pA53, 96, air_gap=65e-6), fa53)
+        assert abs(rawA16[0]) < 0.5 and abs(rawA96[0]) > 1.0, \
+            (f"Messmaß: das spärliche Lochbild weicht selbst kaum ab "
+             f"({rawA16[0]:+.2f} dB), das dichte trägt die Resonanz"
+             f"abweichung ({rawA96[0]:+.2f} dB)")
+
+        # b) weiter Spalt: steife Kapsel, 65 µm, 16 Löcher
+        qW53 = _pat53(pB53, 16, air_gap=65e-6)
+        with warnings.catch_warnings(record=True) as recW53:
+            warnings.simplefilter("always")
+            cW53 = MicrophoneCapsule(squeeze_model="2d", **qW53)
+        limW53 = cW53.homogenization_limit()
+        f_visc53 = MicrophoneCapsule._PI_HOM / (
+            2.0 * np.pi * limW53["pi_per_omega"])
+        assert f_visc53 > 50e3 and limW53["f_hom"] < 18.5e3, \
+            (f"weiter Spalt: rein viskos {f_visc53 / 1e3:.0f} kHz (keine "
+             f"Warnung), mit Trägheit + Beulresonanz "
+             f"{limW53['f_hom'] / 1e3:.1f} kHz")
+        assert limW53["f_hom"] < limW53["f_rho"], \
+            "die Grenze liegt unter der Beulresonanz"
+        assert any("zu spärlich" in str(r.message) for r in recW53), \
+            "der Fall muss jetzt warnen"
+        fW53 = np.array([limW53["f_hom"], 20000.0])
+        dW16, _ = _dev53(qW53, fW53)
+        dW96, _ = _dev53(_pat53(pB53, 96, air_gap=65e-6), fW53)
+        eW53 = np.abs(dW16) - np.abs(dW96)
+        assert eW53[0] < 1.0 < eW53[1], \
+            (f"weiter Spalt: Mehrabweichung an der Grenze unter, bei "
+             f"20 kHz über 1 dB ({np.round(eW53, 2)})")
+        # Tiefton unverändert: dort ist die Filmkraft rein viskos
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            c12_53 = MicrophoneCapsule(squeeze_model="2d", **dict(
+                pA53, n_through_holes=12, through_hole_diameter=1.4e-3))
+        l12_53 = c12_53.homogenization_limit()
+        f12v53 = MicrophoneCapsule._PI_HOM / (2.0 * np.pi
+                                              * l12_53["pi_per_omega"])
+        assert abs(l12_53["f_hom"] / f12v53 - 1.0) < 0.01, \
+            (f"Tiefton: Grenze == rein viskose Form "
+             f"({l12_53['f_hom']:.0f} vs. {f12v53:.0f} Hz)")
+
+        # c) Lochkreis: steife Kapsel, 48 Löcher auf einem Kreis (0.67·a)
+        qR53 = _pat53(pB53, 48, ring=0.67)
+        with warnings.catch_warnings(record=True) as recR53:
+            warnings.simplefilter("always")
+            cR53 = MicrophoneCapsule(squeeze_model="2d", **qR53)
+        limR53 = cR53.homogenization_limit()
+        assert limR53["cause"] == "ring" and limR53["f_limit"] < 200.0 \
+            and limR53["f_hom"] > 350.0, \
+            (f"Lochkreis: Darstellungsgrenze {limR53['f_ring']:.0f} Hz vor "
+             f"der lokalen Grenze {limR53['f_hom']:.0f} Hz")
+        assert any("Lochkreis-Darstellung" in str(r.message)
+                   for r in recR53), "der Lochkreis-Fall muss warnen"
+        assert "Lochkreis-Darstellung" in cR53.summary(), \
+            "summary() muss die Ursache nennen"
+        fR53 = np.array([limR53["f_limit"], limR53["f_hom"]])
+        dR48, _ = _dev53(qR53, fR53)
+        dR96, _ = _dev53(_pat53(pB53, 96), fR53)
+        eR53 = np.abs(dR48) - np.abs(dR96)
+        assert eR53[0] < 1.0 < eR53[1], \
+            (f"Lochkreis: Mehrabweichung an der neuen Grenze unter, an "
+             f"der alten lokalen Grenze über 1 dB ({np.round(eR53, 2)})")
+        # ... die Darstellung ist die Ursache, nicht der Filmwiderstand:
+        #     bei erzwungener Form (steife Membran, Phasenmethode wie
+        #     Gegenprobe 52) stimmt er auf 3 %
+        def _rr53(q):
+            q = dict(q, membrane_resonance_hz=300e3)
+            q.pop("membrane_tension", None)
+            ph = {}
+            for sm in ("2d", "3d"):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    cc = MicrophoneCapsule(squeeze_model=sm, **q)
+                ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
+                                  / cc.transfer_function([20.0])[0])
+            return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
+        rrR53 = _rr53(qR53)
+        assert abs(rrR53 - 1.0) < 0.03, \
+            (f"Lochkreis: Filmwiderstand bei erzwungener Form 3D/2D = "
+             f"{rrR53:.3f}")
+        # ... und die Spanne der Darstellungen ist groß (Kreis nahe der
+        #     Mitte, 48 Löcher)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            cL53 = MicrophoneCapsule(squeeze_model="2d",
+                                     **_pat53(pB53, 48, ring=0.33))
+        ffL53 = np.logspace(np.log10(20.0), np.log10(20e3), 64)
+        pfL, prL = cL53._source_pressures(2 * np.pi * ffL53, np.array([0.0]))
+        qL53 = []
+        keepL = cL53._fld_dens_th
+        for dens in (keepL, cL53._fld_dens_th_line):
+            cL53._fld_dens_th = dens
+            TtL, TrL = cL53._assemble_network(2 * np.pi * ffL53)
+            qL53.append(cL53._membrane_volume_velocity(
+                2 * np.pi * ffL53, TtL, TrL, pfL[:, 0], prL[:, 0]))
+        cL53._fld_dens_th = keepL
+        spanL53 = float(np.max(np.abs(20 * np.log10(np.abs(qL53[0]
+                                                           / qL53[1])))))
+        assert spanL53 > 3.0, \
+            f"Band gegen Liniensenke muss mehrere dB ausmachen ({spanL53:.1f})"
+
+        # e) Gleichverteilte Löcher und 3D prüfen die Darstellung nicht
+        assert not np.isfinite(cW53.homogenization_limit()["f_ring"]), \
+            "gleichverteilte Löcher: keine Lochkreis-Grenze"
+        c3R53 = MicrophoneCapsule(squeeze_model="3d", **qR53)
+        assert not np.isfinite(c3R53._ring_repr_limit()), \
+            "3D löst die Löcher auf: keine Lochkreis-Grenze"
+        print(f"Warnlücke geschlossen: Messmaß Mehrabweichung (1\" 65 µm, "
+              f"16 Löcher selbst {rawA16[0]:+.2f} dB, dicht "
+              f"{rawA96[0]:+.2f} dB); weiter Spalt 16 Löcher: Grenze "
+              f"{limW53['f_hom'] / 1e3:.1f} kHz statt "
+              f"{f_visc53 / 1e3:.0f} kHz (f_ρ {limW53['f_rho'] / 1e3:.1f} "
+              f"kHz), E {eW53[0]:.2f} -> {eW53[1]:.2f} dB; Lochkreis 48: "
+              f"Grenze {limR53['f_limit']:.0f} Hz statt "
+              f"{limR53['f_hom']:.0f} Hz, E {eR53[0]:.2f} -> {eR53[1]:.2f} "
+              f"dB, Filmwiderstand 3D/2D {rrR53:.3f}, Spanne Band/Linie "
+              f"{spanL53:.1f} dB  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")

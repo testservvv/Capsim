@@ -36,9 +36,12 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   ausreichend und für die validierten Beispiele verwendet.
 - **Gültigkeitsgrenze von 1D und 2D:** beide verschmieren die Löcher.
   Bei spärlichen Lochbildern und weicher Membran beult sich die Membran
-  zwischen den Löchern örtlich aus, was nur der 3D-Löser abbildet. Die
-  Grenzfrequenz f_hom (`homogenization_limit()`, Gegenprobe 48) steht in
-  `summary()`; liegt sie im Hörband, warnen Modell und GUI.
+  zwischen den Löchern örtlich aus, was nur der 3D-Löser abbildet
+  (beim weiten Spalt verstärkt durch die Trägheit der Spaltluft und die
+  Eigenresonanz der Beule); bei Lochkreisen ist zudem die Darstellung
+  als verschmiertes Band nicht eindeutig. Die Grenzfrequenz
+  (`homogenization_limit()`, Gegenproben 48/53) steht in `summary()`;
+  liegt sie im Hörband, warnen Modell und GUI.
 - **2D:** das Druckfeld im Spalt wird als *modifizierte Reynolds-Gleichung*
   (Homentcovschi & Miles, JASA 2004; Bao) axialsymmetrisch als
   Feldgleichung gelöst — inklusive Zell-Engstellenwiderstand je Bohrung
@@ -650,7 +653,7 @@ die frühere Unstimmigkeit bei 192 Bohrungen (+2,5 dB) ist verschwunden.
 
 *Nachtrag (Gegenproben 51, 52):* mit konturtreuen Mündungen und
 gekoppeltem Membranring liegt 3D bei 4 kHz für 48 und 96 Bohrungen
-1,0 bzw. 0,8 dB über 2D — auch bei 96 Bohrungen, deren f_hom (9,9 kHz)
+1,0 bzw. 0,8 dB über 2D — auch bei 96 Bohrungen, deren f_hom (7,5 kHz)
 weit darüber liegt. Das ist die lochbildunabhängige Formanpassung der
 Membran oberhalb der Resonanz, die das 2D-Einmodenbild nicht kann
 (Gegenprobe 52), nicht die Filmdämpfung. Verglichen wird deshalb bei
@@ -841,37 +844,51 @@ der Membran über jeder Lochzelle die **globale Modenform** auf. Über
 einem großen lochfreien Bereich staut sich aber der Film, und die
 gespannte Membran weicht ihm örtlich aus — sie beult sich zwischen den
 Löchern. Das kann nur der 3D-Löser. Maßgeblich ist das Verhältnis der
-viskosen Filmkraft zur Spannungssteifigkeit der Membran über dem
-größten lochfreien Bereich (Überdeckungsradius ρ = größter Abstand
-eines Elektrodenpunkts zur nächsten Durchgangsbohrung):
+Filmkraft zur Steifigkeit der Beule über dem größten lochfreien Bereich
+(Überdeckungsradius ρ = größter Abstand eines Elektrodenpunkts zur
+nächsten Durchgangsbohrung). Im Tiefton ist die Filmkraft rein viskos:
 
     Π(ω) = ω · 12μ·ρ⁴ / (h³ · T · j₀₁²)
 
-Der Atmosphärendruck kürzt sich heraus — es zählt die Viskosität,
-nicht die Kompressibilität. Gegen den (korrigierten, konvergierten)
-3D-Löser setzt die 1-dB-Abweichung bei Π = 10…42 ein (zwei Kapseln,
-T = 40 und 109 N/m, Spalte 20/38/65 µm). Mit dem vorsichtigen Rand
-Π = 10 folgt die Grenzfrequenz
+Der Atmosphärendruck kürzt sich heraus. Allgemein (Gegenprobe 53) zählt
+die **volle Filmleitfähigkeit** K(ω) — beim weiten Spalt wird die
+Spaltluft träge, die Filmkraft wächst um |K₀/K| — und die **Masse der
+Membran**: die Beule hat eine eigene Resonanz f_ρ = f_res·a_mem/ρ, bei
+der ihre Steifigkeit verschwindet. Π wächst deshalb um den Faktor
+|K₀/K(ω)| / |1 − (f/f_ρ)²|. Gegen den (korrigierten, konvergierten)
+3D-Löser setzt die 1-dB-Mehrabweichung oberhalb Π = 10 ein (zwei
+Kapseln, T = 45 und 109 N/m, Spalte 20/25/38/65 µm). Die Grenzfrequenz
+f_hom ist die Frequenz mit Π = 10 (im Tiefton unverändert
+10 / (2π · 12μ·ρ⁴ / (h³·T·j₀₁²)), sonst numerisch, stets unter f_ρ).
 
-    f_hom = 10 / (2π · 12μ·ρ⁴ / (h³·T·j₀₁²)).
+**Lochkreise** haben eine zweite Grenze: das Radialfeld verschmiert
+jeden Lochkreis zu einem Band, dessen Breite keinen eindeutigen
+physikalischen Wert hat. Wo das Ergebnis mit der schmalsten
+darstellbaren Liniensenke um mehr als 0,5 dB anders ausfällt, ist die
+Darstellung nicht belastbar (s. Gegenprobe 53).
 
-Liegt sie im Hörband (< 20 kHz), rechnet das Modell trotzdem, **warnt**
-aber (`UserWarning`, in der GUI als Hinweis, in `summary()` als Zeile
-„Loch-Homogenisierung bis"). `homogenization_limit()` liefert ρ, T und
-f_hom. Beispiele:
+Liegt eine der beiden Grenzen im Hörband (< 20 kHz), rechnet das Modell
+trotzdem, **warnt** aber (`UserWarning`, in der GUI als Hinweis, in
+`summary()` als Zeile „Loch-Homogenisierung bis", mit der Ursache).
+`homogenization_limit()` liefert ρ, T, f_ρ, f_hom, die Lochkreis-Grenze
+f_ring und die kleinere f_limit. Beispiele:
 
-| Kapsel | ρ | T | f_hom |
-|---|---|---|---|
-| K67 (60 Durchgangs-Senkungen) | 3,2 mm | 13 N/m | 1,1 kHz |
-| Debenham (12 Bohrungen) | 6,0 mm | 41 N/m | 43 Hz |
-| B&K 4134 (6 Bohrungen + Randspalt) | 2,0 mm | 3300 N/m | 73 kHz |
-| Standardkapsel (60 Durchgangs- + 30 Sacklöcher, 8 kHz) | 2,1 mm | 440 N/m | 58 kHz |
+| Kapsel | ρ | T | f_ρ | f_hom | f_ring |
+|---|---|---|---|---|---|
+| K67 (60 Durchgangs-Senkungen) | 3,2 mm | 13 N/m | 4,7 kHz | 1,0 kHz | — |
+| Debenham (12 Bohrungen auf Lochkreisen) | 6,0 mm | 40 N/m | 4,4 kHz | 43 Hz | ≤ 20 Hz |
+| B&K 4134 (6 Bohrungen auf einem Kreis + Randspalt) | 2,0 mm | 3300 N/m | 51 kHz | 34 kHz | 6,0 kHz |
+| Standardkapsel (60 Durchgangs- + 30 Sacklöcher, 8 kHz) | 2,1 mm | 440 N/m | 42 kHz | 23 kHz | — |
+
+Vorher (rein viskos, ohne Lochkreis-Grenze) lagen K67, B&K und
+Standardkapsel bei 1,1 / 73 / 58 kHz. Die B&K 4134 bekommt damit eine
+Warnung ab 6 kHz — vorsichtig: gegenüber dem Tiefton (dort liegen 2D
+und 3D statisch 1,4 dB auseinander) ändert sich die Abweichung bis
+6 kHz um 0,3 dB, bis 10 kHz um 0,9 dB und bis 20 kHz um 3,3 dB.
 
 Großmembran-Kapseln mit weicher Folie liegen damit fast immer im
-Warnbereich. Π = 10 ist bewusst der vorsichtige Rand (bei üblichen
-Spalten für weiche und steife Kapseln belegt, beim weiten Spalt und bei
-Lochkreisen zu optimistisch, s. Gegenprobe 52); bei der K67 liegen 2D
-und 3D auf Achse bis zu 3,2 dB auseinander (−3,2 dB bei 8 kHz), tragen
+Warnbereich. Π = 10 ist bewusst der vorsichtige Rand; bei der K67
+liegen 2D und 3D auf Achse bis zu 3,2 dB auseinander (−3,2 dB bei 8 kHz), tragen
 aber schon im Tiefton einen Versatz von ~1,4 dB, den f_hom nicht erklärt
 (Zwischenspalt-Geometrie, s. u.; vor den konturtreuen Mündungen −4,0
 bzw. ~2 dB, vor dem gekoppelten Membranring −3,5 bzw. ~1,2 dB).
@@ -1065,11 +1082,9 @@ fein stimmen überein):
   weiche 1"-Kapsel (T ≈ 45 N/m) **und** die steife ½"-Kapsel
   (T = 400 N/m) — Π = 10 ist dort der vorsichtige Rand. Die frühere
   Streuung der steifen Kapsel (Π ≈ 3…9) war der unbelastete Membranring
-  (Gegenprobe 52). Nicht belegt bleibt die Grenzfrequenz beim **weiten
-  Spalt** (65 µm: Einsatz schon bei Π ≈ 1,6…10) und bei **Lochkreisen**
-  (teils ab Π ≈ 1,3…3,4) — dort ist sie zu optimistisch. Gewarnt wurde in
-  allen gerechneten Fällen mit mehr als 1 dB bis auf zwei: steife Kapsel,
-  65 µm, 12 bzw. 16 Löcher, 1,1/1,3 dB bei 17…18 kHz (f_hom 59/107 kHz).
+  (Gegenprobe 52). Beim **weiten Spalt** und bei **Lochkreisen** war die
+  Grenze zu optimistisch, zwei Fälle blieben ganz ohne Warnung — die
+  Lücke ist geschlossen (Gegenprobe 53, s. u.).
 
 ### Hochtonüberschuss des 3D-Lösers aufgeklärt (Gegenprobe 52)
 
@@ -1124,6 +1139,65 @@ actuator method of determining the frequency response of condenser
 microphones", J. Sound Vib.); ihr Betrag ist hier nicht nachgeprüft.
 Das 2D-Modell bleibt Standard: es trifft die Messung, ist aber im
 Hochton aus zwei ausgleichenden Näherungen zusammengesetzt.
+
+### Warnlücke beim weiten Spalt und bei Lochkreisen geschlossen (Gegenprobe 53)
+
+Die Homogenisierungsgrenze war beim weiten Spalt (65 µm) und bei
+Lochkreisen zu optimistisch; zwei Fälle mit mehr als 1 dB blieben ganz
+ohne Warnung. Neu vermessen gegen den 3D-Löser: 202 Fälle, zwei Kapseln
+(1" mit T ≈ 45 N/m, ½" mit 109 N/m), Spalte 20/25/38/65 µm,
+gleichverteilte Löcher sowie ein und zwei Lochkreise. Drei Befunde:
+
+**1. Das Messmaß war schief.** Verglichen wurde die vorzeichenrichtige
+Differenz zum dichten Raster gleicher Lochfläche. Beim weiten Spalt hat
+das dichte Raster aber eine scharfe Resonanz, und dort liegen 2D und 3D
+selbst ±1,5 dB auseinander. Diese Abweichung landete im Befund: bei der
+1"-Kapsel mit 16 Löchern und 1,2 kHz weicht das spärliche Lochbild
+selbst nur um 0,2 dB ab, das dichte um 1,4 dB. Gemessen wird jetzt die
+**Mehrabweichung** |2D/3D| − |2D/3D dicht|, also was das Ausdünnen
+verschlechtert.
+
+**2. Weiter Spalt: Trägheit und Beulresonanz.** Die Kennzahl Π kannte
+nur die viskose Filmkraft. Beim weiten Spalt wird die Spaltluft träge,
+und die Membranfläche zwischen den Löchern hat eine eigene Resonanz
+f_ρ = f_res·a_mem/ρ, bei der ihre Steifigkeit verschwindet. Mit der
+vollen Filmleitfähigkeit K(ω) und der dynamischen Steifigkeit der Beule
+liegt die Grenze der ½"-Kapsel mit 65 µm und 16 Löchern bei 17,6 statt
+107 kHz; 3D weicht ab 18,5 kHz um mehr als 1 dB ab. Die Schwelle Π = 10
+bleibt, im Tiefton ändert sich nichts. Alle 42 gleichverteilten Fälle
+werden jetzt vor dem 1-dB-Einsatz gewarnt.
+
+**3. Lochkreise: die Darstellung selbst.** Bei erzwungener Membranform
+stimmt der Filmwiderstand von 2D und 3D für alle Lochkreise auf 3 %
+überein; die frühe Abweichung ist Formanpassung an das radial stark
+gegliederte Druckfeld. Sie hängt an der Lochzahl je Kreis: Kreise mit
+vielen Löchern wirken als Liniensenke, und das 2D-Feld verschmiert sie
+zu einem Band von 0,1·a_bp Breite. Diese Breite hat keinen eindeutigen
+Wert. Rechnet man den Kreis als schmalste darstellbare Liniensenke,
+ändert sich das Ergebnis um bis zu 7 dB (Kreis nahe der Mitte, 48
+Löcher). Eine physikalisch korrekte Lochreihen-Darstellung (Liniensenke
+plus Konvergenzwiderstand ln(s/(2π·r))/(2πK) je Loch) trifft 3D nicht
+besser. Die Warnung prüft deshalb die **Selbstkonsistenz**: sie gilt ab
+der Frequenz, bei der Band und Liniensenke um mehr als 0,5 dB
+auseinanderliegen (halbe Toleranz, weil die 3D-Abweichung bis zum
+Doppelten dieser Spanne erreichte). Damit kam die Warnung in allen 64
+Lochkreis-Fällen vor dem 1-dB-Einsatz; im knappsten Fall (½"-Kapsel,
+65 µm, 48 Löcher auf einem Kreis) beträgt die Mehrabweichung an der
+Warnfrequenz 2,20 kHz 0,91 dB. Die Prüfung ist vorsichtig: bei zwei
+Lochkreisen warnt sie bis zu 38-fach zu früh.
+
+Die Gegenprobe hält die tragenden Stichproben fest: das Messmaß
+(+0,22 dB spärlich gegen +1,40 dB dicht), die weite Spalte (Grenze
+17,6 kHz, Mehrabweichung dort 0,89 dB, bei 20 kHz 1,29 dB), den
+Lochkreis mit 48 Löchern (Grenze 137 Hz statt 390 Hz, Mehrabweichung
+0,68 gegen 2,19 dB, Filmwiderstand 3D/2D 0,988) und die Spanne der
+Darstellungen (7,3 dB). Die Prüfung kostet beim Aufbau einer Kapsel mit
+Lochkreisen höchstens 0,12 s.
+
+**Offen:** Die physikalische Verbesserung wäre eine Lochkreis-
+Darstellung im 2D-Feld, die die Formanpassung an das radiale Druckfeld
+mitnimmt. Das würde validierte Ergebnisse (B&K 4134, Debenham) ändern
+und ist deshalb nicht Teil dieser Änderung.
 
 ## Verlustmechanismen (vollständig erfasst)
 

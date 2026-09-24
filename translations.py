@@ -1005,8 +1005,10 @@ TR = {
               "relative to the membrane tension, the more). Above the "
               "stated frequency the result is no longer backed by the 3D "
               "solver to within 1 dB; with very sparse patterns the "
-              "difference reaches 10 dB. The 3D solver resolves the holes "
-              "and the membrane field (self-test, check 48).",
+              "difference reaches 10 dB. With a wide gap the inertia of the "
+              "gap air also counts, and near the bulge's own resonance even "
+              "a small film force is enough. The 3D solver resolves the "
+              "holes and the membrane field (self-test, checks 48 and 53).",
         "de": "**Lochbild oberhalb von etwa {f:.1f} kHz zu spärlich für "
               "das {model}-Modell.** Teile der Elektrode liegen bis zu "
               "{rho:.1f} mm von der nächsten Durchgangsbohrung entfernt. "
@@ -1017,9 +1019,37 @@ TR = {
               "der Film gegenüber der Membranspannung ist). Oberhalb der "
               "genannten Frequenz ist das Ergebnis nicht mehr auf 1 dB "
               "gegen den 3D-Löser abgesichert; bei sehr spärlichen "
-              "Lochbildern erreicht die Abweichung 10 dB. Der 3D-Löser "
-              "löst Löcher und Membranfeld auf (Selbsttest, Gegenprobe "
-              "48).",
+              "Lochbildern erreicht die Abweichung 10 dB. Beim weiten "
+              "Spalt zählt auch die Trägheit der Spaltluft, und nahe der "
+              "Eigenresonanz der Beule reicht schon eine kleine Filmkraft. "
+              "Der 3D-Löser löst Löcher und Membranfeld auf (Selbsttest, "
+              "Gegenproben 48 und 53).",
+    },
+    "warn_ring_repr": {
+        "en": "**Hole-circle representation of the {model} model not "
+              "reliable above about {f:.2f} kHz.** The radial field smears "
+              "each hole circle into a band of finite width. A real circle "
+              "of many holes acts as a line sink, and the band width has no "
+              "unique physical value. Above the stated frequency the result "
+              "changes by more than {db:.1f} dB if the circle is drawn as a "
+              "line sink instead of the band. The 3D solver deviates there "
+              "by 1 dB and more, by up to 5 dB for circles with many holes "
+              "(self-test, check 53). The check is cautious: with two hole "
+              "circles it can warn well before a real deviation appears. "
+              "Use the 3D solver for this range.",
+        "de": "**Lochkreis-Darstellung des {model}-Modells oberhalb von "
+              "etwa {f:.2f} kHz nicht belastbar.** Das Radialfeld "
+              "verschmiert jeden Lochkreis zu einem Band endlicher Breite. "
+              "Ein realer Kreis aus vielen Löchern wirkt aber als "
+              "Liniensenke, und für die Bandbreite gibt es keinen "
+              "eindeutigen physikalischen Wert. Oberhalb der genannten "
+              "Frequenz ändert sich das Ergebnis um mehr als {db:.1f} dB, "
+              "wenn der Kreis als Liniensenke statt als Band gerechnet "
+              "wird. Der 3D-Löser weicht dort um 1 dB und mehr ab, bei "
+              "Kreisen mit vielen Löchern um bis zu 5 dB (Selbsttest, "
+              "Gegenprobe 53). Die Prüfung ist vorsichtig: bei zwei "
+              "Lochkreisen kann sie deutlich vor einer echten Abweichung "
+              "warnen. Für diesen Bereich den 3D-Löser verwenden.",
     },
     "lbl_bem_dia": {
         "en": "BEM: body Ø [mm]",

@@ -1332,7 +1332,11 @@ if capsule.axial_body_model == "bem" and capsule.rear_open \
 # abgesichert (s. Gegenprobe 48).
 if capsule.squeeze_model in ("1d", "2d"):
     _hom = capsule.homogenization_limit()
-    if _hom["f_hom"] < capsule._F_BAND_TOP:
+    if _hom["f_limit"] < capsule._F_BAND_TOP and _hom["cause"] == "ring":
+        st.warning(tr("warn_ring_repr",
+                      model=capsule.squeeze_model.upper(),
+                      f=_hom["f_ring"] / 1e3, db=capsule._RING_REPR_DB))
+    elif _hom["f_hom"] < capsule._F_BAND_TOP:
         st.warning(tr("warn_sparse_holes",
                       model=capsule.squeeze_model.upper(),
                       f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3))
