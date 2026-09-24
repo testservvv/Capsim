@@ -956,8 +956,9 @@ fielen auf, jeder physikalisch begründet behoben:
   (unabhängige Referenz auf 0,001 dB); das 2D-Modell überschätzt für
   den Lochkreis der 4134 den Filmwiderstand 1,7-fach, was den Hochton
   senkt. Dass es damit die Messung trifft, heißt: die reale Kapsel
-  dämpft stärker als der Reynolds-Film — oder die Aktuatormessung weicht
-  im Hochton vom Druckfrequenzgang ab. Das ist offen.
+  dämpft stärker als der Reynolds-Film. Die Aktuatormessung als
+  Erklärung ist eingegrenzt und scheidet aus (s. Gegenprobe 52); die
+  Ursache der stärkeren Dämpfung ist offen.
 
 ### 3D-Gitter grob/fein (Gegenprobe 50)
 
@@ -1131,12 +1132,25 @@ nochmals enthält.
 
 **Offen:** Die B&K-Messung (Zuckerwar 1978, Aktuatorverfahren) folgt dem
 2D-Modell. Da der 3D-Löser die Modellgleichungen nachweislich richtig
-rechnet, dämpft entweder die reale Kapsel stärker als der Reynolds-Film
-(um etwa den Faktor 1,7 im Widerstand), oder der Aktuator-Frequenzgang
-weicht im Hochton vom Druckfrequenzgang ab. Diese Abweichung ist für
-die 4134 in der Literatur untersucht ("The accuracy of the electrostatic
-actuator method of determining the frequency response of condenser
-microphones", J. Sound Vib.); ihr Betrag ist hier nicht nachgeprüft.
+rechnet, kamen zwei Erklärungen in Frage: die reale Kapsel dämpft
+stärker als der Reynolds-Film (um etwa den Faktor 1,7 im Widerstand),
+oder der Aktuator-Frequenzgang weicht im Hochton vom Druckfrequenzgang
+ab.
+
+**Aktuator eingegrenzt:** Der Aktuator treibt die Membran mit einem
+gleichmäßigen elektrostatischen Druck. Die bewegte Membran erzeugt aber
+unter der Platte einen kleinen Zusatzdruck, der bei steifen Membranen
+kleiner ist (Frederiksen 2013, Int. J. Metrol. Qual. Eng. 4, 97–107,
+Abschn. 11; Zahlen für die 4134 nennt der Artikel nicht). Im Modell ist
+das eine Luftmasse vor der Membran statt der Abstrahlung. Die
+Plattengeometrie liegt nicht vor; selbst mit großzügigen 10 mm
+wirksamer Luftsäule hebt diese Last die 4134 bei 13–20 kHz nur um
+höchstens 0,6 dB an (3D; 2D höchstens 0,3 dB). Die Aktuator-Antwort
+läge damit sogar leicht **über** der Druckantwort. Das ist zu klein und
+hat das falsche Vorzeichen, um die 2,2–3,8 dB zu erklären, um die 3D
+über der Messung liegt (Gegenprobe 52 d). Es bleibt die stärkere
+Dämpfung der realen Kapsel; ihre Ursache ist offen.
+
 Das 2D-Modell bleibt Standard: es trifft die Messung, ist aber im
 Hochton aus zwei ausgleichenden Näherungen zusammengesetzt.
 

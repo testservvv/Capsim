@@ -4275,9 +4275,10 @@ class MicrophoneCapsule:
         OFFENER PUNKT: an der gemessenen B&K 4134 (Gegenprobe 38) liegt
         der 3D-Löser bei 13…20 kHz 2.2…3.8 dB über der Messung, das 2D-
         Modell höchstens 0.6 dB — die reale Kapsel dämpft also stärker
-        als der Reynolds-Film, oder die Aktuatormessung weicht im Hochton
-        vom Druckfrequenzgang ab. Das Gitter ist es nicht (grid_3d='fine'
-        ändert höchstens 0.2 dB).
+        als der Reynolds-Film. Die Aktuatormessung erklärt es nicht: ihre
+        Zusatzlast hebt die 4134 um höchstens 0.6 dB an (Gegenprobe 52 d).
+        Das Gitter ist es auch nicht (grid_3d='fine' ändert höchstens
+        0.2 dB).
         GITTER (Gegenprobe 50): _grid_3d_size — grob (Standard) oder fein
         (≥ 2 Zellen je kleinstem Mündungsradius); der Membranring außerhalb
         der Elektrode hat eine eigene Zellweite, damit die Einspannung auf
@@ -12281,8 +12282,9 @@ if __name__ == "__main__":
     # OFFEN: die B&K-Messung (Zuckerwar 1978, Aktuator) folgt dem 2D-
     #    Modell. Der 3D-Löser rechnet die Modellgleichungen nachweislich
     #    richtig — also dämpft die reale Kapsel stärker als der Reynolds-
-    #    Film, oder die Aktuatormessung weicht im Hochton vom Druck-
-    #    frequenzgang ab (für die 4134 in der Literatur untersucht).
+    #    Film. Die zweite Möglichkeit, dass die Aktuatormessung im Hochton
+    #    vom Druckfrequenzgang abweicht, ist in d) eingegrenzt: höchstens
+    #    +0.6 dB, falsches Vorzeichen.
     if _HAS_SCIPY:
         from functools import reduce as _red52
         from scipy.sparse import lil_matrix as _lil52
@@ -12464,13 +12466,42 @@ if __name__ == "__main__":
         assert rr_bk52 < 0.7, \
             (f"Lochkreis (B&K 4134): 2D überschätzt den Filmwiderstand "
              f"(R_3D/R_2D = {rr_bk52:.2f})")
+        # d) OFFENER PUNKT eingegrenzt: misst der Aktuator etwas anderes als
+        #    den Druckfrequenzgang? Er treibt mit gleichmäßigem elektro-
+        #    statischem Druck; die bewegte Membran erzeugt unter der Platte
+        #    einen Zusatzdruck (Frederiksen 2013, Int. J. Metrol. Qual. Eng.
+        #    4, Abschn. 11), im Modell eine Luftmasse jω·ρ·L/S vor der
+        #    Membran statt der Abstrahlung (Plattengeometrie unbekannt:
+        #    L = 10 mm ist eine großzügige obere Schranke). Die Druckantwort
+        #    ist der Grenzfall L -> 0 (erste Ordnung, Gegenprobe 27). Die
+        #    Last hebt die 4134 bei 13…20 kHz um höchstens 0.6 dB an —
+        #    zu klein und mit falschem Vorzeichen für die 2.2…3.8 dB, um
+        #    die 3D über der Messung liegt.
+        f52d = np.array([13000.0, 16000.0, 20000.0])
+        _rad52 = MicrophoneCapsule._radiation_impedance_membrane
+        h52d = {}
+        try:
+            for L52 in (1e-8, 10e-3):
+                MicrophoneCapsule._radiation_impedance_membrane = (
+                    lambda s, o, _L=L52: 1j * np.asarray(o, dtype=float)
+                    * RHO0 * _L / s.S_mem + 0j)
+                h52d[L52] = MicrophoneCapsule(
+                    squeeze_model="3d", **bk52).transfer_function(f52d)
+        finally:
+            MicrophoneCapsule._radiation_impedance_membrane = _rad52
+        act52 = 20.0 * np.log10(np.abs(h52d[10e-3] / h52d[1e-8]))
+        assert np.all(act52 > -0.05) and np.all(act52 < 0.7), \
+            (f"Aktuatorlast (L = 10 mm) muss klein und positiv bleiben "
+             f"({np.round(act52, 2)} dB bei 13/16/20 kHz)")
         print(f"3D-Hochtonüberschuss aufgeklärt: gegen unabhängigen "
               f"radialen Löser max {np.max(dev52):.3f} dB (Ring frei: "
               f"{dev52o[0]:.3f} dB im Tiefton), Tiefton gegen geschlossene "
               f"Form {100 * e_ex52:.2f} %; Formanpassung: 2D-Einmodenbild "
               f"{gap52:+.2f} dB unter 3D bei 20 kHz; Filmwiderstand bei "
               f"erzwungener Form 3D/2D = {rr_uni52:.3f} (gleichverteilt), "
-              f"{rr_bk52:.2f} (B&K-Lochkreis)  OK")
+              f"{rr_bk52:.2f} (B&K-Lochkreis); Aktuatorlast höchstens "
+              f"{np.max(act52):+.2f} dB (erklärt die Messabweichung "
+              f"nicht)  OK")
 
     # --------- Gegenprobe 53: Warnlücke weiter Spalt / Lochkreise --------
     # Die Homogenisierungsgrenze (Gegenprobe 48) war beim weiten Spalt und
