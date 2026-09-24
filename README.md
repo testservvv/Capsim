@@ -669,7 +669,8 @@ Kapsel läuft bei 45 V mit 24 % Durchbiegung; die Spannung gewichtet die
 Membranmitte (1/g²), wo der Film am steifsten ist und die Mitte
 zurückbleibt. Für 12 Bohrungen prüft die Gegenprobe jetzt die
 1-dB-Toleranz der Homogenisierungswarnung (f_hom 133 Hz) statt einer
-frei gewählten 2-dB-Grenze.
+frei gewählten 2-dB-Grenze. Mit dem Massenfaktor 8/j₀₁² (Gegenprobe
+55) sind es bei 1 kHz −1,8 / +0,3 / +0,7 dB, bei 4 kHz 0,6 / 0,4 dB.
 
 ### Externe Referenzen: FEM und Messung (Gegenproben 32, 38)
 
@@ -685,7 +686,7 @@ außen:
   Kerbenband (3500/4200 Hz) kann der homogenisierende 2D-Pfad
   prinzipiell nicht haben; der 3D-Löser zeigt es (3421/4127 Hz).
   **Offen** bleibt die Resonanzlage: 2D liegt 13 % unter der FEM
-  (477 gegen 550 Hz), der gitterkonvergente 3D-Löser mit konturtreuen
+  (478 gegen 550 Hz), der gitterkonvergente 3D-Löser mit konturtreuen
   Mündungen 10 % (495 Hz). Die diskreten Bohrungen erklären also rund
   ein Viertel der Verstimmung, der Rest ist keine Homogenisierung
   (Gegenproben 48, 51).
@@ -712,7 +713,8 @@ außen:
   Σ1/z_m² = 1/4 (Hochton: freier Kolben) und Σ1/z_m⁴ = 1/32 (exakte
   Statik) verankern die parallelen Zweige; die Grundmode allein trägt
   95,7 % der statischen Nachgiebigkeit, deshalb die Normierung der
-  höheren Zweige.
+  höheren Zweige. Mit dem Massenfaktor 8/j₀₁² (Gegenprobe 55) läuft die
+  normierte Reihe für viele Moden exakt auf den freien Kolben.
 * **Modenfaktoren aus demselben Körper (43):** mit BEM kommen alle
   Modenfaktoren aus EINEM Lösungsgang (vorher Grundmode aus dem BEM,
   höhere aus der Kugelkalotte), und Gewichtung und Kette benutzen
@@ -845,14 +847,16 @@ Die kleinen Restabstände zu Warren sind die Biegesteife der Folie
 
 **Wirkung:** der Pull-in sinkt um 1,3…2,5 % — bei der K67 von 74,4 auf
 **72,6 V** (Arbeitspunkt bei 60 V: w₀ = 11,7 µm, C₀ = 50,3 pF,
-Erweichung 28 %). Vier Prüflinge des Selbsttests saßen genau auf oder
+Erweichung 28 %; seit dem Massenfaktor 8/j₀₁², Gegenprobe 55, ist die
+Membran bei vorgegebener Resonanz 3,6 % steifer: 73,9 V, 11,1 µm,
+50,0 pF, 26,5 %). Vier Prüflinge des Selbsttests saßen genau auf oder
 knapp über ihrem exakten Pull-in — die weiche 1"-Kapsel der
 Gegenproben 29/31 und die Debenham-Variante ohne Sacklöcher in 22
 (48,9…50,0 V gegen 50 V Bias) sowie die fast volle K67-Elektrode in 19
 (59,7 V gegen 60 V) — und laufen jetzt mit 45 bzw. 50 V; sie prüfen
 Filmphysik bzw. Struktur, nicht die Nähe zum Kollaps. Die Beispiel-
-projekte bleiben stabil (Debenham 52,0 V bei 50 V Betrieb, K67 72,6 V
-bei 60 V).
+projekte bleiben stabil (Debenham 53,0 V bei 50 V Betrieb, K67 73,9 V
+bei 60 V; Stand Gegenprobe 55).
 
 ### Homogenisierungsgrenze der 1D/2D-Modelle (Gegenprobe 48)
 
@@ -900,8 +904,8 @@ f_ring und die kleinere f_limit. Beispiele:
 Vorher (rein viskos, ohne Lochkreis-Grenze) lagen K67, B&K und
 Standardkapsel bei 1,1 / 73 / 58 kHz. Die B&K 4134 bekommt damit eine
 Warnung ab 6 kHz — vorsichtig: 2D und 3D liegen dort 0,3 dB
-auseinander, bei 10 kHz 0,9 dB und bei 20 kHz 3,0 dB (im Tiefton
-gleich, s. Gegenprobe 54).
+auseinander, bei 10 kHz 0,8 dB und bei 20 kHz 3,0 dB (im Tiefton
+gleich, s. Gegenproben 54/55).
 
 Großmembran-Kapseln mit weicher Folie liegen damit fast immer im
 Warnbereich. Π = 10 ist bewusst der vorsichtige Rand; bei der K67
@@ -1081,7 +1085,7 @@ fein stimmen überein):
   Lage zwischen 9° und 12°). Der Befund bleibt: die Tiefe der
   Auslöschung hängt an der undokumentierten Kernlage.
 * **FEM-Referenz (Gegenprobe 32):** die 3D-Resonanz liegt bei 495 Hz
-  statt 482 Hz — 4 % über 2D (477 Hz), 10 % unter der FEM (550 Hz). Ohne
+  statt 482 Hz — 4 % über 2D (478 Hz), 10 % unter der FEM (550 Hz). Ohne
   Korrektur wanderte sie mit dem Gitter (482…488 Hz). Die diskreten
   Bohrungen erklären damit rund ein Viertel der Verstimmung; der Rest
   bleibt offen.
@@ -1183,8 +1187,9 @@ Lochkreisen zu optimistisch; zwei Fälle mit mehr als 1 dB blieben ganz
 ohne Warnung. Neu vermessen gegen den 3D-Löser: 114 Fälle (42
 gleichverteilt, 72 auf ein oder zwei Lochkreisen), zwei Kapseln (1" mit
 T ≈ 45 N/m, ½" mit 109 N/m), Spalte 20/25/38/65 µm. Nach der
-Korrektur der 3D-Wandlung (Gegenprobe 54) ist alles neu gerechnet; die
-Befunde bleiben. Drei Befunde:
+Korrektur der 3D-Wandlung (Gegenprobe 54) und mit dem Massenfaktor
+8/j₀₁² (Gegenprobe 55) ist alles neu gerechnet; die Befunde bleiben.
+Drei Befunde:
 
 **1. Das Messmaß war schief.** Verglichen wurde die vorzeichenrichtige
 Differenz zum dichten Raster gleicher Lochfläche. Beim weiten Spalt hat
@@ -1222,17 +1227,20 @@ auseinanderliegen (halbe Toleranz, weil die 3D-Abweichung bis zum
 Doppelten dieser Spanne erreichte). Damit kam die Warnung in allen 72
 Lochkreis-Fällen vor dem 1-dB-Einsatz; im knappsten Fall (½"-Kapsel,
 65 µm, 48 Löcher auf einem Kreis) beträgt die Mehrabweichung an der
-Warnfrequenz 2,20 kHz 0,91 dB. Die Prüfung ist vorsichtig: bei zwei
-Lochkreisen warnt sie bis zu 40-fach zu früh.
+Warnfrequenz 2,23 kHz 0,95 dB; 1 dB erreicht sie erst bei 2,26 kHz
+(direkt nachgerechnet; vor dem Massenfaktor 8/j₀₁², Gegenprobe 55,
+waren es 2,20 kHz und 0,91 dB). Der Abstand ist knapp. Sonst ist die
+Prüfung vorsichtig: bei zwei Lochkreisen warnt sie bis zu 40-fach zu
+früh.
 
 Die Gegenprobe hält die tragenden Stichproben fest: das Messmaß
-(+0,10 dB spärlich gegen +1,29 dB dicht), die weite Spalte (Grenze
-17,6 kHz, eigene Abweichung dort 0,68 dB, bei 20 kHz 1,13 dB), den
-Lochkreis mit 48 Löchern (Grenze 137 Hz statt 390 Hz, Mehrabweichung
-0,69 gegen 2,23 dB, Filmwiderstand 3D/2D 0,988) und die Spanne der
+(+0,10 dB spärlich gegen +1,26 dB dicht), die weite Spalte (Grenze
+17,6 kHz, eigene Abweichung dort 0,67 dB, bei 20 kHz 1,12 dB), den
+Lochkreis mit 48 Löchern (Grenze 139 Hz statt 390 Hz, Mehrabweichung
+0,71 gegen 2,27 dB, Filmwiderstand 3D/2D 0,987) und die Spanne der
 Darstellungen (7,3 dB). Bei der weiten Spalte prüft sie die eigene
 Abweichung: das dichte Raster kreuzt dort die Null, die Mehrabweichung
-bleibt bei 20 kHz mit 0,96 dB knapp unter 1 dB. Die Prüfung kostet
+bleibt bei 20 kHz mit 0,93 dB knapp unter 1 dB. Die Prüfung kostet
 beim Aufbau einer Kapsel mit Lochkreisen höchstens 0,12 s.
 
 **Offen:** Die physikalische Verbesserung wäre eine Lochkreis-
@@ -1270,16 +1278,10 @@ etwas tiefere Resonanz senkt die Abweichung bei 13/16/20 kHz auf
 2,2/2,6/3,5 dB (vorher 2,2/2,7/3,8 dB).
 
 **Rest bei vorgegebener Resonanz.** Ist statt der Vorspannung die
-Resonanz vorgegeben, bleibt ein kleiner Versatz (½"-Kapsel 0,12 dB,
-Standardkapsel 0,19 dB). Das ist keine 3D-Frage, sondern die
-Ein-Moden-Kalibrierung der Kette: sie trifft f_res mit dem Kolbenfaktor
-4/3 und ist dadurch statisch 3,75 % zu nachgiebig (höchstens 0,32 dB,
-durch die Steifigkeit des Rückvolumens weniger). Dieselbe Kapsel über
-ihre Vorspannung vorgegeben: 2D und 3D gleich auf 0,001 dB. Behoben
-wäre das mit dem Massenfaktor 8/j₀₁² = 1,383 statt 4/3 (statisch und in
-der Resonanz exakt). Das verschöbe aber alle 2D-Ergebnisse mit
-vorgegebener Resonanz um bis zu −0,3 dB, auch validierte wie die
-K67-Empfindlichkeit, und ist deshalb nicht Teil dieser Änderung.
+Resonanz vorgegeben, blieb ein kleiner Versatz (½"-Kapsel 0,12 dB,
+Standardkapsel 0,19 dB). Das war keine 3D-Frage, sondern die
+Ein-Moden-Kalibrierung der Kette (Kolbenfaktor 4/3). Behoben mit dem
+Massenfaktor 8/j₀₁², s. Gegenprobe 55.
 
 **3. Dabei aufgedeckt: Θ der Ringmembran (2D, +1,9…2,0 dB).** Die
 Kette rechnete auch mit Mittelpfosten dw = 2V/S, also mit der
@@ -1312,6 +1314,64 @@ Doppel-Backplate, mit Arbeitspunkt, Ringmembran), die Zerlegung an der
 B&K (1,38 = 1,08 aus u·(2 − u) + 0,31 → −0,003 dB), die ½"-Kapsel einmal
 über die Resonanz, einmal über die Vorspannung vorgegeben, und Θ der
 Ringmembran gegen das 3D-Feld.
+
+### Massenfaktor 8/j₀₁² (Gegenprobe 55)
+
+Ein Freiheitsgrad trifft nur zwei Größen exakt. Die Kette nimmt die
+statische Nachgiebigkeit der Membran (exakt) und wählte die Masse
+bisher mit dem Rayleigh-Wert der statischen Form, ⟨φ²⟩/⟨φ⟩² = 4/3 für
+die Parabel. Der Rayleigh-Wert ist eine obere Schranke der Frequenz:
+bei vorgegebener Vorspannung lag die Resonanz 1,9 % zu hoch, bei
+vorgegebener Resonanz war die Membran statisch 3,75 % zu nachgiebig
+(+0,32 dB).
+
+Jetzt ist der Massenfaktor **μ = 8/(z₁²·g)**, ohne Pfosten
+8/j₀₁² = 1,383, mit Pfosten mit dem Ring-Eigenwert z₁ und dem
+Ringfaktor g der Nachgiebigkeit (1 mm Pfosten auf 22 mm: 1,277 statt
+1,247). Statik und Grundresonanz sind damit beide exakt; „Resonanz
+vorgeben" und „Vorspannung vorgeben" beschreiben dieselbe Membran.
+Die Modenmasse der J₀-Form, j₀₁²/4 = 1,446, wäre ebenso falsch: sie
+gehört zur Modennachgiebigkeit, die nur 95,7 % der statischen ist.
+
+**Unabhängige Bestätigung:** Die normierte Mehrmoden-Kette
+(`membrane_modes` > 1) läuft für viele Moden genau dann auf den freien
+Kolben, wenn μ·g·z₁²/8 = 1 ist. Mit 8/(z₁²·g) trägt dann jeder Zweig
+exakt seine Modenmasse und -nachgiebigkeit; mit 4/3 lief die Reihe auf
+0,964·σ/S, also 0,32 dB über den Kolben hinaus. Bei der Ringmembran
+ist der Grenzwert die Ringfläche S·(1 − ρ²).
+
+**Wirkung:**
+
+| | vorher (4/3) | jetzt (8/j₀₁²) |
+|---|---|---|
+| ½"-Kapsel über f_res, 2D gegen 3D (20 Hz) | +0,12 dB | 0,00 dB |
+| 3D/Kette bei 100 Hz, einfach / Gegentakt (Gegenprobe 23) | 0,974 / 0,961 | 1,000 / 0,998 |
+| lochfreier Kolben-Grenzfall 3D/2D (Gegenprobe 29) | 0,31 dB | 0,01 dB |
+| Standardkapsel (8 kHz vorgegeben), 1 kHz | 69,8 mV/Pa | 67,9 mV/Pa (−0,25 dB) |
+| K67 (1150 Hz vorgegeben): Empfindlichkeit, Pull-in | 20,3 mV/Pa, 72,6 V | 20,1 mV/Pa, 73,9 V |
+| Debenham (2100 Hz vorgegeben): Empfindlichkeit, Pull-in | 9,93 mV/Pa, 52,0 V | 9,77 mV/Pa, 53,0 V |
+| B&K 4134 gegen Zuckerwar Fig. 6 (2D) | 0,27 dB / 0,94° RMS | 0,30 dB / 0,98° RMS |
+| B&K 4146 gegen Zuckerwar Fig. 7 (2D) | 1,09 dB / 7,5° RMS | 1,09 dB / 7,2° RMS |
+| FEM (Šimonová/Honzík): Resonanz, Überhöhung | 477 Hz, +6,41 dB | 478 Hz, +6,44 dB (FEM 550 Hz, +6,74 dB) |
+| Grinnip VC 0/90/180° (RMS) | 1,04/2,48/1,79 dB | 1,03/2,40/1,71 dB |
+
+Bei vorgegebener Resonanz wird die Membran 3,6 % steifer. Der Tiefton
+sinkt dadurch höchstens um 0,32 dB, weniger, wo die geringere
+Feder-Erweichung einen Teil zurückgibt (K67 −0,07 dB bei 26,5 statt
+28,2 % Erweichung). Bei vorgegebener Vorspannung ändert sich der
+Tiefton nicht, nur die Resonanz liegt 1,8 % tiefer. Die K67-Niere
+bleibt bei −28,1 dB (180°, 1 kHz). Der B&K 4134 rückt gegen die
+Messung um 0,03 dB RMS ab, innerhalb der Ableseunsicherheit der Kurve
+(±0,15 dB); Zuckerwar selbst rechnet in Tabelle II mit 4/3.
+
+Die Gegenprobe prüft die Resonanz bei vorgegebener Vorspannung
+(Vollkreis und Ringmembran auf 4·10⁻⁵, B&K-Nickelfolie 1·10⁻⁴ über die
+Biegesteifigkeit), die Gleichheit beider Vorgaben (Rest genau der
+Biegeanteil der Folie, 3,6·10⁻⁴), die ½"-Kapsel gegen das 3D-Feld mit
+altem und neuem Faktor und den Hochtongrenzwert der Modenreihe über
+400 Moden für Vollkreis und Ring (ρ = 0,1). Der alte Wert bleibt über
+den Klassenschalter `_MASS_EXACT` für Vergleiche erreichbar;
+Gegenprobe 54 stellt damit ihre historische Zerlegung nach.
 
 ## Verlustmechanismen (vollständig erfasst)
 
@@ -1347,7 +1407,8 @@ Drei Verfeinerungen (Gegenprobe 19, jeweils fit-frei):
   Grenzschicht-Asymptotik oberhalb der Schubzahl 600); summary() nennt
   zusätzlich die erste azimutale Quermode des Hohlraums als ehrliche
   1D-Gültigkeitsgrenze und die exakte J₀-Modalfrequenz der Membran
-  (der Lumped-Kolbenfaktor 4/3 liegt ~1,9 % darüber).
+  (seit dem Massenfaktor 8/j₀₁², Gegenprobe 55, trifft die Kette sie;
+  der Rayleigh-Wert 4/3 lag ~1,9 % darüber).
 
 `examples/debenham_stereo_condenser.json` — Braunmühl-Weber-Kapsel aus
 Debenham/Robinson/Stebbings, *A Stereo Condenser Microphone* (Hi-Fi

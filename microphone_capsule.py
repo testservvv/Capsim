@@ -204,7 +204,7 @@ class MicrophoneCapsule:
             Nachgiebigkeit weg, hebt den Grundmoden-Eigenwert von 2.4048
             auf 2.8009 (bei fester Vorspannung also die Resonanz um 16 %)
             und die Pull-in-Spannung um 18 %. Betroffen sind:
-            Nachgiebigkeit, Kolbenfaktor, wirksame Fläche, Eigenwerte und
+            Nachgiebigkeit, Massenfaktor, wirksame Fläche, Eigenwerte und
             Modenformen (Ringmoden statt J0), Elektrostatik (Arbeitspunkt,
             Feder-Erweichung, Pull-in, C0), Spaltfilm-Profil und die
             Aperturmittelung der Beugung. Anker: J. E. Warren, JASA 58(3),
@@ -477,6 +477,12 @@ class MicrophoneCapsule:
     _OUTPUT_EXACT_3D = True
     _TENSION_EXACT_3D = True
 
+    # Massenfaktor der Kette (Gegenprobe 55): 8/(z1²·g) statt des
+    # Rayleigh-Werts der statischen Form (Parabel 4/3). Damit sind
+    # statische Nachgiebigkeit UND Grundresonanz exakt, s. _derive_
+    # parameters. Abschaltbar nur für den Vergleich.
+    _MASS_EXACT = True
+
     # Homogenisierungsgrenze der 1D/2D-Modelle (Gegenproben 48/53):
     # kritische lokale Kennzahl über dem größten lochfreien Bereich
     # (Radius ρ), das Verhältnis der Filmkraft zur Membransteifigkeit auf
@@ -512,9 +518,11 @@ class MicrophoneCapsule:
     # nicht zwischen beiden Darstellungen liegen muss (3D-Abweichung bis
     # zum Doppelten der Spanne). Damit kam die Warnung in allen 72
     # Lochkreis-Fällen der Sweeps vor dem 1-dB-Einsatz; knappster Fall
-    # steife Kapsel, 65 µm, 48 Löcher auf einem Kreis: Warnung ab 2,20 kHz,
-    # Mehrabweichung dort 0,91 dB (direkt nachgerechnet). Die Prüfung ist
-    # vorsichtig — bei zwei Lochkreisen warnt sie bis zu 40-fach zu früh.
+    # steife Kapsel, 65 µm, 48 Löcher auf einem Kreis: Warnung ab 2,23 kHz,
+    # Mehrabweichung dort 0,95 dB, 1 dB erst bei 2,26 kHz (direkt nach-
+    # gerechnet, Stand Gegenprobe 55; vorher 2,20 kHz und 0,91 dB). Der
+    # Abstand ist knapp. Die Prüfung ist sonst vorsichtig — bei zwei
+    # Lochkreisen warnt sie bis zu 40-fach zu früh.
     _RING_BAND = 0.10
     _RING_REPR_DB = 0.5
 
@@ -1060,14 +1068,29 @@ class MicrophoneCapsule:
         self.S_eff_mem = self.S_mem * m1
         # ------------------------------------------------------------------
         # AKUSTISCHE MASSE DER MEMBRAN
-        # Gleichsetzen der kinetischen Energie des Profils mit der eines
-        # Ersatzkolbens gleicher VOLUMEN-Schnelle:
-        #     M_A = (<φ²>/<φ>²) · rho_s / S            [kg/m^4]
-        # Parabel: <φ²>/<φ>² = (1/3)/(1/4) = 4/3 — der Standardwert.
-        # Ringmembran: der Faktor SINKT (ρ = 0.1: 1.242), das Profil ist
-        # gedrungener.
+        #     M_A = μ · rho_s / S                      [kg/m^4]
+        # Ein Freiheitsgrad kann nur zwei Dinge exakt treffen. Die Kette
+        # nimmt die statische Nachgiebigkeit C_T = S·a²·g/(8T) (exakt, s.
+        # unten) und wählt die Masse so, dass auch die Grundresonanz der
+        # Membran exakt ist, ω1² = z1²·T/(rho_s·a²):
+        #     μ = 8/(z1²·g)      (ohne Pfosten 8/j01² = 1.3833).
+        # Der Rayleigh-Wert der statischen Form, <φ²>/<φ>² (Parabel 4/3,
+        # Ring ρ = 0.1: 1.242), ist eine obere Schranke der Frequenz: mit
+        # ihm lag die Resonanz 1.9 % zu hoch, oder — bei vorgegebener
+        # Resonanz — die statische Nachgiebigkeit 3.75 % zu hoch
+        # (+0.32 dB, Gegenprobe 55). Die Modenmasse der J0-Form allein,
+        # j01²/4 = 1.446, wäre ebenso falsch: sie gehört zur Moden-
+        # Nachgiebigkeit 32/j01⁴ = 95.7 % der statischen. Die Biege-
+        # steifigkeit der Folie trägt Promille und steckt in C_A_phys; ihr
+        # Eigenwert wird nicht eigens getroffen.
         # ------------------------------------------------------------------
-        self._piston_factor = m2 / m1**2
+        self.sigma_mem = rho_s
+        self._ring_g = _ring_compliance_factor(self.rho_post)
+        self._mass_factor_rayleigh = m2 / m1**2
+        _z1 = float(self._ring_modes()["z"][0])
+        self._piston_factor = (8.0 / (_z1 ** 2 * self._ring_g)
+                               if self._MASS_EXACT
+                               else self._mass_factor_rayleigh)
         self.M_A_mem = self._piston_factor * rho_s / self.S_mem
 
         # ------------------------------------------------------------------
@@ -1085,7 +1108,6 @@ class MicrophoneCapsule:
         # Beide Federn wirken parallel (Steifigkeiten addieren sich):
         #        1/C_phys = 1/C_T + 1/C_B
         # ------------------------------------------------------------------
-        self._ring_g = _ring_compliance_factor(self.rho_post)
         C_T = np.pi * a**4 / (8.0 * self.tension) * self._ring_g
         D_plate = self.mat_E * t**3 / (12.0 * (1.0 - self.mat_nu**2))
         C_B = np.pi * a**6 / (192.0 * D_plate)
@@ -1107,28 +1129,24 @@ class MicrophoneCapsule:
         self.f_res_from_tension = 1.0 / (
             2.0 * np.pi * np.sqrt(self.M_A_mem * self.C_A_phys)
         )
-        # EXAKTE Modalfrequenz der Grundmode (Diagnose): die Lumped-Werte
-        # (Kolbenfaktor 4/3 aus der STATISCHEN Parabelform) ergeben für
-        # reine Vorspannung f = sqrt(6)/(2·pi·a)·sqrt(T/rho_s) und liegen
-        # damit 1.9 % ÜBER dem exakten Membran-Eigenwert j01 = 2.40483
-        # (Grundmode J0; Massenfaktor j01²/4 = 1.446 statt 4/3). Für die
-        # Biegesteifigkeit gilt der eingespannte Platten-Eigenwert
-        # lambda² = 10.2158; beide Anteile addieren sich in guter Näherung
-        # quadratisch. Die NETZWERK-Dynamik behält bewusst die konsistenten
-        # Lumped-Werte (LF-exakt, f_res-Kalibrierung absorbiert den
-        # Unterschied; die vollen Modenformen rechnet der 3D-Löser) —
-        # diese Größe dient dem ehrlichen Vergleich in summary().
-        # Mit Mittenterminierung ist der Eigenwert der der RINGmembran
-        # (z_1 = 2.80 statt 2.40 schon bei r_i/a = 1 %).
-        _j01 = float(self._ring_modes()["z"][0])
-        f_T_ex = _j01 / (2.0 * np.pi * a) * np.sqrt(self.tension / rho_s)
+        # EXAKTE Modalfrequenz der Grundmode (Diagnose): Membran-Eigenwert
+        # j01 = 2.40483 (mit Mittenterminierung der der RINGmembran, z_1 =
+        # 2.80 schon bei r_i/a = 1 %), für die Biegesteifigkeit der
+        # eingespannte Platten-Eigenwert lambda² = 10.2158; beide Anteile
+        # addieren sich in guter Näherung quadratisch. Mit dem Massenfaktor
+        # 8/(z1²·g) trifft f_res_from_tension den Vorspannungsanteil exakt
+        # (vorher, mit dem Rayleigh-Wert 4/3, lag er 1.9 % darüber); ein
+        # Unterschied bleibt nur über die Biegesteifigkeit.
+        f_T_ex = _z1 / (2.0 * np.pi * a) * np.sqrt(self.tension / rho_s)
         f_B_ex = (10.2158 / (2.0 * np.pi * a**2)
                   * np.sqrt(D_plate / rho_s))
         self.f_res_modal_exact = float(np.hypot(f_T_ex, f_B_ex))
 
         # Ist eine Soll-Resonanzfrequenz vorgegeben, wird die Nachgiebigkeit
         # so skaliert, dass f_res exakt getroffen wird (die Vorspannung
-        # bleibt als Plausibilitäts-Referenz in summary() sichtbar).
+        # bleibt als Plausibilitäts-Referenz in summary() sichtbar). Mit
+        # dem Massenfaktor 8/(z1²·g) ist das die statische Nachgiebigkeit
+        # der Membran, deren Grundresonanz f_res ist.
         if self.f_res_user is not None:
             w0 = 2.0 * np.pi * float(self.f_res_user)
             self.C_A_mem = 1.0 / (w0**2 * self.M_A_mem)
@@ -2274,11 +2292,14 @@ class MicrophoneCapsule:
         physikalische, über die exakte Modalfrequenz (Vorspannung plus
         Biegeanteil der Folie, s. f_res_modal_exact). Bis Gegenprobe 54
         wurde sie auch dann aus der Resonanz der Kette zurückgerechnet.
-        Die liegt mit dem Kolbenfaktor 4/3 der statischen Form 1,9 % zu
+        Die lag mit dem Kolbenfaktor 4/3 der statischen Form 1,9 % zu
         hoch, die Spannung also 3,75 % und die Nachgiebigkeit war
-        entsprechend zu klein (B&K 4134: −0,3 dB im Tiefton).
+        entsprechend zu klein (B&K 4134: −0,3 dB im Tiefton). Seit dem
+        Massenfaktor 8/(z1²·g) (Gegenprobe 55) trifft die Kette den
+        Vorspannungsanteil selbst exakt; beide Wege unterscheiden sich
+        nur noch über die Biegesteifigkeit der Folie (Promille).
         """
-        sigma = self.M_A_mem * self.S_mem * (1.0 / self._piston_factor)
+        sigma = self.sigma_mem
         z1 = float(self._ring_modes()["z"][0])
         f_t = (self.f_res_modal_exact
                if self.f_res_user is None and self._TENSION_EXACT_3D
@@ -2749,8 +2770,8 @@ class MicrophoneCapsule:
 
         Unser Ein-Freiheitsgrad-Modell ist aber KEINE Mode-1 dieser Reihe,
         sondern die klassische Lumped-Näherung: Nachgiebigkeit = exakter
-        statischer Wert, Masse = kinetisches Äquivalent des Parabelprofils.
-        Für einen Freiheitsgrad ist das richtig. Legt man die höheren
+        statischer Wert, Masse so, dass die Grundresonanz exakt ist
+        (8/j01², Gegenprobe 55). Für einen Freiheitsgrad ist das richtig. Legt man die höheren
         Moden ADDITIV daneben (jede mit C_A_mem·(z_1/z_m)^4), zählt die
         Reihe die Nachgiebigkeit doppelt: gemessen +0.30/+0.35/+0.36/+0.37
         dB Tiefton bei 2/3/4/5 Moden — ein Effekt, den es nicht gibt.
@@ -2762,14 +2783,17 @@ class MicrophoneCapsule:
         gleichen Verhältnis wandern, bleiben alle Modenresonanzen
         unverändert. N = 1 -> s_1 = 1: bitgleich zum Bestand.
 
-        Preis, dokumentiert: der Hochtongrenzwert. Die exakten Modenmassen
-        erfüllen Σ 1/M_m = S/σ — eine vielmodige Membran verhält sich weit
-        oberhalb aller Resonanzen wie ein freier KOLBEN. Ohne Normierung
-        liefe unsere Reihe über diesen Wert hinaus (5 Moden +0.01 dB,
-        10 Moden +0.35, 50 Moden +0.63 — sie wird mit mehr Termen
-        SCHLECHTER); mit Normierung liegt sie bei 5 Moden 0.37 dB
-        darunter und konvergiert monoton. Ein zu tiefer Hochtongrenzwert
-        ist der harmlosere Fehler als eine divergierende Reihe.
+        Hochtongrenzwert: die exakten Modenmassen erfüllen Σ 1/M_m = S/σ —
+        eine vielmodige Membran verhält sich weit oberhalb aller
+        Resonanzen wie ein freier KOLBEN. Ohne Normierung liefe unsere
+        Reihe über diesen Wert hinaus (5 Moden −0.31 dB, 10 Moden +0.03,
+        50 Moden +0.31 — sie wird mit mehr Termen SCHLECHTER); mit
+        Normierung liegt sie bei 5/10/50 Moden 0.69/0.35/0.07 dB darunter
+        und konvergiert monoton EXAKT auf den Kolben: mit dem Massenfaktor
+        μ = 8/j01² ist s_∞·μ = (j01⁴/32)·(8/j01²) = j01²/4, jeder Zweig
+        trägt dann für N -> ∞ genau die exakte Modenmasse und
+        -nachgiebigkeit (Gegenprobe 55). Mit dem früheren 4/3 lief die
+        Reihe 0.32 dB ÜBER den Kolben hinaus.
 
         Die elektrostatische Feder-Erweichung wirkt weiterhin nur auf die
         Grundmode; durch die Normierung wird ihr Beitrag um 1/s_N
@@ -4092,7 +4116,7 @@ class MicrophoneCapsule:
         j01 = 2.404825557695773
         coef = 12.0 * MU_AIR * rho ** 4 / (h ** 3 * tension * j01 ** 2)
         # Beulresonanz aus derselben Spannung und Flächenmasse
-        sigma = self.M_A_mem * self.S_mem * (1.0 / self._piston_factor)
+        sigma = self.sigma_mem
         f_rho = j01 / (2.0 * np.pi * rho) * np.sqrt(tension / sigma)
 
         def _pi(f):
@@ -4408,11 +4432,9 @@ class MicrophoneCapsule:
 
         # Membrankonstanten: Flächendichte, Spannung (s. _membrane_tension_
         # 3d: aus f_res, wenn vorgegeben, sonst die physikalische). Mit
-        # Mittenterminierung sind Kolbenfaktor, Eigenwert und Modenform
-        # die der RINGmembran (s. _ring_modes).
-        # (Kehrwert zuerst: 1/(4/3) ist exakt 0.75, damit bleibt der Fall
-        # ohne Mittenterminierung bitgleich)
-        sigma = self.M_A_mem * self.S_mem * (1.0 / self._piston_factor)
+        # Mittenterminierung sind Eigenwert und Modenform die der
+        # RINGmembran (s. _ring_modes).
+        sigma = self.sigma_mem
         T_mem = self._membrane_tension_3d()
         # Feder-Erweichung ÖRTLICH aus dem exakten Arbeitspunkt (λ·∂p/∂w
         # über dem Spaltprofil, Gegenprobe 49). Bis dahin eine über die
@@ -6693,7 +6715,7 @@ class MicrophoneCapsule:
                  f"{self.S_mem * 1e6:9.2f} mm²"),
             _row(_t("akust. Masse Membran M_A:", "acoust. membrane mass M_A:"),
                  f"{self.M_A_mem:9.2f} kg/m⁴"),
-            _row(_t("Kolbenfaktor <φ²>/<φ>²:", "Piston factor <φ²>/<φ>²:"),
+            _row(_t("Massenfaktor 8/(z₁²·g):", "Mass factor 8/(z₁²·g):"),
                  f"{self._piston_factor:9.4f}"),
             _row(_t("akust. Nachgiebigkeit C_A:", "acoust. compliance C_A:"),
                  f"{self.C_A_mem:9.3e} m³/Pa"),
@@ -6767,13 +6789,13 @@ class MicrophoneCapsule:
                     "tension/E:"),
                  f"{self.f_res_from_tension:9.1f} Hz"),
             _t(f"  (exakte Modalfrequenz:      {self.f_res_modal_exact:9.1f} "
-               f"Hz — Lumped-Kolbenfaktor {self._piston_factor:.4f} liegt "
-               f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.1f} % "
-               "darüber)",
+               f"Hz — Abweichung der Kette "
+               f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.2f} %, "
+               "nur über die Biegesteifigkeit)",
                f"  (exact modal frequency:     {self.f_res_modal_exact:9.1f} "
-               f"Hz — lumped piston factor {self._piston_factor:.4f} is "
-               f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.1f} % "
-               "above)"),
+               f"Hz — lumped model deviates "
+               f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.2f} %, "
+               "via bending stiffness only)"),
             _row(_t("Ruhekapazität C0 (je BP):", "Static capacitance C0/BP:"),
                  f"{self.C_elec_0 * 1e12:9.2f} pF"),
             _row(_t("Squeeze-Film-Widerst. R_gap:", "Squeeze-film res. "
@@ -7737,7 +7759,9 @@ if __name__ == "__main__":
     #    klar verschieden vom nominalen Spalt (h³-Wirkung vorhanden).
     # c) Exakte Zwikker-Kosten-Leitung: geht für weite Rohre in die
     #    Kirchhoff-Asymptotik über (Dämpfungsbelag/Zc innerhalb weniger %).
-    # d) Exakte J0-Modalfrequenz: ~1.8 % unter dem Lumped-Wert (4/3-Faktor).
+    # d) Exakte J0-Modalfrequenz: seit dem Massenfaktor 8/j01²
+    #    (Gegenprobe 55) trifft die Kette sie; der Rayleigh-Wert 4/3 der
+    #    statischen Form lag 1.9 % darüber.
     assert k67._fok_th is not None and 0.70 < k67._fok_th < 0.80, \
         f"K67-Fok-Faktor ~0.74 erwartet ({k67._fok_th:.3f})"
     # (50 V: fast volle Elektrode ohne Senkungen — der exakte Pull-in
@@ -7779,14 +7803,21 @@ if __name__ == "__main__":
         assert 0.98 < abs(Zc_ex[0]) / Zc0 < 1.02, \
             "exakte Leitung muss für weite Rohre Kirchhoff treffen (Zc)"
     r_modal = sparse.f_res_modal_exact / sparse.f_res_from_tension
-    assert 0.975 < r_modal < 0.99, \
-        f"exakte J0-Modalfrequenz ~1.8 % unter Lumped erwartet ({r_modal:.4f})"
+    assert abs(r_modal - 1.0) < 1e-3, \
+        (f"die Kette muss die exakte J0-Modalfrequenz treffen "
+         f"({r_modal:.5f})")
+    r_rayl = (np.sqrt(sparse._piston_factor / sparse._mass_factor_rayleigh)
+              / r_modal)                       # f_Rayleigh / f_exakt
+    assert 1.015 < r_rayl < 1.025, \
+        (f"mit dem Rayleigh-Wert 4/3 lag die Kette ~1.9 % zu hoch "
+         f"({r_rayl:.4f})")
     assert "exakte Modalfrequenz" in sparse.summary()
     print(f"Fok/Melling: K67 {k67._fok_th:.2f}, einsame Mündung "
           f"{sparse._fok_th:.3f} -> 1; lokales h(r): sag=0 == Bestand, "
           f"Korrektur zur Mittel-Näherung "
           + (f"{100 * rel_mean:.1f} %" if _HAS_SCIPY else "—")
-          + f"; Leitung exakt == Kirchhoff (weit); Modal {r_modal:.3f}  OK")
+          + f"; Leitung exakt == Kirchhoff (weit); Modal {r_modal:.4f} "
+          f"(Rayleigh 4/3: {r_rayl:.3f})  OK")
 
     # --------- Gegenprobe 20: Sphäroid-Körpermodell (axialer Transfer) -----
     # Eigene oblate Spezialfunktionen (scipy obl_rad2 ist für ξ0 < 1
@@ -8964,9 +8995,11 @@ if __name__ == "__main__":
     # erfüllen Σ 1/M_m = S/σ, eine vielmodige Membran verhält sich weit
     # oberhalb aller Resonanzen also wie ein freier KOLBEN. Mit der
     # Normierung nähert sich unsere wirksame Masse diesem Grenzwert
-    # MONOTON VON OBEN (1 Mode 4/3, 3 Moden 1.096, 5 Moden 1.043 mal σ/S)
-    # — ohne sie lief die Reihe darüber hinaus und wurde mit mehr Termen
-    # schlechter.
+    # MONOTON VON OBEN (1 Mode 8/j01² = 1.383, 3 Moden 1.138, 5 Moden
+    # 1.083 mal σ/S) — ohne sie lief die Reihe darüber hinaus und wurde
+    # mit mehr Termen schlechter. Mit dem Massenfaktor 8/j01² ist der
+    # Grenzwert für N -> ∞ EXAKT σ/S (Gegenprobe 55); mit dem alten 4/3
+    # lief er auf 0.964·σ/S, also unter die Kolbenmasse.
     s_N28 = c28_3._modal_split_factor()
     M_eff28 = s_N28 / sum(1.0 / M for M in
                           [c28_3.M_A_mem] + [b[0] for b in br28])
@@ -8986,8 +9019,8 @@ if __name__ == "__main__":
              / sum(1.0 / M for M in [cc28.M_A_mem]
                    + [b[0] for b in cc28._higher_mode_branches()]))
             / M_pist28)
-    assert abs(rel28[0] - 4.0 / 3.0) < 1e-9, \
-        f"eine Mode muss die Parabelmasse 4/3·σ/S sein ({rel28[0]:.4f})"
+    assert abs(rel28[0] - 8.0 / x28[0] ** 2) < 1e-9, \
+        f"eine Mode muss die Masse 8/j01²·σ/S haben ({rel28[0]:.4f})"
     assert 1.0 < rel28[2] < rel28[1] < rel28[0], \
         (f"die wirksame Masse muss monoton von oben gegen die Kolbenmasse "
          f"σ/S laufen ({np.round(rel28, 4)})")
@@ -10137,7 +10170,8 @@ if __name__ == "__main__":
     # vernachlässigbar bleibt — bei uns 0.07 bzw. 0.19 % Feder-Erweichung).
     # Der übliche Fallstrick, Geometrie und Kurve aus verschiedenen
     # Quellen zu mischen, entfällt damit. Die Tabelle ist in sich
-    # konsistent: aus Tabelle I folgen f_vak, M = (4/3)ρt/S,
+    # konsistent: aus Tabelle I folgen f_vak, M = (4/3)ρt/S (Rayleigh;
+    # die Kette nimmt seit Gegenprobe 55 8/j01² statt 4/3),
     # C = S²/(8πT) und Q = √(M/C_ser)/R auf vier Stellen genau.
     #
     # ABBILDUNG. Der Randschlitz ist genau unser ``ring_vent_*``: beim
@@ -10220,9 +10254,13 @@ if __name__ == "__main__":
         for nm38, (par38, tab38, f38, a38, p38, lim38) in bk38.items():
             c38 = MicrophoneCapsule(**par38)
             # a) Ersatzelemente der Membran: analytisch, müssen exakt sein
-            assert abs(c38.M_A_mem / tab38["M"] - 1.0) < 5e-3, \
-                (f"{nm38}: M_A muss (4/3)ρt/S sein "
-                 f"({c38.M_A_mem:.1f} gegen {tab38['M']:.0f})")
+            #    Zuckerwar rechnet mit dem Rayleigh-Wert 4/3; die Kette
+            #    seit Gegenprobe 55 mit 8/j01² (3.75 % schwerer, damit die
+            #    Resonanz der Membran exakt ist). Geprüft wird ρt/S.
+            M38 = c38.M_A_mem * c38._mass_factor_rayleigh / c38._piston_factor
+            assert abs(M38 / tab38["M"] - 1.0) < 5e-3, \
+                (f"{nm38}: (4/3)ρt/S muss Tab. II treffen "
+                 f"({M38:.1f} gegen {tab38['M']:.0f})")
             assert abs(c38.C_A_mem / tab38["C_M"] - 1.0) < 5e-3, \
                 (f"{nm38}: C_A der Membran muss S²/(8πT) sein "
                  f"({c38.C_A_mem:.4e} gegen {tab38['C_M']:.4e})")
@@ -11232,7 +11270,10 @@ if __name__ == "__main__":
     if _HAS_SCIPY:
         # a) Grenzfall
         c45o = MicrophoneCapsule()
-        assert c45o._piston_factor == 4.0 / 3.0, "ohne Pfosten exakt 4/3"
+        assert c45o._mass_factor_rayleigh == 4.0 / 3.0, \
+            "ohne Pfosten ist der Rayleigh-Wert exakt 4/3"
+        assert c45o._piston_factor == 8.0 / 2.404825557695773 ** 2, \
+            "ohne Pfosten ist der Massenfaktor exakt 8/j01² (Gegenprobe 55)"
         assert c45o.S_eff_mem == 0.5 * c45o.S_mem, "ohne Pfosten S_eff = S/2"
         assert _ring_compliance_factor(0.0) == 1.0
         assert c45o._k_gen == c45o.S_mem**2 / (4.0 * c45o.C_A_mem), \
@@ -11529,8 +11570,8 @@ if __name__ == "__main__":
         assert np.array_equal(
             ga["r_f"], (np.arange(ga["Nr"]) + 0.5) * ga["dr"]), \
             "ohne Pfosten bitgleich das alte Filmgitter"
-        assert ga["sigma"] == 0.75 * c47a.M_A_mem * c47a.S_mem, \
-            "ohne Pfosten ist die Flächendichte 0.75·M_A·S (Kolbenfaktor 4/3)"
+        assert ga["sigma"] == c47a.mat_rho * c47a.t_mem, \
+            "die Flächendichte des Felds ist ρ·t"
         assert ga["T_mem"] == ga["sigma"] * (
             2.0 * np.pi * c47a.f_res * c47a.a_mem
             / 2.404825557695773) ** 2, \
@@ -12101,9 +12142,14 @@ if __name__ == "__main__":
             through_holes_stepped=True, clamp_ring_thickness=2e-3,
             clamp_ring_width=4e-3, fabric_front_rayl=0.0,
             fabric_rear_rayl=0.0, body_diameter=34e-3)
-        assert 60.0 < k49.U_pullin < 74.0, \
-            (f"K67: exakter Pull-in unter dem Ein-Moden-Wert 74.4 V "
-             f"({k49.U_pullin:.1f} V)")
+        # Ein-Moden-Wert bis Gegenprobe 48: 74.4 V mit dem Massenfaktor
+        # 4/3. Bei vorgegebener Resonanz ist C ∝ 1/μ und U_PI ∝ 1/√C,
+        # mit 8/j01² (Gegenprobe 55) also √(μ/μ_R) höher.
+        u1m49 = 74.4 * np.sqrt(k49._piston_factor
+                               / k49._mass_factor_rayleigh)
+        assert 60.0 < k49.U_pullin < u1m49 - 0.4, \
+            (f"K67: exakter Pull-in unter dem Ein-Moden-Wert "
+             f"{u1m49:.1f} V ({k49.U_pullin:.1f} V)")
         print(f"Exakter Arbeitspunkt: Form gegen Schießverfahren "
               f"{dev_a49:.0e}, Nachgiebigkeit == ∂V/∂p des Asts "
               f"({dev_b49:.0e}), divergiert an der Falte "
@@ -12111,7 +12157,7 @@ if __name__ == "__main__":
               f"Faltpunkt w_max/h = {x_pi49:.3f} (Ein-Moden-Bild 0.440); "
               f"Ā = {abar_x49:.4f} gegen Warren 0.789, Ein-Moden-Bild "
               f"{abar_g49:.4f} ({100 * (abar_g49 / abar_x49 - 1):+.1f} %); "
-              f"K67: U_PI {k49.U_pullin:.1f} V (Ein-Moden 74.4), w0 "
+              f"K67: U_PI {k49.U_pullin:.1f} V (Ein-Moden {u1m49:.1f}), w0 "
               f"{k49.w0_static * 1e6:.1f} µm, C0 {k49.C_elec_0 * 1e12:.1f} pF, "
               f"Erweichung {100 * k49.softening_ratio:.1f} %  OK")
 
@@ -12658,7 +12704,7 @@ if __name__ == "__main__":
     #    liegen (s. _RING_REPR_DB). Die alte Grenze der steifen Kapsel mit
     #    48 Löchern auf einem Kreis (390 Hz) lag über dem Einsatz.
     # d) Vollständigkeit über alle 114 Fälle steht im README (knappster
-    #    Fall 0,91 dB an der Warnfrequenz); hier die tragenden Stichproben.
+    #    Fall 0,95 dB an der Warnfrequenz); hier die tragenden Stichproben.
     if _HAS_SCIPY:
         pA53 = dict(
             architecture="single", membrane_resonance_hz=2100.0,
@@ -12839,11 +12885,12 @@ if __name__ == "__main__":
     #    Spannung aus der Resonanz der Kette zurück, die mit dem Kolben-
     #    faktor 4/3 der statischen Form 1.9 % zu hoch liegt — 3.75 % zu viel
     #    Spannung, −0.3 dB. Jetzt die physikalische (s. _membrane_tension_3d).
-    # c) Der Rest bei VORGEGEBENER RESONANZ ist die Ein-Moden-Kalibrierung
-    #    der Kette: sie trifft f_res mit dem Kolbenfaktor 4/3 und ist damit
-    #    statisch 3.75 % zu nachgiebig (höchstens +0.32 dB, durch die
-    #    Rückvolumen-Steifigkeit weniger). Dieselbe Kapsel über die
-    #    Vorspannung vorgegeben: 2D == 3D.
+    # c) Der Rest bei VORGEGEBENER RESONANZ war die Ein-Moden-Kalibrierung
+    #    der Kette (Kolbenfaktor 4/3, statisch 3.75 % zu nachgiebig);
+    #    behoben mit dem Massenfaktor 8/j01², s. Gegenprobe 55.
+    # Die Zerlegung b) stellt deshalb den Stand VOR Gegenprobe 55 nach
+    # (_MASS_EXACT = False): mit dem neuen Massenfaktor trifft schon die
+    # Resonanz der Kette die physikalische Spannung, Schritt b) wäre leer.
     # d) Aufgedeckt durch a): Θ der KETTE rechnete auch bei Mitten-
     #    terminierung mit dw = 2V/S (Parabel). Die Ringmembran hat die
     #    mittlere Auslenkung m1 > 1/2 (3 mm Pfosten auf 25 mm: 0.632), die
@@ -12917,21 +12964,27 @@ if __name__ == "__main__":
             h2_54 = MicrophoneCapsule(squeeze_model="2d",
                                       **bk54).transfer_function(f54)[0]
             d54 = {}
-            for oe54, te54 in ((False, False), (True, False), (True, True)):
+            for oe54, te54, me54 in ((False, False, False),
+                                     (True, False, False),
+                                     (True, True, False), (True, True, True)):
                 MicrophoneCapsule._OUTPUT_EXACT_3D = oe54
                 MicrophoneCapsule._TENSION_EXACT_3D = te54
+                MicrophoneCapsule._MASS_EXACT = me54
                 try:
                     h3_54 = MicrophoneCapsule(
                         squeeze_model="3d", **bk54).transfer_function(f54)[0]
                 finally:
                     MicrophoneCapsule._OUTPUT_EXACT_3D = True
                     MicrophoneCapsule._TENSION_EXACT_3D = True
-                d54[(oe54, te54)] = float(20 * np.log10(abs(h2_54 / h3_54)))
+                    MicrophoneCapsule._MASS_EXACT = True
+                d54[(oe54, te54, me54)] = float(
+                    20 * np.log10(abs(h2_54 / h3_54)))
             cbk54 = MicrophoneCapsule(squeeze_model="2d", **bk54)
             ubk54 = (cbk54.a_bp / cbk54.a_mem) ** 2
             fin54 = -20 * np.log10(ubk54 * (2 - ubk54))
-            old54, out54, both54 = (d54[(False, False)], d54[(True, False)],
-                                    d54[(True, True)])
+            old54, out54, both54, now54 = (
+                d54[(False, False, False)], d54[(True, False, False)],
+                d54[(True, True, False)], d54[(True, True, True)])
             assert old54 > 1.2, f"alter Versatz sichtbar ({old54:+.2f} dB)"
             assert abs((old54 - out54) - fin54) < 0.05, \
                 (f"a) die Wandlung erklärt u·(2−u) = {fin54:.2f} dB "
@@ -12939,46 +12992,161 @@ if __name__ == "__main__":
             assert abs(both54) < 0.02, \
                 (f"b) mit physikalischer Spannung verschwindet der Rest "
                  f"({out54:+.2f} -> {both54:+.3f} dB)")
-            # c) f_res vorgegeben gegen dieselbe Membran über die Spannung:
-            #    ½"-Prüfling der Gegenprobe 48 (PET, 8 kHz)
-            pB54 = dict(
-                architecture="single", membrane_resonance_hz=8000.0,
-                membrane_diameter=12.0e-3, membrane_thickness=5e-6,
-                membrane_tension=400.0, air_gap=25e-6,
-                backplate_diameter=11.0e-3, backplate_thickness=1.5e-3,
-                bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
-                delay_length=0.0, cavity_length=4.0e-3,
-                cavity_wall_thickness=1.0e-3, n_cavity_holes=0,
-                fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
-                body_diameter=14e-3, n_through_holes=48,
-                through_hole_diameter=0.33e-3)
-            cB54 = MicrophoneCapsule(squeeze_model="2d", **pB54)
-            TB54 = cB54._membrane_tension_3d()      # exakte Grundmode 8 kHz
-            pBt54 = dict(pB54, membrane_resonance_hz=None,
-                         membrane_tension=TB54)
-            dB54 = {}
-            for lab54, q54 in (("f_res", pB54), ("Spannung", pBt54)):
-                dB54[lab54] = float(20 * np.log10(abs(
-                    MicrophoneCapsule(squeeze_model="2d", **q54)
-                    .transfer_function(f54)[0]
-                    / MicrophoneCapsule(squeeze_model="3d", **q54)
-                    .transfer_function(f54)[0])))
-            assert abs(dB54["Spannung"]) < 0.02, \
-                (f"c) über die Spannung vorgegeben: 2D == 3D "
-                 f"({dB54['Spannung']:+.3f} dB)")
-            # Kette: C = 0.75·S/(σ·ω0²) (Kolbenfaktor 4/3), exakte Membran
-            # gleicher Resonanz: C = (j01²/8)·S/(σ·ω0²)
-            lump54 = 20 * np.log10(0.75 / (2.404825557695773 ** 2 / 8.0))
-            assert 0.0 < dB54["f_res"] < lump54 + 0.01, \
-                (f"c) über f_res vorgegeben: Rest der Ein-Moden-Kalibrierung "
-                 f"zwischen 0 und {lump54:.2f} dB ({dB54['f_res']:+.3f} dB)")
-        print(f"Statischer Versatz 2D/3D (B&K 4134, 20 Hz): {old54:+.2f} dB "
-              f"= Wandlung {old54 - out54:+.2f} (u·(2−u): {fin54:+.2f}) + "
-              f"Spannung {out54 - both54:+.2f} -> {both54:+.3f} dB; "
-              f"½\"-Kapsel über die Spannung {dB54['Spannung']:+.3f} dB, "
-              f"über f_res {dB54['f_res']:+.2f} dB (Ein-Moden-Kalibrierung "
-              f"der Kette, höchstens {lump54:.2f} dB); Ringmembran "
-              f"(m1 = {m1_54[3e-3]:.3f}): Θ mit S_eff, 3D/2D "
-              f"{rp54[0.0]:.4f} -> {rp54[3e-3]:.4f} mit Pfosten  OK")
+            assert abs(now54) < 0.02, \
+                f"heutiger Stand: 2D == 3D ({now54:+.3f} dB)"
+        print(f"Statischer Versatz 2D/3D (B&K 4134, 20 Hz, Stand vor "
+              f"Gegenprobe 55): {old54:+.2f} dB = Wandlung "
+              f"{old54 - out54:+.2f} (u·(2−u): {fin54:+.2f}) + Spannung "
+              f"{out54 - both54:+.2f} -> {both54:+.3f} dB, heute "
+              f"{now54:+.3f} dB; Ringmembran (m1 = {m1_54[3e-3]:.3f}): Θ "
+              f"mit S_eff, 3D/2D {rp54[0.0]:.4f} -> {rp54[3e-3]:.4f} mit "
+              f"Pfosten  OK")
+
+    # --------- Gegenprobe 55: Massenfaktor 8/(z1²·g) der Kette -----------
+    # Ein Freiheitsgrad trifft nur zwei Dinge exakt. Die Kette nimmt die
+    # statische Nachgiebigkeit C_T = S·a²·g/(8T) und wählte die Masse bis
+    # hierher mit dem Rayleigh-Wert der statischen Form (Parabel 4/3). Der
+    # ist eine obere Schranke der Frequenz: die Resonanz lag 1.9 % zu
+    # hoch, oder — bei vorgegebener Resonanz — die statische Nachgiebigkeit
+    # 3.75 % zu hoch (+0.32 dB). Jetzt μ = 8/(z1²·g) (ohne Pfosten 8/j01²
+    # = 1.383): Statik UND Grundresonanz exakt.
+    # a) RESONANZ: bei vorgegebener Vorspannung trifft die Kette den
+    #    Membran-Eigenwert (Vollkreis und Ringmembran); es bleibt nur die
+    #    Biegesteifigkeit (Promille von Promille bei Folien).
+    # b) STATIK: bei vorgegebener Resonanz ist C_A_mem die statische
+    #    Nachgiebigkeit der Membran, deren exakte Grundmode f_res ist —
+    #    „f_res vorgeben" und „Spannung vorgeben" sind jetzt dieselbe
+    #    Kapsel.
+    # c) GEGEN DAS 3D-FELD (volle Membran, keine Moden): ½"-Prüfling der
+    #    Gegenprobe 48 über f_res vorgegeben, 20 Hz. Mit 4/3 lag 2D
+    #    +0.12 dB über 3D, jetzt gleich.
+    # d) MODENREIHE: die nachgiebigkeitserhaltend normierte Mehrmoden-
+    #    Kette (s. _modal_split_factor) läuft für N -> ∞ genau dann auf den
+    #    freien Kolben der Membranfläche, wenn μ·g·z1²/8 = 1 ist — jeder
+    #    Zweig trägt dann exakt Modenmasse und -nachgiebigkeit. Mit 8/j01²
+    #    konvergiert sie von oben auf 1, mit 4/3 lief sie auf 0.964, also
+    #    unter die Kolbenmasse. Die Ringmembran geht auf die Ringfläche
+    #    S·(1 − ρ²).
+    if _HAS_SCIPY:
+        from scipy.special import jn_zeros as _jn_zeros55
+        j01_55 = 2.404825557695773
+        # a) Resonanz bei vorgegebener Vorspannung
+        pT55 = dict(membrane_resonance_hz=None, membrane_tension=45.0,
+                    membrane_diameter=25.4e-3, membrane_thickness=6e-6)
+        fr55 = {}
+        for dp55 in (0.0, 1.0e-3, 3.0e-3):
+            c55 = MicrophoneCapsule(center_post_diameter=dp55, **pT55)
+            fr55[dp55] = (c55.f_res / c55.f_res_modal_exact - 1.0,
+                          c55._piston_factor, c55._mass_factor_rayleigh)
+            assert abs(fr55[dp55][0]) < 1e-4, \
+                (f"a) Pfosten {dp55 * 1e3:.0f} mm: die Kette muss den "
+                 f"Membran-Eigenwert treffen ({fr55[dp55][0]:+.1e})")
+        assert fr55[0.0][1] == 8.0 / j01_55 ** 2, "a) ohne Pfosten 8/j01²"
+        assert all(v[1] > v[2] for v in fr55.values()), \
+            "a) der Rayleigh-Wert ist eine obere Schranke der Frequenz"
+        fbk55 = MicrophoneCapsule(
+            membrane_material={"rho": 8900.0, "E": 200.0e9, "nu": 0.31},
+            membrane_resonance_hz=None, membrane_diameter=2 * 4.445e-3,
+            membrane_thickness=5.0e-6, membrane_tension=3162.3,
+            air_gap=2.077e-5, backplate_diameter=2 * 3.607e-3,
+            n_through_holes=6, through_hole_diameter=2 * 5.080e-4,
+            through_hole_pcd=2 * 2.032e-3, n_blind_holes=0)
+        ebk55 = fbk55.f_res / fbk55.f_res_modal_exact - 1.0
+        assert abs(ebk55) < 1e-3, \
+            f"a) B&K-Nickelfolie: nur der Biegeanteil bleibt ({ebk55:+.1e})"
+        # b) f_res vorgegeben == dieselbe Membran über die Spannung
+        pB55 = dict(
+            architecture="single", membrane_resonance_hz=8000.0,
+            membrane_diameter=12.0e-3, membrane_thickness=5e-6,
+            membrane_tension=400.0, air_gap=25e-6,
+            backplate_diameter=11.0e-3, backplate_thickness=1.5e-3,
+            bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+            delay_length=0.0, cavity_length=4.0e-3,
+            cavity_wall_thickness=1.0e-3, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=14e-3, n_through_holes=48,
+            through_hole_diameter=0.33e-3, squeeze_model="2d")
+        cB55 = MicrophoneCapsule(**pB55)
+        TB55 = cB55._membrane_tension_3d()      # exakte Grundmode 8 kHz
+        cBt55 = MicrophoneCapsule(**dict(pB55, membrane_resonance_hz=None,
+                                         membrane_tension=TB55))
+        #    Einziger Unterschied: die Kapsel mit vorgegebener Spannung
+        #    trägt zusätzlich die Biegesteifigkeit der Folie (C_T/C_B).
+        eC55 = cB55.C_A_mem / cBt55.C_A_mem - 1.0
+        CT55 = (np.pi * cBt55.a_mem ** 4 * cBt55._ring_g / (8.0 * TB55))
+        bend55 = CT55 / cBt55.C_A_mem - 1.0
+        assert abs(eC55 - bend55) < 1e-9 and bend55 < 1e-3, \
+            (f"b) f_res vorgegeben und Spannung vorgegeben müssen bis auf "
+             f"die Biegesteifigkeit dieselbe Kapsel sein (C {eC55:+.2e}, "
+             f"Biegeanteil {bend55:+.2e})")
+        ef55 = cBt55.f_res / 8000.0 - 1.0
+        assert abs(ef55 - 0.5 * bend55) < 1e-6, \
+            f"b) Resonanz bis auf die Biegung ({ef55:+.2e})"
+        f55 = np.array([20.0])
+        eH55 = float(20 * np.log10(abs(cB55.transfer_function(f55)[0]
+                                       / cBt55.transfer_function(f55)[0])))
+        assert abs(eH55) < 0.01, f"b) Ausgang gleich ({eH55:+.4f} dB)"
+        # c) gegen das 3D-Feld, alter und neuer Massenfaktor
+        dB55 = {}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for me55 in (False, True):
+                MicrophoneCapsule._MASS_EXACT = me55
+                try:
+                    q55 = dict(pB55)
+                    h2_55 = MicrophoneCapsule(**q55).transfer_function(f55)[0]
+                    q55["squeeze_model"] = "3d"
+                    h3_55 = MicrophoneCapsule(**q55).transfer_function(f55)[0]
+                finally:
+                    MicrophoneCapsule._MASS_EXACT = True
+                dB55[me55] = float(20 * np.log10(abs(h2_55 / h3_55)))
+        # Kette mit 4/3: C = 0.75·S/(σ·ω0²); exakte Membran gleicher
+        # Resonanz: C = (j01²/8)·S/(σ·ω0²) — Verhältnis 6/j01²
+        lump55 = 20 * np.log10(6.0 / j01_55 ** 2)
+        assert 0.05 < dB55[False] < lump55 + 0.01, \
+            (f"c) mit 4/3 lag 2D über 3D, höchstens {lump55:.2f} dB "
+             f"({dB55[False]:+.3f} dB)")
+        assert abs(dB55[True]) < 0.02, \
+            f"c) mit 8/j01²: 2D == 3D ({dB55[True]:+.3f} dB)"
+        # d) Hochtongrenzwert der normierten Modenreihe
+        N55 = 400
+        lim55 = {}
+        for rho55 in (0.0, 0.1):
+            if rho55 == 0.0:
+                z55 = _jn_zeros55(0, N55)
+                cm55, mm55 = 1.0 / z55 ** 4, z55 ** 2 / 4.0
+                g55 = 1.0
+            else:
+                md55 = MicrophoneCapsule._ring_eigen(rho55, N55)
+                z55 = md55["z"]
+                cm55 = md55["I1"] ** 2 / (z55 ** 2 * md55["I2"])
+                mm55 = md55["I2"] / md55["I1"] ** 2
+                g55 = _ring_compliance_factor(rho55)
+            for lab55, mu55 in (("8/(z1²g)", 8.0 / (z55[0] ** 2 * g55)),
+                                ("Rayleigh", MicrophoneCapsule(
+                                    center_post_diameter=2 * rho55 * 13e-3,
+                                    membrane_diameter=26e-3)
+                                 ._mass_factor_rayleigh)):
+                s55 = np.sum(cm55) / cm55[0]
+                inv55 = np.sum(mm55[0] / (mu55 * mm55))
+                lim55[(rho55, lab55)] = s55 / inv55 * (1.0 - rho55 ** 2)
+            tail55 = 4.0 / (np.pi ** 2 * N55)       # Rest von Σ1/z² ab N
+            new55 = lim55[(rho55, "8/(z1²g)")]
+            assert 1.0 < new55 < 1.0 + 1.1 * tail55, \
+                (f"d) ρ = {rho55}: mit 8/(z1²g) muss die Reihe von oben auf "
+                 f"den Kolben laufen ({new55:.5f})")
+            assert lim55[(rho55, "Rayleigh")] < 1.0, \
+                (f"d) ρ = {rho55}: mit dem Rayleigh-Wert lief sie darunter "
+                 f"({lim55[(rho55, 'Rayleigh')]:.4f})")
+        print(f"Massenfaktor 8/(z1²g): Resonanz exakt (Kreis "
+              f"{fr55[0.0][0]:+.0e}, Pfosten 3 mm {fr55[3e-3][0]:+.0e}, B&K "
+              f"{ebk55:+.0e} über die Biegung; Rayleigh {fr55[0.0][2]:.4f} "
+              f"-> {fr55[0.0][1]:.4f}); f_res == Spannung (C {eC55:+.1e} "
+              f"= Biegeanteil der Folie); "
+              f"½\" 2D/3D {dB55[False]:+.3f} -> {dB55[True]:+.3f} dB; "
+              f"Modenreihe N = {N55} -> Kolben {lim55[(0.0, '8/(z1²g)')]:.4f} "
+              f"(Rayleigh {lim55[(0.0, 'Rayleigh')]:.4f}), Ring ρ = 0.1 "
+              f"{lim55[(0.1, '8/(z1²g)')]:.4f} "
+              f"({lim55[(0.1, 'Rayleigh')]:.4f})  OK")
 
     print("\nAlle Testläufe erfolgreich — Arrays werden korrekt berechnet.")
