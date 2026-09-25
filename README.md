@@ -7,9 +7,10 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 
 | Datei | Inhalt |
 |---|---|
-| `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung) — eigenständig lauffähig mit Testlauf |
+| `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung); `python microphone_capsule.py` startet den Selbsttest |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
 | `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
+| `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures |
 
 ## Sprache / Language
 
@@ -217,11 +218,33 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Nur das Physikmodell (ohne GUI) testen:
+Nur das Physikmodell (ohne GUI) testen, also die Gegenproben in
+`tests/` laufen lassen:
 
 ```bash
-python microphone_capsule.py
+pip install -r requirements-dev.txt
+python microphone_capsule.py                  # alle, parallel über alle Kerne
+python microphone_capsule.py -m "not slow"    # schnelle Stufe
+python microphone_capsule.py -k gp48          # eine Gegenprobe
+python microphone_capsule.py --lf             # nur die zuletzt gescheiterten
 ```
+
+`python microphone_capsule.py` ruft pytest auf (mit pytest-xdist auf
+allen Kernen); weitere Argumente gehen an pytest, `pytest` direkt geht
+ebenso. Jede Gegenprobe ist eine Testfunktion `test_gpNN_…`; ein Lauf
+meldet alle Fehler, nicht nur den ersten. Am Ende steht das Protokoll
+der OK-Zeilen in Nummernfolge (`--kein-protokoll` blendet es aus).
+Markierungen: `slow` (über etwa 10 s), `feld3d` (3D-Feldlöser), `bem`
+(BEM-Körpermodell). Unerwartete `UserWarning`s gelten als Fehler, und
+Klassenschalter wie `MicrophoneCapsule._MASS_EXACT` werden nach jedem
+Test zurückgesetzt, auch wenn er scheitert.
+
+Laufzeit auf 4 Kernen: alle Gegenproben etwa 3½ Minuten (nacheinander
+knapp 10), die schnelle Stufe (43 Proben) etwa 30 s. Die Wandzeit
+bestimmt Gegenprobe 22 (3D-K67, rund 3 Minuten allein); danach kommen
+23 und 48. Parallel rechnet jeder Worker mit einem BLAS-Thread; im
+Protokoll kann das in der letzten Stelle numerisch empfindlicher Werte
+sichtbar werden (Gegenprobe 27, Grenzfall Z → 0: 0.093 statt 0.090).
 
 ## Beispielprojekte
 
