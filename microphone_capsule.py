@@ -6922,10 +6922,13 @@ if __name__ == "__main__":
         sys.exit("Der Selbsttest braucht pytest: "
                  "pip install -r requirements-dev.txt")
     _args = sys.argv[1:]
-    # xdist nur nachsehen, nicht importieren (pytest will es selbst laden)
-    if importlib.util.find_spec("xdist") is not None and not any(
-            a.startswith(("-n", "--numprocesses")) for a in _args):
-        _args = ["-n", "auto", *_args]
+    # xdist nur nachsehen, nicht importieren (pytest will es selbst laden).
+    # worksteal: ein freier Worker übernimmt wartende Tests eines belegten.
+    if importlib.util.find_spec("xdist") is not None:
+        if not any(a.startswith(("-n", "--numprocesses")) for a in _args):
+            _args = ["-n", "auto", *_args]
+        if not any(a.startswith(("--dist", "-d")) for a in _args):
+            _args = ["--dist", "worksteal", *_args]
     # testpaths greift nur im Projektverzeichnis
     os.chdir(Path(__file__).resolve().parent)
     sys.exit(pytest.main(_args))

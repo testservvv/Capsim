@@ -239,12 +239,18 @@ Markierungen: `slow` (über etwa 10 s), `feld3d` (3D-Feldlöser), `bem`
 Klassenschalter wie `MicrophoneCapsule._MASS_EXACT` werden nach jedem
 Test zurückgesetzt, auch wenn er scheitert.
 
-Laufzeit auf 4 Kernen: alle Gegenproben etwa 3½ Minuten (nacheinander
-knapp 10), die schnelle Stufe (43 Proben) etwa 30 s. Die Wandzeit
-bestimmt Gegenprobe 22 (3D-K67, rund 3 Minuten allein); danach kommen
-23 und 48. Parallel rechnet jeder Worker mit einem BLAS-Thread; im
-Protokoll kann das in der letzten Stelle numerisch empfindlicher Werte
-sichtbar werden (Gegenprobe 27, Grenzfall Z → 0: 0.093 statt 0.090).
+Laufzeit auf 4 Kernen: alle Gegenproben etwa 3 Minuten (nacheinander
+knapp 10), die schnelle Stufe (45 Proben) etwa 20 s. Das ist die
+Untergrenze aus der Summe der Testzeiten geteilt durch die Kerne; die
+längsten Einzelproben sind jetzt 23 und 48 (je rund 2 Minuten).
+Gegenprobe 22 ist in die Teile 22a–22e aufgeteilt, die parallel laufen.
+Damit die Worker gleich lange rechnen, merkt sich pytest die
+Laufzeiten jedes Laufs (`.pytest_cache`) und ordnet danach die Tests
+für die Verteilung `--dist worksteal`, die `python microphone_capsule.py`
+einstellt (direkt: `pytest -n auto --dist worksteal`). Parallel rechnet
+jeder Worker mit einem BLAS-Thread; im Protokoll kann das in der letzten
+Stelle numerisch empfindlicher Werte sichtbar werden (Gegenprobe 27,
+Grenzfall Z → 0: 0.093 statt 0.090).
 
 ## Beispielprojekte
 

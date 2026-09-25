@@ -69,156 +69,185 @@ def test_gp16_3d_r_phi_loser_diskrete(deb3, deb3b):
               f"{p3['db'][180]:.1f} auf {p3b:.1f} dB  OK")
 
 
+# --------- Gegenprobe 22: 3D-K67-Modus (Zwischenspalt, Stufen, Drehung) ----
+# Der 3D-Löser rechnet auch die ZWEITEILIGE Elektrode: Zwischenspalt als
+# dritter Reynolds-Film, Stufenbohrungen als Zweitor-Kette je Loch,
+# Elektrodenhälften gegeneinander verdreht. Grenzfälle und Physik ohne
+# Fit-Koeffizient, aufgeteilt in unabhängige Teilprüfungen (parallel
+# lauffähig; zusammen waren es über drei Minuten in einem Test).
+
+
+def _deb22():
+    """Debenham ohne Sacklöcher, 3D. (45 V: ohne Sacklöcher ist die
+    Elektrode fast voll, der exakte Pull-in liegt dann bei 49.2 V —
+    Gegenprobe 49; a/b prüfen Struktur, nicht die Nähe zum Kollaps.)"""
+    deb22 = dict(DEB_KWARGS)
+    deb22.update(squeeze_model="3d", bias_voltage=45.0,
+                 blind_hole_rings=[(0, None)],
+                 blind_hole_diameter=1.2e-3, blind_hole_depth=1e-3)
+    return deb22
+
+
+_OM22 = np.array([2.0 * np.pi * 500.0, 2.0 * np.pi * 2000.0])
+# komplette K67 im 3D-Feld
+_K67_3D = dict(K67_KWARGS, squeeze_model="3d")
+
+
+def _pattern22(cap):
+    """180°-Pegel und Minimum-Winkel des 1-kHz-Patterns."""
+    di = cap.directivity(frequencies_hz=(1000.0,))
+    db = di["patterns"][1000.0]["db"]
+    na = di["angles_deg"][:181][
+        int(np.argmin(di["patterns"][1000.0]["linear"][:181]))]
+    return db[180], na
+
+
+@pytest.fixture(scope="module")
+def k67_3d_verdreht():
+    """K67 mit AUTOMATISCHER Verdrehung (kreisweise, s. _hole_positions)
+    und ihr 1-kHz-Pattern. Bis Gegenprobe 48 stand hier pauschal 3°
+    (= 180°/60), was auf dem Mehrkreis-Raster die Kerne im Zwischenspalt
+    fast übereinanderlegt (Gegenprobe 48 c) — also praktisch
+    ausgerichtet."""
+    if not _HAS_SCIPY:
+        pytest.skip("SciPy fehlt (3D-Feldlöser)")
+    cap = MicrophoneCapsule(**_K67_3D, half_rotation_deg=None)
+    return cap, _pattern22(cap)
+
+
+@pytest.mark.feld3d
+def test_gp22a_einteiliger_grenzfall():
+    """Gegenprobe 22 a: zweiteilig ausgerichtet (rot = 0) mit winzigem
+    Zwischenspalt (5 µm) reproduziert den einteiligen Löser — zwei völlig
+    verschiedene Codepfade: Lochpaar-Leitwert gegen die Kette
+    Loch–Film–Loch. Die Restabweichung ist die Impedanz des 5-µm-Films
+    selbst."""
+    if not _HAS_SCIPY:
+        return
+    deb22 = _deb22()
+    ein = MicrophoneCapsule(**{**deb22, "center_gap": 0.0})
+    zwei = MicrophoneCapsule(**{**deb22, "center_gap": 5e-6,
+                                "half_rotation_deg": 0.0})
+    Xf_e, Xr_e = ein._solve_3d(_OM22)
+    Xf_z, Xr_z = zwei._solve_3d(_OM22)
+    dev_a = max(float(np.max(np.abs(Xf_z / Xf_e - 1.0))),
+                float(np.max(np.abs(Xr_z / Xr_e - 1.0))))
+    assert dev_a < 0.04, \
+        (f"3D-K67-Modus muss im 5-µm-Grenzfall den einteiligen Löser "
+         f"reproduzieren (Abweichung {dev_a:.3f})")
+    print(f"3D-K67-Modus a) einteiliger Grenzfall {dev_a * 100:.1f} %  OK")
+
+
+@pytest.mark.feld3d
+def test_gp22b_stufen_grenzfall():
+    """Gegenprobe 22 b: Stufenbohrung mit winziger Senkung reproduziert
+    die ungestufte Bohrung. Die Senkung ist nur 1 µm weiter als der Kern:
+    seit Gegenprobe 48 zählen die Fußabdrücke nach exaktem Abstand, und
+    die 0.71-mm-Löcher sind hier kleiner als eine Gitterzelle — schon
+    0.75 mm holten die Nachbarzelle dazu. Geprüft wird die KETTE, nicht
+    die Auflösung."""
+    if not _HAS_SCIPY:
+        return
+    deb22 = _deb22()
+    plain = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
+                                 "half_rotation_deg": 0.0})
+    step = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
+                                "half_rotation_deg": 0.0,
+                                "through_holes_stepped": True,
+                                "blind_hole_rings": [(12, None)],
+                                "blind_hole_diameter": 0.711e-3,
+                                "blind_hole_depth": 0.15e-3})
+    Xf_p, Xr_p = plain._solve_3d(_OM22)
+    Xf_s, Xr_s = step._solve_3d(_OM22)
+    dev_b = max(float(np.max(np.abs(Xf_s / Xf_p - 1.0))),
+                float(np.max(np.abs(Xr_s / Xr_p - 1.0))))
+    assert dev_b < 0.03, \
+        (f"Stufenbohrung mit winziger Senkung muss die ungestufte "
+         f"Bohrung reproduzieren (Abweichung {dev_b:.3f})")
+    print(f"3D-K67-Modus b) Stufen-Grenzfall {dev_b * 100:.1f} %  OK")
+
+
 @pytest.mark.slow
 @pytest.mark.feld3d
-def test_gp22_3d_k67_modus_zwischenspalt_stufen(deb_kwargs):
-    """Gegenprobe 22: 3D-K67-Modus (Zwischenspalt, Stufen, Drehung)."""
-    # Der 3D-Löser rechnet jetzt auch die ZWEITEILIGE Elektrode: Zwischen-
-    # spalt als dritter Reynolds-Film, Stufenbohrungen als Zweitor-Kette
-    # je Loch, Elektrodenhälften gegeneinander verdreht. Grenzfälle und
-    # Physik ohne Fit-Koeffizient:
-    # a) EINTEILIG-GRENZFALL: zweiteilig ausgerichtet (rot = 0) mit
-    #    winzigem Zwischenspalt (5 µm) muss den einteiligen Löser
-    #    reproduzieren (zwei völlig verschiedene Codepfade: Lochpaar-
-    #    Leitwert vs. Kette Loch–Film–Loch; Restabweichung = Impedanz
-    #    des 5-µm-Films selbst, gemessen 1.5–2.2 %).
-    # b) STUFEN-GRENZFALL: Stufenbohrung mit winziger Senkung
-    #    (⌀0.75 x 0.15 mm um den ⌀0.71-mm-Kern) muss die ungestufte
-    #    Bohrung reproduzieren (gemessen 0.3–0.8 %).
-    # c) K67 komplett (gestuft, verdreht): Feldsystem reziprok.
-    # d) VERDREHUNG (die reale K67 verdreht die Hälften so, dass die
-    #    Durchgangslöcher nicht zueinander zeigen): ausgerichtete Löcher
-    #    (rot = 0) kurzschließen den Phasenschieber -> flache Auslöschung;
-    #    schon eine halbe Teilung (3° bei 60 Löchern) zwingt den Pfad
-    #    durch den Zwischenspalt-Film -> tiefe 180°-Null, Minimum wandert
-    #    Richtung 180°, Empfindlichkeit sinkt (steiferes Luftpolster).
-    #    Das 3D-Ergebnis der verdrehten Bauform liegt nahe am
-    #    homogenisierten 2D-Modell (das versetzte Arrays annimmt).
-    if _HAS_SCIPY:
-        deb22 = dict(deb_kwargs)
-        # (45 V: ohne Sacklöcher ist die Elektrode fast voll, der exakte
-        # Pull-in liegt dann bei 49.2 V — Gegenprobe 49; a/b prüfen
-        # Struktur, nicht die Nähe zum Kollaps)
-        deb22.update(squeeze_model="3d", bias_voltage=45.0,
-                     blind_hole_rings=[(0, None)],
-                     blind_hole_diameter=1.2e-3, blind_hole_depth=1e-3)
-        om22 = np.array([2.0 * np.pi * 500.0, 2.0 * np.pi * 2000.0])
-        # a) einteilig vs. zweiteilig ausgerichtet mit 5-µm-Spalt
-        ein = MicrophoneCapsule(**{**deb22, "center_gap": 0.0})
-        zwei = MicrophoneCapsule(**{**deb22, "center_gap": 5e-6,
-                                    "half_rotation_deg": 0.0})
-        Xf_e, Xr_e = ein._solve_3d(om22)
-        Xf_z, Xr_z = zwei._solve_3d(om22)
-        dev_a = max(float(np.max(np.abs(Xf_z / Xf_e - 1.0))),
-                    float(np.max(np.abs(Xr_z / Xr_e - 1.0))))
-        assert dev_a < 0.04, \
-            (f"3D-K67-Modus muss im 5-µm-Grenzfall den einteiligen Löser "
-             f"reproduzieren (Abweichung {dev_a:.3f})")
-        # b) Stufenbohrung mit winziger Senkung vs. ungestuft
-        #    (Senkung nur 1 µm weiter als der Kern: seit Gegenprobe 48
-        #    zählen die Fußabdrücke nach exaktem Abstand, und die 0.71-mm-
-        #    Löcher sind hier kleiner als eine Gitterzelle — schon 0.75 mm
-        #    holten die Nachbarzelle dazu. Geprüft wird die KETTE, nicht
-        #    die Auflösung.)
-        plain = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
-                                     "half_rotation_deg": 0.0})
-        step = MicrophoneCapsule(**{**deb22, "center_gap": 50e-6,
-                                    "half_rotation_deg": 0.0,
-                                    "through_holes_stepped": True,
-                                    "blind_hole_rings": [(12, None)],
-                                    "blind_hole_diameter": 0.711e-3,
-                                    "blind_hole_depth": 0.15e-3})
-        Xf_p, Xr_p = plain._solve_3d(om22)
-        Xf_s, Xr_s = step._solve_3d(om22)
-        dev_b = max(float(np.max(np.abs(Xf_s / Xf_p - 1.0))),
-                    float(np.max(np.abs(Xr_s / Xr_p - 1.0))))
-        assert dev_b < 0.03, \
-            (f"Stufenbohrung mit winziger Senkung muss die ungestufte "
-             f"Bohrung reproduzieren (Abweichung {dev_b:.3f})")
-        # c)+d) komplette K67, ausgerichtet vs. verdreht. „Verdreht“ ist
-        #    die AUTOMATISCHE Verdrehung (kreisweise, s. _hole_positions):
-        #    bis Gegenprobe 48 stand hier pauschal 3° (= 180°/60), was auf
-        #    dem Mehrkreis-Raster die Kerne im Zwischenspalt fast
-        #    übereinanderlegt (Gegenprobe 48 c) — also praktisch
-        #    ausgerichtet.
-        k67_3d = dict(
-            membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
-            membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
-            backplate_diameter=25e-3, backplate_thickness=4e-3,
-            bias_voltage=60.0, architecture="dual_diaphragm",
-            center_gap=50e-6, n_through_holes=60,
-            through_hole_diameter=0.6e-3, n_blind_holes=120,
-            blind_hole_diameter=1.3e-3, blind_hole_depth=3.7e-3,
-            through_holes_stepped=True, clamp_ring_thickness=2e-3,
-            clamp_ring_width=4e-3, fabric_front_rayl=0.0,
-            fabric_rear_rayl=0.0, body_diameter=34e-3,
-            squeeze_model="3d")
-        res22 = {}
-        for rot, rot_arg in ((0.0, 0.0), ('auto', None)):
-            cap = MicrophoneCapsule(**k67_3d, half_rotation_deg=rot_arg)
-            di = cap.directivity(frequencies_hz=(1000.0,))
-            db = di["patterns"][1000.0]["db"]
-            na = di["angles_deg"][:181][
-                int(np.argmin(di["patterns"][1000.0]["linear"][:181]))]
-            e1k = abs(cap.transfer_function(np.array([1000.0]))[0]) * 1e3
-            res22[rot] = (db[180], na, e1k, cap)
-        Xf_r, Xr_r, Bf_r, Br_r = res22['auto'][3]._solve_3d(
-            np.array([2.0 * np.pi * 1000.0]), want_rear=True,
-            weight="volume")
-        rez22 = abs(Xr_r[0]) / abs(Bf_r[0])
-        assert 0.97 < rez22 < 1.03, \
-            f"3D-K67-Feldsystem muss reziprok sein ({rez22:.3f})"
-        assert res22[0.0][0] > -12.0, \
-            (f"ausgerichtete Löcher müssen den Phasenschieber kurz-"
-             f"schließen (180° = {res22[0.0][0]:.1f} dB)")
-        assert res22['auto'][1] > res22[0.0][1] + 15.0, \
-            (f"Verdrehung muss das Minimum Richtung 180° schieben "
-             f"({res22[0.0][1]:.0f}° -> {res22['auto'][1]:.0f}°)")
-        assert res22['auto'][1] >= 170.0, \
-            (f"versetzte Hälften: Nierenminimum hinten "
-             f"({res22['auto'][1]:.0f}°)")
-        # d) gegen das homogenisierte 2D-Modell. Die EMPFINDLICHKEIT
-        #    stimmt; die TIEFE der Auslöschung hängt dagegen an einem
-        #    Maß, das niemand dokumentiert hat: wie die Kerne beider
-        #    Hälften im 50-µm-Zwischenspalt zueinander liegen. Mit
-        #    konturtreuen Mündungen (Gegenprobe 51, grob und fein auf
-        #    ~0.5 dB gleich) und Θ-konsistenter Wandlung (Gegenprobe 54):
-        #    vollständig versetzt (automatisch: jeder Kern über einer
-        #    Sacksenkung der Gegenseite, ~2 mm Querweg) −17 dB, global
-        #    6°/9°/12°/15°/18° −10/−19/−37/−31/−14 dB. Zwischen 9° und 12°
-        #    liegt eine Kernlage, die das 2D-Modell (−28 dB) trifft, dessen
-        #    Škvor-Zelle im Zwischenspalt einen mittleren Querweg von etwa
-        #    einem Zellradius annimmt. (Vor der Θ-konsistenten Wandlung traf
-        #    12° mit −29 dB; die Auslöschung reagiert auf jede Gewichtung
-        #    von Front- gegen Rückantrieb, und bei 60 V gewichtet 1/g² die
-        #    Mitte. Vor der Konturkorrektur: versetzt −11 dB, 9° −29 dB.)
-        #    Das ist KEIN Modellfehler, sondern eine offene Geometriefrage
-        #    an der realen Kapsel — festgehalten, damit sie nicht wieder als
-        #    gelöst gilt (Gegenprobe 48).
-        k2d = MicrophoneCapsule(**{**k67_3d, "squeeze_model": "2d"})
-        e2d = abs(k2d.transfer_function(np.array([1000.0]))[0]) * 1e3
-        p2d = k2d.directivity(
-            frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
-        assert abs(20.0 * np.log10(res22['auto'][2] / e2d)) < 3.0, \
-            (f"3D verdreht muss nahe der 2D-Empfindlichkeit liegen "
-             f"({res22['auto'][2]:.1f} vs. {e2d:.1f} mV/Pa)")
-        p09, p12 = (MicrophoneCapsule(**k67_3d, half_rotation_deg=rot_).
-                    directivity(frequencies_hz=(1000.0,))
-                    ["patterns"][1000.0]["db"][180] for rot_ in (9.0, 12.0))
-        assert p12 < p2d < p09, \
-            (f"zwischen 9° und 12° muss eine Kernlage die 2D-Auslöschung "
-             f"treffen ({p09:.1f} > {p2d:.1f} > {p12:.1f} dB)")
-        assert p12 < res22['auto'][0] - 8.0, \
-            (f"die Auslöschung MUSS von der Lage der Kerne abhängen "
-             f"(12°: {p12:.1f} dB, versetzt: {res22['auto'][0]:.1f} dB)")
-        print(f"3D-K67-Modus: einteiliger Grenzfall {dev_a * 100:.1f} %, "
-              f"Stufen-Grenzfall {dev_b * 100:.1f} %, reziprok "
-              f"({rez22:.4f}); Verdrehung 0°->automatisch: 180° "
-              f"{res22[0.0][0]:.1f} -> {res22['auto'][0]:.1f} dB, Minimum "
-              f"{res22[0.0][1]:.0f}° -> {res22['auto'][1]:.0f}°, Empf. "
-              f"{res22['auto'][2]:.1f} mV/Pa (2D {e2d:.1f}); Auslöschung "
-              f"hängt an der Kernlage: 9°/12° {p09:.1f}/{p12:.1f} dB, 2D "
-              f"{p2d:.1f} dB dazwischen — offene Geometriefrage  OK")
+def test_gp22c_verdrehung(k67_3d_verdreht):
+    """Gegenprobe 22 c: VERDREHUNG. Die reale K67 verdreht die Hälften so,
+    dass die Durchgangslöcher nicht zueinander zeigen. Ausgerichtete
+    Löcher (rot = 0) schließen den Phasenschieber kurz -> flache
+    Auslöschung; versetzte zwingen den Pfad durch den Zwischenspalt-Film
+    -> tiefe 180°-Null, das Minimum wandert nach hinten."""
+    cap0 = MicrophoneCapsule(**_K67_3D, half_rotation_deg=0.0)
+    p0, na0 = _pattern22(cap0)
+    _, (pv, nav) = k67_3d_verdreht
+    assert p0 > -12.0, \
+        (f"ausgerichtete Löcher müssen den Phasenschieber kurz-"
+         f"schließen (180° = {p0:.1f} dB)")
+    assert nav > na0 + 15.0, \
+        (f"Verdrehung muss das Minimum Richtung 180° schieben "
+         f"({na0:.0f}° -> {nav:.0f}°)")
+    assert nav >= 170.0, \
+        f"versetzte Hälften: Nierenminimum hinten ({nav:.0f}°)"
+    print(f"3D-K67-Modus c) Verdrehung 0°->automatisch: 180° {p0:.1f} -> "
+          f"{pv:.1f} dB, Minimum {na0:.0f}° -> {nav:.0f}°  OK")
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+def test_gp22d_reziprok(k67_3d_verdreht):
+    """Gegenprobe 22 d: das Feldsystem der kompletten K67 (gestuft,
+    verdreht) ist reziprok."""
+    cap, _ = k67_3d_verdreht
+    Xf_r, Xr_r, Bf_r, Br_r = cap._solve_3d(
+        np.array([2.0 * np.pi * 1000.0]), want_rear=True, weight="volume")
+    rez22 = abs(Xr_r[0]) / abs(Bf_r[0])
+    assert 0.97 < rez22 < 1.03, \
+        f"3D-K67-Feldsystem muss reziprok sein ({rez22:.3f})"
+    print(f"3D-K67-Modus d) reziprok ({rez22:.4f})  OK")
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht):
+    """Gegenprobe 22 e: gegen das homogenisierte 2D-Modell.
+
+    Die EMPFINDLICHKEIT stimmt; die TIEFE der Auslöschung hängt dagegen
+    an einem Maß, das niemand dokumentiert hat: wie die Kerne beider
+    Hälften im 50-µm-Zwischenspalt zueinander liegen. Mit konturtreuen
+    Mündungen (Gegenprobe 51, grob und fein auf ~0.5 dB gleich) und
+    Θ-konsistenter Wandlung (Gegenprobe 54): vollständig versetzt
+    (automatisch: jeder Kern über einer Sacksenkung der Gegenseite, ~2 mm
+    Querweg) −17 dB, global 6°/9°/12°/15°/18° −10/−19/−37/−31/−14 dB.
+    Zwischen 9° und 12° liegt eine Kernlage, die das 2D-Modell (−28 dB)
+    trifft, dessen Škvor-Zelle im Zwischenspalt einen mittleren Querweg
+    von etwa einem Zellradius annimmt. (Vor der Θ-konsistenten Wandlung
+    traf 12° mit −29 dB; die Auslöschung reagiert auf jede Gewichtung von
+    Front- gegen Rückantrieb, und bei 60 V gewichtet 1/g² die Mitte. Vor
+    der Konturkorrektur: versetzt −11 dB, 9° −29 dB.) Das ist KEIN
+    Modellfehler, sondern eine offene Geometriefrage an der realen
+    Kapsel — festgehalten, damit sie nicht wieder als gelöst gilt
+    (Gegenprobe 48).
+    """
+    cap, (pv, _) = k67_3d_verdreht
+    ev = abs(cap.transfer_function(np.array([1000.0]))[0]) * 1e3
+    k2d = MicrophoneCapsule(**{**_K67_3D, "squeeze_model": "2d"})
+    e2d = abs(k2d.transfer_function(np.array([1000.0]))[0]) * 1e3
+    p2d = k2d.directivity(
+        frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
+    assert abs(20.0 * np.log10(ev / e2d)) < 3.0, \
+        (f"3D verdreht muss nahe der 2D-Empfindlichkeit liegen "
+         f"({ev:.1f} vs. {e2d:.1f} mV/Pa)")
+    p09, p12 = (MicrophoneCapsule(**_K67_3D, half_rotation_deg=rot_).
+                directivity(frequencies_hz=(1000.0,))
+                ["patterns"][1000.0]["db"][180] for rot_ in (9.0, 12.0))
+    assert p12 < p2d < p09, \
+        (f"zwischen 9° und 12° muss eine Kernlage die 2D-Auslöschung "
+         f"treffen ({p09:.1f} > {p2d:.1f} > {p12:.1f} dB)")
+    assert p12 < pv - 8.0, \
+        (f"die Auslöschung MUSS von der Lage der Kerne abhängen "
+         f"(12°: {p12:.1f} dB, versetzt: {pv:.1f} dB)")
+    print(f"3D-K67-Modus e) Empf. verdreht {ev:.1f} mV/Pa (2D {e2d:.1f}); "
+          f"Auslöschung hängt an der Kernlage: 9°/12° {p09:.1f}/"
+          f"{p12:.1f} dB, 2D {p2d:.1f} dB dazwischen — offene "
+          f"Geometriefrage  OK")
 
 
 @pytest.mark.slow

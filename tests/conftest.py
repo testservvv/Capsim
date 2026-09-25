@@ -119,11 +119,24 @@ def _gp_key(nodeid):
 
 
 def pytest_runtest_logreport(report):
+    _DAUERN[report.nodeid] = _DAUERN.get(report.nodeid, 0.0) + report.duration
     if report.when == "call" and report.passed:
         text = "".join(c for name, c in report.sections
                        if name.startswith("Captured stdout"))
         if text.strip():
             _PROTOKOLL[report.nodeid] = text.rstrip("\n")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Laufzeiten für die Reihenfolge des nächsten Laufs merken (nur der
+    steuernde Prozess, bei xdist nicht die Worker)."""
+    config = session.config
+    cache = getattr(config, "cache", None)
+    if cache is None or hasattr(config, "workerinput") or not _DAUERN:
+        return
+    alt = cache.get(_DAUER_KEY, {})
+    alt.update({k: round(v, 2) for k, v in _DAUERN.items()})
+    cache.set(_DAUER_KEY, alt)
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -132,6 +145,49 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     terminalreporter.section("Protokoll der Gegenproben")
     for nodeid in sorted(_PROTOKOLL, key=_gp_key):
         terminalreporter.write_line(_PROTOKOLL[nodeid])
+
+
+_DAUER_KEY = "capsim/dauern"
+_DAUERN = {}
+
+
+def pytest_collection_modifyitems(config, items):
+    """Reihenfolge für eine gleichmäßige Auslastung der Worker.
+
+    Grundlage sind die Laufzeiten des letzten Laufs (pytest-Cache, s.
+    pytest_sessionfinish); ohne sie gelten slow-Proben als lang. Seriell:
+    längste zuerst. Parallel mit ``--dist worksteal`` (Voreinstellung von
+    ``python microphone_capsule.py``) bekommt jeder Worker anfangs einen
+    zusammenhängenden Block gleicher Testanzahl, danach stehlen freie
+    Worker die hintere Hälfte der längsten Warteschlange. Die Blöcke
+    werden deshalb so gefüllt, dass jeder etwa gleich lange rechnet
+    (längste zuerst, jeweils in den bisher kürzesten Block mit freiem
+    Platz). Die Reihenfolge hängt nur vom Cache und der Worker-Zahl ab,
+    ist also in allen Workern gleich, wie xdist es verlangt.
+    """
+    cache = getattr(config, "cache", None)
+    alt = cache.get(_DAUER_KEY, {}) if cache is not None else {}
+
+    def _dauer(it):
+        if it.nodeid in alt:
+            return alt[it.nodeid]
+        return 60.0 if it.get_closest_marker("slow") is not None else 1.0
+
+    items.sort(key=lambda it: -_dauer(it))
+    n = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
+    if n < 2 or len(items) <= n:
+        return
+    groesse, rest = [], len(items)
+    for k in range(n):                       # wie worksteal anfangs teilt
+        groesse.append(rest // (n - k))
+        rest -= groesse[-1]
+    bloecke, last = [[] for _ in range(n)], [0.0] * n
+    for it in items:
+        k = min((k for k in range(n) if len(bloecke[k]) < groesse[k]),
+                key=lambda k: last[k])
+        bloecke[k].append(it)
+        last[k] += _dauer(it)
+    items[:] = [it for blk in bloecke for it in blk]
 
 
 def pytest_addoption(parser):
