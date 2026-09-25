@@ -1227,8 +1227,9 @@ TR = {
               "Gegenprobe 27 the membrane outsides also carry radiation "
               "impedance and fabric via collector nodes (before that, "
               "fabric had NO effect in 3D). "
-              "CONSIDERABLY slower (~1–2 s, K67 type up to ~10 s per "
-              "frequency point) — reduce frequency points!",
+              "CONSIDERABLY slower (on one core ~0.3–2 s per frequency "
+              "point: one-piece ~0.5 s, dual backplate and K67 type "
+              "~1.5–2 s) — reduce frequency points!",
         "de": "Volles (r, φ)-Feldmodell: alle Spaltfilme UND "
               "die Membran(en) als Felder, Durchgangs- und "
               "Sacklöcher sitzen DISKRET an ihren Positionen "
@@ -1248,8 +1249,9 @@ TR = {
               "Membranaußenseiten Strahlungsimpedanz und Gewebe "
               "über Sammelknoten (vorher blieb Gewebe im "
               "3D-Modus wirkungslos). DEUTLICH langsamer "
-              "(~1–2 s, K67-Typ bis ~10 s je Frequenzpunkt) — "
-              "Frequenzpunkte reduzieren!",
+              "(auf einem Kern ~0,3–2 s je Frequenzpunkt: "
+              "einteilig ~0,5 s, Doppel-Backplate und K67-Typ "
+              "~1,5–2 s) — Frequenzpunkte reduzieren!",
     },
     "lbl_grid_fine": {
         "en": "Fine 3D grid",
@@ -1330,16 +1332,16 @@ TR = {
     },
     "cap_3d": {
         "en": "⏳ 3D performs one LU factorization per frequency point "
-              "(one-piece ~24,000 unknowns; K67 type with third film and "
-              "finer azimuthal resolution correspondingly more). "
-              "Recommendation: frequency points ≤ 150 (K67 type ≤ 100). "
+              "(one-piece ~24,000 unknowns, ~0.5 s; dual backplate and "
+              "K67 type with a second or third film ~1.5–2 s). "
+              "Recommendation: frequency points ≤ 150. "
               "Results are cached per parameter set — reruns without "
               "changes are instant.",
         "de": "⏳ 3D rechnet je Frequenzpunkt eine LU-Faktori"
-              "sierung (einteilig ~24 000 Unbekannte; K67-Typ "
-              "mit drittem Film und feinerer Azimut-Auflösung "
-              "entsprechend mehr). Empfehlung: Frequenzpunkte "
-              "≤ 150 (K67-Typ ≤ 100). Ergebnisse werden je "
+              "sierung (einteilig ~24 000 Unbekannte, ~0,5 s; "
+              "Doppel-Backplate und K67-Typ mit zweitem oder "
+              "drittem Film ~1,5–2 s). Empfehlung: Frequenz"
+              "punkte ≤ 150. Ergebnisse werden je "
               "Parametersatz gecacht — Reruns ohne Änderung "
               "sind sofort da.",
     },

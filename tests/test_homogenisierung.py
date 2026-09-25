@@ -73,7 +73,6 @@ def _fein48(kw48, ff48):
                   / c3_48.transfer_function(ff48)))
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp48a_fussabdruck_konvergenz():
     """Gegenprobe 48 a: FUSSABDRUCK. Das Suchfenster war fest ±4 Zellen;
@@ -210,7 +209,6 @@ def test_gp48d_spaltprofil():
           "enger, Rand weiter als das Flächenmittel  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp48e1_grenze_trennt_a48():
     """Gegenprobe 48 e1: die Grenze TRENNT. Unterhalb von f_hom trifft 2D
@@ -246,7 +244,6 @@ def test_gp48e2_sehr_spaerlich_a12():
     print(f"Homogenisierungsgrenze e2) A12 {dA12[0]:+.1f} dB  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp48e3_rand_des_pruefbands_b24():
     """Gegenprobe 48 e3: Kapsel mit f_hom am oberen Rand des Prüfbands
@@ -376,7 +373,6 @@ def test_gp48g1_zellkompressibilitaet_moden():
           f"{100 * chg48:.2f} %, Moden {dmode48:.3f} dB  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp48g3_sackloecher():
     """Gegenprobe 48 g3: VERWORFENE Ursache — Sacklöcher retten die
@@ -398,7 +394,6 @@ def test_gp48g3_sackloecher():
           f"{dsb48:+.1f} dB  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp53_warnlucke_weiter_spalt_lochkreise():
     """Gegenprobe 53: Warnlücke weiter Spalt / Lochkreise."""

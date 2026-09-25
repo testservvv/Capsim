@@ -136,7 +136,14 @@ def pytest_sessionfinish(session, exitstatus):
         return
     alt = cache.get(_DAUER_KEY, {})
     alt.update({k: round(v, 2) for k, v in _DAUERN.items()})
-    cache.set(_DAUER_KEY, alt)
+
+    def _gibt_es(nodeid):
+        # umbenannte oder aufgeteilte Tests nicht ewig mitschleppen
+        datei, _, name = nodeid.partition("::")
+        pfad = config.rootpath / datei
+        return pfad.is_file() and f"def {name}(" in pfad.read_text()
+
+    cache.set(_DAUER_KEY, {k: v for k, v in alt.items() if _gibt_es(k)})
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):

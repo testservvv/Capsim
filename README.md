@@ -106,12 +106,11 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   Verifiziert über Reziprozität (±1 %), Gitterkonvergenz, die
   Grenzfälle einteilig ≡ zweiteilig-ausgerichtet (5-µm-Spalt, 2 %) und
   Stufenbohrung → glatte Bohrung (winzige Senkung, 0,8 %) sowie die
-  Gültigkeits-Gatter im Testlauf. DEUTLICH langsamer (LU-Faktorisierung
-  je Frequenzpunkt, auf einem Kern gemessen: einteilig ~24 000
-  Unbekannte, ~1–2 s; K67-Typ mit drittem Film 17 s verdreht, 52 s mit
-  ausgerichteten Hälften; Doppel-Backplate `dual` rund 140 s, weil die
-  LU-Zerlegung dort stark auffüllt — für die GUI praktisch zu langsam,
-  offen) — in der GUI die Frequenzpunkte reduzieren. Jede Frequenz wird je
+  Gültigkeits-Gatter im Testlauf. DEUTLICH langsamer als 1D/2D (eine
+  LU-Zerlegung je Frequenzpunkt, auf einem Kern gemessen: einteilig
+  ~24 000 Unbekannte, ~0,5 s; Doppel-Backplate und K67-Typ mit zweitem
+  bzw. drittem Film ~1,5–2 s; feines Gitter bis ~2 s; vor Gegenprobe 57
+  das 4- bis 100-Fache) — in der GUI die Frequenzpunkte reduzieren. Jede Frequenz wird je
   Kapsel nur einmal gelöst (Gegenprobe 56): Richtdiagramm,
   Empfindlichkeit, Laufzeit-Diagnose und `summary()` teilen sich die
   Lösung, und in der GUI kostet eine zusätzliche Richtfrequenz nur ihre
@@ -245,13 +244,13 @@ Markierungen: `slow` (über etwa 10 s), `feld3d` (3D-Feldlöser), `bem`
 Klassenschalter wie `MicrophoneCapsule._MASS_EXACT` werden nach jedem
 Test zurückgesetzt, auch wenn er scheitert.
 
-Laufzeit auf 4 Kernen: alle Gegenproben knapp 3 Minuten (nacheinander
-knapp 10), die schnelle Stufe (56 Proben) etwa 25 s. Das liegt an der
-Untergrenze aus der Summe der Testzeiten geteilt durch die Kerne. Die
-Gegenproben 22, 23 und 48 sind in unabhängige Teilprüfungen aufgeteilt
-(22a–e, 23a–f, 48a–g3), die parallel laufen; einzeln aufgerufen sind
-die meisten Teile in Sekunden fertig. Die längste Einzelprüfung ist 23f
-(Doppel-Backplate im 3D-Löser, gut 2 Minuten für eine Frequenz).
+Laufzeit auf 4 Kernen: alle Gegenproben etwa 1 Minute, die schnelle
+Stufe (alle bis auf die vier `slow`-Proben 32, 41, 43 und 57) etwa
+30 s. Vor Gegenprobe 57 (LU-Zerlegung des 3D-Lösers) waren es knapp
+3 Minuten. Die Gegenproben 22, 23 und 48 sind
+in unabhängige Teilprüfungen aufgeteilt (22a–e, 23a–f, 48a–g3), die
+parallel laufen; einzeln aufgerufen sind die meisten Teile in Sekunden
+fertig.
 Damit die Worker gleich lange rechnen, merkt sich pytest die
 Laufzeiten jedes Laufs (`.pytest_cache`) und ordnet danach die Tests
 für die Verteilung `--dist worksteal`, die `python microphone_capsule.py`
@@ -1448,6 +1447,57 @@ Lösung), und eine zusätzliche Richtfrequenz braucht 1 statt 46 Lösungen
 (1 statt 38 s). Im Selbsttest sinkt die Summe der Testzeiten um etwa
 5 %; die Wandzeit bleibt bei rund 3 Minuten, weil die Gegenproben 23
 und 48 fast nur verschiedene Systeme lösen (48: 20 von 20).
+
+### LU-Zerlegung des 3D-Lösers (Gegenprobe 57)
+
+Die Doppel-Backplate brauchte im 3D-Löser 137 s je Frequenz, die
+Einzel-Backplate gleicher Größe 2 s, bei nur 1,5-mal so vielen
+Unbekannten. Die Ursache war nicht die Struktur, sondern die
+Pivotisierung. SuperLU ordnete die Spalten füllungsarm (COLAMD) und
+tauschte dann Zeilen nach Betrag; die Tausche zerstörten die Ordnung.
+L+U hatte bei der Doppel-Backplate 101 Mio. Einträge (114-fach).
+Nachgewiesen an derselben Matrix:
+
+| Zerlegung (Doppel-Backplate) | Zeit | Einträge L+U |
+|---|---|---|
+| COLAMD, Zeilentausch (bisher) | 137 s | 101 Mio. |
+| COLAMD, Schwelle 0,1 | 97 s | 94 Mio. |
+| COLAMD, Diagonal-Pivots | 8,9 s | 23 Mio. |
+| symmetrische Ordnung (MMD auf A+Aᵀ), Diagonal-Pivots | 1,4 s | 8,6 Mio. |
+
+Das System ist strukturell symmetrisch: Film, Membran, Löcher und
+Knoten koppeln wechselseitig. Der Löser zerlegt es jetzt mit
+symmetrischer Ordnung und Diagonal-Pivots. Diagonal-Pivots sind nur so
+stabil wie die Diagonale. Deshalb wird jede Lösung am
+komponentenweisen Rückwärtsfehler max|S·x − b| / (|S|·|x| + |b|)
+geprüft. Liegt er über 10⁻¹¹ oder scheitert die Zerlegung, rechnet
+der Löser wie bisher mit Pivotisierung.
+
+Die symmetrische Zerlegung ist dabei nicht nur schneller, sondern
+auch genauer. Ihr Rückwärtsfehler liegt bei 10⁻¹⁵ bis 10⁻¹⁴, der
+der pivotisierenden bei 10⁻¹² bis 5·10⁻⁸. Im ganzen Selbsttest (374
+Zerlegungen) gab es keinen Rückfall; der größte Rückwärtsfehler war
+6,9·10⁻¹⁴. Die Ausgänge ändern sich um höchstens 3·10⁻⁸ relativ. Im
+Protokoll sichtbar ist das nur an einer Stelle: Der Konvergenz-
+exponent des Grenzfalls Z → 0 (Gegenprobe 27) liegt jetzt bei 0,091,
+am theoretischen Wert 0,0909. Vorher hing er vom Rundungsrauschen und
+damit von der Thread-Zahl ab (0,090 bzw. 0,093).
+
+Zeit je Frequenz auf einem Kern, vorher → jetzt: Einzel-Backplate
+2 → 0,5 s, Doppel-Backplate 137 → 1,4 s, K67 17 → 1,5 s (verdreht)
+bzw. 52 → 1,9 s (ausgerichtet), Debenham 0,6 → 0,3 s, B&K 4134
+0,4 → 0,1 s, feines Gitter (A48) 25 → 1,7 s. In der GUI (40 Punkte,
+5 Richtfrequenzen) rechnet das Debenham-Beispiel im 3D-Modus 13 statt
+37 s und das K67-Beispiel 82 s statt hochgerechnet rund 13 Minuten.
+Der Selbsttest läuft auf 4 Kernen in etwa 1 statt knapp 3 Minuten.
+
+Die Gegenprobe prüft den Rückwärtsfehler an allen Bauformen (Einzel-
+und Doppel-Backplate, einteilige Doppelmembran, K67 mit Zwischenspalt,
+B&K mit Randspalt) bei 20 Hz, 1 kHz und 20 kHz; die Übereinstimmung
+mit der pivotisierenden Zerlegung; die Auffüllung der Doppel-Backplate
+(22 %); den erzwungenen Rückfall (bitgleich) und eine Matrix mit
+winziger Diagonale, an der die Prüfung die instabile Zerlegung
+erkennen muss.
 
 ## Verlustmechanismen (vollständig erfasst)
 

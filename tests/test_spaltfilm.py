@@ -422,7 +422,6 @@ def test_gp30_zellfunktion_des_durchflusses(k67):
               f"{H30:.1f} mV/Pa; 2D/3D-Richtdiagramm {rms30:.2f} dB  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp31_filmdampfung_genau_einmal():
     """Gegenprobe 31: Filmdämpfung genau EINMAL."""

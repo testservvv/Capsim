@@ -6,7 +6,6 @@ import warnings
 from basis import *  # noqa: F401,F403
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp16_3d_r_phi_loser_diskrete(deb3, deb3b):
     """Gegenprobe 16: 3D-(r,phi)-Löser (diskrete Löcher)."""
@@ -167,7 +166,6 @@ def test_gp22b_stufen_grenzfall():
     print(f"3D-K67-Modus b) Stufen-Grenzfall {dev_b * 100:.1f} %  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp22c_verdrehung(k67_3d_verdreht):
     """Gegenprobe 22 c: VERDREHUNG. Die reale K67 verdreht die Hälften so,
@@ -190,7 +188,6 @@ def test_gp22c_verdrehung(k67_3d_verdreht):
           f"{pv:.1f} dB, Minimum {na0:.0f}° -> {nav:.0f}°  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp22d_reziprok(k67_3d_verdreht):
     """Gegenprobe 22 d: das Feldsystem der kompletten K67 (gestuft,
@@ -204,7 +201,6 @@ def test_gp22d_reziprok(k67_3d_verdreht):
     print(f"3D-K67-Modus d) reziprok ({rez22:.4f})  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht):
     """Gegenprobe 22 e: gegen das homogenisierte 2D-Modell.
@@ -429,7 +425,6 @@ def test_gp23e_niere():
           f"{pat23['3d'][2]:.0f}°, Empf. {r_e:.2f}  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp23f_dual():
     """Gegenprobe 23 f: DUAL — Reziprozität + LF-Empfindlichkeit nahe
@@ -619,7 +614,6 @@ def test_gp47_ringmembran_im_3d_feldloser():
               f"Zug {ga['T_mem']:.1f} -> {c47r._g3d['T_mem']:.1f} N/m  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp50_3d_gitter_grob_fein():
     """Gegenprobe 50: 3D-Gitter grob/fein."""
@@ -1279,7 +1273,6 @@ def test_gp54_statischer_versatz_2d_3d_aufgeklart():
               f"Pfosten  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp56_wiederverwendung_der_3d_loesung():
     """Gegenprobe 56: Wiederverwendung der 3D-Feldlösung je Frequenz.
@@ -1410,3 +1403,153 @@ def test_gp56_wiederverwendung_der_3d_loesung():
           f"({d_tausch56:.2f} dB anders, wie frisch gebaut), zurück "
           f"bitgleich; Instanzmethode und neues Gitter -> neu gelöst; "
           f"Einzel-Backplate: Reziprozitäts-Diagnose aus dem Speicher  OK")
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+def test_gp57_symmetrische_zerlegung():
+    """Gegenprobe 57: LU-Zerlegung des 3D-Systems mit symmetrischer
+    Ordnung und Diagonal-Pivots (s. _lu_solve_3d).
+
+    Die pivotisierende Zerlegung (COLAMD, Zeilentausch nach Betrag)
+    zerstörte mit ihren Tauschen die füllungsarme Ordnung des strukturell
+    symmetrischen Systems: an der Doppel-Backplate 101 statt 8,6 Mio.
+    Einträge, 137 statt 1,4 s je Frequenz. Geprüft wird:
+    a) RÜCKWÄRTSSTABIL an allen Bauformen — Einzel- und Doppel-
+       Backplate, einteilige Doppelmembran (Debenham), K67 mit
+       Zwischenspalt, B&K 4134 mit Randspalt — bei 20 Hz, 1 kHz und
+       20 kHz: komponentenweiser Rückwärtsfehler höchstens 1e-12 (über
+       den ganzen Selbsttest gemessen ≤ 7e-14), ohne Rückfall;
+    b) DASSELBE ERGEBNIS wie die pivotisierende Zerlegung (Einzel-
+       Backplate, Debenham, B&K, Doppel-Backplate auf 40 × 160 Zellen),
+       deren Rückwärtsfehler dabei nicht kleiner ist;
+    c) AUFFÜLLUNG der Doppel-Backplate höchstens ein Drittel;
+    d) RÜCKFALL: erzwungen (_LU_BERR_MAX = 0) bitgleich mit der
+       pivotisierenden Zerlegung; an einer Matrix, deren Diagonale
+       überall winzig ist ([[ε, 1], [1, ε]] — keine symmetrische
+       Umordnung hilft), erkennt die Prüfung die instabile Zerlegung und
+       rechnet pivotisierend.
+    """
+    if not _HAS_SCIPY:
+        return
+    import scipy.sparse as _sp57
+    sg57 = dict(membrane_material="PET", membrane_resonance_hz=8000.0,
+                membrane_diameter=22e-3, membrane_thickness=6e-6,
+                membrane_tension=400.0, air_gap=40e-6,
+                backplate_diameter=20e-3, backplate_thickness=3e-3,
+                bias_voltage=60.0, n_through_holes=60,
+                through_hole_diameter=1.0e-3, n_blind_holes=30,
+                blind_hole_diameter=1.2e-3, delay_length=3e-3,
+                cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
+                n_cavity_holes=200, cavity_hole_diameter=0.2e-3,
+                cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
+                fabric_rear_rayl=0.0, body_diameter=24e-3,
+                include_diffraction=False)
+    bk57 = dict(
+        membrane_material={"rho": 8900.0, "E": 200.0e9, "nu": 0.31},
+        membrane_resonance_hz=None, membrane_diameter=2 * 4.445e-3,
+        membrane_thickness=5.0e-6, membrane_tension=3162.3,
+        air_gap=2.077e-5, backplate_diameter=2 * 3.607e-3,
+        backplate_thickness=0.843e-3, bias_voltage=28.0,
+        architecture="single", n_through_holes=6,
+        through_hole_diameter=2 * 5.080e-4,
+        through_hole_pcd=2 * 2.032e-3, n_blind_holes=0,
+        ring_vent_width=0.838e-3, ring_vent_length=3.048e-4,
+        rear_network_enabled=True, delay_length=0.0,
+        cavity_length=1.264e-7 / (np.pi * 3.607e-3 ** 2),
+        n_cavity_holes=0, fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+        include_diffraction=False)
+    faelle57 = {
+        "single": dict(sg57, architecture="single"),
+        "dual": dict(sg57, architecture="dual"),
+        "Debenham": dict(DEB_KWARGS, **DEB_CLEARANCE),
+        "K67": dict(K67_KWARGS),
+        "B&K 4134": bk57}
+
+    def _bau57(kw, gitter=None):
+        cap = MicrophoneCapsule(**{**kw, "squeeze_model": "3d"})
+        if gitter is not None:
+            cap._n_r_3d, cap._n_phi_3d = gitter
+            cap._build_3d_geometry()
+        return cap
+
+    # a) rückwärtsstabil ohne Rückfall
+    berr57 = {}
+    for name57, kw57 in faelle57.items():
+        cap57 = _bau57(kw57)
+        b57 = []
+        for f57 in (20.0, 1000.0, 20000.0):
+            cap57._solve_3d(np.array([2.0 * np.pi * f57]))
+            art57, be57, _ = cap57._lu_3d_info
+            assert art57 == "symmetrisch", \
+                f"a) {name57} {f57:.0f} Hz: ohne Rückfall ({art57})"
+            b57.append(be57)
+        berr57[name57] = max(b57)
+        assert berr57[name57] <= 1e-12, \
+            (f"a) {name57}: Rückwärtsfehler {berr57[name57]:.1e} (höchstens "
+             f"1e-12)")
+
+    # b) + c) gegen die pivotisierende Zerlegung
+    om57 = np.array([2.0 * np.pi * 1000.0])
+    dev57, fill57 = {}, None
+    for name57, kw57, gitter57 in (
+            ("single", faelle57["single"], None),
+            ("Debenham", faelle57["Debenham"], None),
+            ("B&K 4134", bk57, None),
+            ("dual 40×160", faelle57["dual"], (40, 160))):
+        erg57 = {}
+        for sym57 in (True, False):
+            MicrophoneCapsule._LU_SYMMETRIC = sym57
+            try:
+                cap57 = _bau57(kw57, gitter57)
+                erg57[sym57] = (np.array(cap57._solve_3d(om57,
+                                                         want_rear=True)),
+                                cap57._lu_3d_info)
+            finally:
+                MicrophoneCapsule._LU_SYMMETRIC = True
+        (xs57, info_s57), (xp57, info_p57) = erg57[True], erg57[False]
+        nz57 = np.abs(xp57) > 0.0         # geschlossene Rückseite: X_r = 0
+        assert np.array_equal(xs57[~nz57], xp57[~nz57]), \
+            f"b) {name57}: exakte Nullen bleiben Nullen"
+        dev57[name57] = float(np.max(np.abs(xs57[nz57] / xp57[nz57] - 1.0)))
+        assert dev57[name57] < 1e-6, \
+            (f"b) {name57}: symmetrisch wie pivotisiert "
+             f"({dev57[name57]:.1e})")
+        assert info_p57[1] >= info_s57[1], \
+            (f"b) {name57}: die pivotisierende Zerlegung ist nicht genauer "
+             f"({info_p57[1]:.1e} gegen {info_s57[1]:.1e})")
+        if gitter57 is not None:
+            fill57 = info_s57[2] / info_p57[2]
+    assert fill57 < 1.0 / 3.0, \
+        f"c) Auffüllung der Doppel-Backplate höchstens 1/3 ({fill57:.2f})"
+
+    # d) Rückfall
+    MicrophoneCapsule._LU_BERR_MAX = 0.0
+    try:
+        capr57 = _bau57(faelle57["Debenham"])
+        xr57 = np.array(capr57._solve_3d(om57, want_rear=True))
+    finally:
+        MicrophoneCapsule._LU_BERR_MAX = 1e-11
+    MicrophoneCapsule._LU_SYMMETRIC = False
+    try:
+        xq57 = np.array(_bau57(faelle57["Debenham"])._solve_3d(
+            om57, want_rear=True))
+    finally:
+        MicrophoneCapsule._LU_SYMMETRIC = True
+    assert capr57._lu_3d_fallback == 1 and \
+        capr57._lu_3d_info[0] == "pivotisiert" and \
+        np.array_equal(xr57, xq57), \
+        "d) erzwungener Rückfall: pivotisierend, bitgleich"
+    S57 = _sp57.csc_matrix(np.array([[1e-20, 1.0], [1.0, 1e-20]],
+                                    dtype=complex))
+    rhs57 = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=complex)
+    capm57 = MicrophoneCapsule()
+    xm57 = capm57._lu_solve_3d(S57, rhs57)
+    assert capm57._lu_3d_fallback == 1 and \
+        np.allclose(S57 @ xm57, rhs57, rtol=1e-12, atol=0.0), \
+        "d) winzige Diagonale: Prüfung muss zurückfallen, Lösung korrekt"
+    print(f"Symmetrische LU-Zerlegung: Rückwärtsfehler "
+          + ", ".join(f"{k} {v:.0e}" for k, v in berr57.items())
+          + f" (ohne Rückfall); wie pivotisiert bis "
+          f"{max(dev57.values()):.0e}; Auffüllung dual {fill57:.2f}; "
+          f"Rückfall erzwungen bitgleich, winzige Diagonale erkannt  OK")

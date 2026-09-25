@@ -348,7 +348,6 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
           f"geschlossene Rückseite -> None  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.feld3d
 def test_gp24_position_des_ruckwartigen_gewebes():
     """Gegenprobe 24: Position des rückwärtigen Gewebes."""
@@ -567,7 +566,6 @@ def test_gp25_eigenrauschen_fdt_nyquist_fit_frei():
           f"greift  OK")
 
 
-@pytest.mark.slow
 @pytest.mark.bem
 def test_gp46_laufzeit_und_rauschintegral():
     """Gegenprobe 46: Laufzeit und Rauschintegral."""

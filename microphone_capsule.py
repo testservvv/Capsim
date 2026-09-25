@@ -484,6 +484,17 @@ class MicrophoneCapsule:
     # faktorisiert. Abschaltbar nur für den Vergleich.
     _REUSE_3D = True
 
+    # LU-Zerlegung des 3D-Systems (Gegenprobe 57): symmetrische Ordnung
+    # (MMD auf A+Aᵀ) mit Diagonal-Pivots statt COLAMD mit Zeilentausch.
+    # Das System ist strukturell symmetrisch; die Zeilentausche der
+    # pivotisierenden Zerlegung zerstörten die füllungsarme Ordnung
+    # (Doppel-Backplate: 101 statt 8,6 Mio. Einträge, 137 statt 1,4 s).
+    # Jede Lösung wird am komponentenweisen Rückwärtsfehler geprüft;
+    # über _LU_BERR_MAX (oder wenn die Zerlegung scheitert) wird mit
+    # Pivotisierung neu gerechnet. Abschaltbar nur für den Vergleich.
+    _LU_SYMMETRIC = True
+    _LU_BERR_MAX = 1e-11
+
     # Massenfaktor der Kette (Gegenprobe 55): 8/(z1²·g) statt des
     # Rayleigh-Werts der statischen Form (Parabel 4/3). Damit sind
     # statische Nachgiebigkeit UND Grundresonanz exakt, s. _derive_
@@ -4875,6 +4886,58 @@ class MicrophoneCapsule:
             self._g3d["_loesungen"] = eintrag
         return eintrag[1]
 
+    def _lu_solve_3d(self, S, rhs):
+        """Löst das 3D-System S·x = rhs (Gegenprobe 57).
+
+        Das System ist strukturell symmetrisch (Film-, Membran- und
+        Knotenkopplungen wirken wechselseitig). SuperLU zerlegt es
+        deshalb mit symmetrischer Ordnung (MMD auf A+Aᵀ) und
+        Diagonal-Pivots. Die übliche pivotisierende Zerlegung (COLAMD mit
+        Zeilentausch nach Betrag) tauschte Zeilen und zerstörte damit die
+        füllungsarme Ordnung: an der Doppel-Backplate 101 statt 8,6 Mio.
+        Einträge in L+U und 137 statt 1,4 s je Frequenz.
+
+        Diagonal-Pivots sind nur so stabil wie die Diagonale. Deshalb
+        wird jede Lösung am komponentenweisen Rückwärtsfehler (Oettli–
+        Prager) max|S·x − b| / (|S|·|x| + |b|) geprüft. Liegt er über
+        _LU_BERR_MAX oder scheitert die Zerlegung (Null auf der
+        Diagonale), wird pivotisierend neu gerechnet (_lu_3d_fallback
+        zählt das). Gemessen lag die symmetrische Zerlegung an allen
+        Bauformen bei 10⁻¹⁵…10⁻¹⁴, die pivotisierende bei 10⁻¹²…10⁻¹⁰.
+        ``_lu_3d_info`` hält Art, Rückwärtsfehler und Einträge der letzten
+        Zerlegung fest.
+        """
+        from scipy.sparse.linalg import splu
+        self._lu_3d_count = getattr(self, "_lu_3d_count", 0) + 1
+        abs_S = abs(S)
+
+        def _berr(x):
+            r = np.abs(S @ x - rhs)
+            den = abs_S @ np.abs(x) + np.abs(rhs)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                q = np.where(den > 0.0, r / den,
+                             np.where(r > 0.0, np.inf, 0.0))
+            return float(np.max(q))
+
+        if self._LU_SYMMETRIC:
+            try:
+                lu = splu(S, permc_spec="MMD_AT_PLUS_A",
+                          diag_pivot_thresh=0.0,
+                          options=dict(SymmetricMode=True))
+                x = lu.solve(rhs)
+                berr = _berr(x)
+                if np.all(np.isfinite(x)) and berr <= self._LU_BERR_MAX:
+                    self._lu_3d_info = ("symmetrisch", berr,
+                                        lu.L.nnz + lu.U.nnz)
+                    return x
+            except RuntimeError:             # Null auf der Diagonale
+                pass
+            self._lu_3d_fallback = getattr(self, "_lu_3d_fallback", 0) + 1
+        lu = splu(S)
+        x = lu.solve(rhs)
+        self._lu_3d_info = ("pivotisiert", _berr(x), lu.L.nnz + lu.U.nnz)
+        return x
+
     def _solve_3d(self, omega, want_rear=False, weight="output"):
         """3D-Sandwich-Lösung: Ausgangs-Volumenverschiebung je Einheits-
         Außendruck, U_front = X_f·p_front + X_r·p_rear.
@@ -4898,10 +4961,10 @@ class MicrophoneCapsule:
         nicht erneut faktorisiert, sondern aus dem Lösungsspeicher
         (_solve_3d_cache) bedient — bitgleich, für beide Gewichte und mit
         denselben Rückmembran-Antworten. ``_lu_3d_count`` zählt die
-        tatsächlichen Faktorisierungen.
+        tatsächlichen Faktorisierungen; wie zerlegt wird, s. _lu_solve_3d
+        (Gegenprobe 57).
         """
         from scipy.sparse import coo_matrix
-        from scipy.sparse.linalg import splu
         g = self._g3d
         Np_, Nr, Nr_m = g["Np"], g["Nr"], g["Nr_m"]
         NF, NM = g["NF"], g["NM"]
@@ -5325,8 +5388,6 @@ class MicrophoneCapsule:
                 (np.concatenate(vals),
                  (np.concatenate(rows), np.concatenate(cols))),
                 shape=(N_tot, N_tot)).tocsc()
-            lu = splu(S)
-            self._lu_3d_count = getattr(self, "_lu_3d_count", 0) + 1
             rhs = np.zeros((N_tot, 2), dtype=complex)
             if arch == "dual_diaphragm":
                 rhs[off_n + 0, 0] = 1.0 / Z_ext_f    # p_front am Frontknoten
@@ -5337,7 +5398,7 @@ class MicrophoneCapsule:
             else:                                    # single
                 rhs[off_n + 0, 0] = 1.0 / Z_fr       # p_front am Frontknoten
                 rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
-            x = lu.solve(rhs)
+            x = self._lu_solve_3d(S, rhs)
             wf = x[off_w:off_w + NF, :]              # Elektrodenbereich
             wr = (x[off_w + NM:off_w + NM + NF, :]
                   if arch == "dual_diaphragm" else None)
