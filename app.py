@@ -649,9 +649,12 @@ def compute_results(cache_key, capsule, progress=None):
     numerisch identisch zum Gesamtaufruf, weil alle Modelle je Frequenz
     unabhängig rechnen (frequency_response-Logik gespiegelt). Auch der
     summary()-Text gehört hierher: er enthält eine Netzwerkauswertung
-    (bei 3D eine volle LU-Lösung) und würde sonst bei JEDEM Rerun im
-    Diagnose-Expander mitgerechnet — Streamlit führt auch eingeklappte
-    Expander-Inhalte aus.
+    und würde sonst bei JEDEM Rerun im Diagnose-Expander mitgerechnet —
+    Streamlit führt auch eingeklappte Expander-Inhalte aus. (Im 3D-Modus
+    ist seine 1-kHz-Lösung seit Gegenprobe 56 frei: sens_1k hat dieselbe
+    Frequenz schon gelöst, und die Kapsel bewahrt ihre Feldlösungen auf.
+    Deshalb kostet auch eine zusätzliche Richtfrequenz nur ihre eigene
+    Lösung, solange die Kapsel im Session-Cache bleibt.)
     """
     store = _session_store("_results_cache")
     hit = store.get(cache_key)
@@ -753,8 +756,8 @@ def get_summary(cache_key, capsule, lang):
     """Diagnose-Summary getrennt gecacht (Schlüssel inkl. Sprache).
 
     So bleibt der teure Ergebnis-Cache sprachunabhängig gültig, und ein
-    Sprachwechsel formatiert nur den Text neu (bei 3D eine 1-kHz-Lösung
-    je Sprache/Parametersatz — danach sofort aus dem Cache).
+    Sprachwechsel formatiert nur den Text neu (die 1-kHz-Lösung bewahrt
+    im 3D-Modus die Kapsel selbst auf, Gegenprobe 56).
     """
     store = _session_store("_summary_cache")
     key = f"{lang}|{cache_key}"
@@ -1441,8 +1444,8 @@ elif capsule.squeeze_model == "3d":
     st.info(tr("noise_no_3d"))
 
 with st.expander(tr("exp_diag")):
-    # gecachter Text: summary() enthält eine Netzwerkauswertung (bei 3D
-    # eine volle LU-Lösung) und liefe sonst bei jedem Rerun mit
+    # gecachter Text: summary() enthält eine Netzwerkauswertung und
+    # liefe sonst bei jedem Rerun mit
     st.code(summary_text, language=None)
 
 # ---------------------------------------------------------------------------

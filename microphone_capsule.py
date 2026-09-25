@@ -33,6 +33,7 @@ Konventionen der Kettenmatrix:  [p_in; q_in] = T * [p_out; q_out]
 Alle Größen in SI-Einheiten, sofern nicht anders angegeben.
 """
 
+import types
 import warnings
 from functools import reduce
 
@@ -476,6 +477,12 @@ class MicrophoneCapsule:
     # Abschaltbar nur für den Vergleich.
     _OUTPUT_EXACT_3D = True
     _TENSION_EXACT_3D = True
+
+    # Wiederverwendung der 3D-Feldlösung je Frequenz (Gegenprobe 56):
+    # directivity, transfer_function, delay_diagnostics und die Diagnosen
+    # lösen bei gleicher Frequenz dasselbe System — es wird nur einmal
+    # faktorisiert. Abschaltbar nur für den Vergleich.
+    _REUSE_3D = True
 
     # Massenfaktor der Kette (Gegenprobe 55): 8/(z1²·g) statt des
     # Rayleigh-Werts der statischen Form (Parabel 4/3). Damit sind
@@ -4830,6 +4837,44 @@ class MicrophoneCapsule:
                                    + eq_v)),
         )
 
+    def _solve_3d_state(self):
+        """Alles, was die 3D-Lösung außer Geometrie und Frequenz bestimmt
+        und sich nach dem Bau einer Kapsel noch ändern kann (Gegenprobe
+        56): die Schalter und Methoden der Klasse samt Basisklassen
+        (Gegenproben tauschen z. B. die Strahlungsimpedanz aus oder
+        schalten Vergleichsmodelle), auf der Instanz ersetzte Methoden und
+        die Stoffwerte der Luft. Die übrigen Parameter der Kapsel liegen
+        mit dem Bau fest — nachträglich geändert würden auch ihre
+        abgeleiteten Größen (_derive_parameters) nicht nachgeführt."""
+        einfach = (bool, int, float, complex, str, type(None),
+                   types.FunctionType, staticmethod, classmethod, property)
+        teile = [(klass.__qualname__, k, v)
+                 for klass in type(self).__mro__ if klass is not object
+                 for k, v in vars(klass).items()
+                 if not k.startswith("__") and isinstance(v, einfach)]
+        teile += [("Instanz", k, v) for k, v in vars(self).items()
+                  if callable(v)]
+        teile.append(("Luft", RHO0, C_AIR, MU_AIR, P_ATM, GAMMA, PRANDTL))
+        return tuple(teile)
+
+    def _solve_3d_cache(self):
+        """Lösungsspeicher der 3D-Feldlösung {ω: Ausgaben} (Gegenprobe 56).
+
+        Er hängt an der Geometrie (_g3d): ein neu gebautes Gitter bringt
+        einen leeren Speicher mit. Ändert sich der Zustand aus
+        _solve_3d_state, wird er verworfen. Gespeichert sind je Frequenz
+        nur die Ausgaben für beide Gewichte ('output', 'volume') und die
+        Reziprozitäts-Diagnose, nicht die Feldvektoren (die wären bei 150
+        Frequenzen über 100 MB)."""
+        if not self._REUSE_3D:
+            return None
+        zustand = self._solve_3d_state()
+        eintrag = self._g3d.get("_loesungen")
+        if eintrag is None or eintrag[0] != zustand:
+            eintrag = (zustand, {})
+            self._g3d["_loesungen"] = eintrag
+        return eintrag[1]
+
     def _solve_3d(self, omega, want_rear=False, weight="output"):
         """3D-Sandwich-Lösung: Ausgangs-Volumenverschiebung je Einheits-
         Außendruck, U_front = X_f·p_front + X_r·p_rear.
@@ -4848,6 +4893,12 @@ class MicrophoneCapsule:
         einmal LU-faktorisiert — das 3D-Modell ist damit DEUTLICH
         langsamer als 1D/2D (Sekundenbereich pro Frequenzpunkt);
         für Frequenzgänge empfiehlt sich n_points <= 150.
+
+        WIEDERVERWENDUNG (Gegenprobe 56): eine schon gelöste Frequenz wird
+        nicht erneut faktorisiert, sondern aus dem Lösungsspeicher
+        (_solve_3d_cache) bedient — bitgleich, für beide Gewichte und mit
+        denselben Rückmembran-Antworten. ``_lu_3d_count`` zählt die
+        tatsächlichen Faktorisierungen.
         """
         from scipy.sparse import coo_matrix
         from scipy.sparse.linalg import splu
@@ -4892,13 +4943,17 @@ class MicrophoneCapsule:
         # gesetzt; das Minus richtet die 3D-Ausgänge an der Kettenkonvention
         # aus, sodass H über alle Modelle phasengleich ist (Beträge und das
         # Verhältnis D_r = −X_f/X_r sind davon unberührt).
-        if weight == "output" and self._OUTPUT_EXACT_3D:
-            w_out = -np.repeat(A_f * self._output_weight_3d(r_f), Np_)
-        elif weight in ("output", "volume"):
-            w_out = -np.repeat(A_f, Np_)
-        else:
+        if weight not in ("output", "volume"):
             raise ValueError("weight muss 'output' oder 'volume' sein.")
+        # beide Gewichte je Lösung, damit der Speicher jede spätere
+        # Anfrage bedienen kann
+        w_vol = -np.repeat(A_f, Np_)
+        w_outs = {"volume": w_vol,
+                  "output": (-np.repeat(A_f * self._output_weight_3d(r_f),
+                                        Np_)
+                             if self._OUTPUT_EXACT_3D else w_vol)}
         rhs_w = np.repeat(A_m, Np_)
+        speicher = self._solve_3d_cache()
 
         def _two_port_stamp(rows, cols, vals, ca, offa, cb, offb,
                             Y11, Y12, Y22):
@@ -4949,6 +5004,13 @@ class MicrophoneCapsule:
             sides = [(0, h_pol, off_w, +1.0)]
 
         for fidx, om in enumerate(omega):
+            treffer = (speicher.get(float(om)) if speicher is not None
+                       else None)
+            if treffer is not None:
+                Xf[fidx], Xr[fidx], Bf[fidx], Br[fidx] = treffer[weight]
+                if treffer["recip"] is not None:
+                    self._recip_3d = treffer["recip"]
+                continue
             rows = [srows]
             cols = [scols]
             vals = [svals]
@@ -5264,6 +5326,7 @@ class MicrophoneCapsule:
                  (np.concatenate(rows), np.concatenate(cols))),
                 shape=(N_tot, N_tot)).tocsc()
             lu = splu(S)
+            self._lu_3d_count = getattr(self, "_lu_3d_count", 0) + 1
             rhs = np.zeros((N_tot, 2), dtype=complex)
             if arch == "dual_diaphragm":
                 rhs[off_n + 0, 0] = 1.0 / Z_ext_f    # p_front am Frontknoten
@@ -5276,13 +5339,17 @@ class MicrophoneCapsule:
                 rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
             x = lu.solve(rhs)
             wf = x[off_w:off_w + NF, :]              # Elektrodenbereich
-            Xf[fidx] = np.sum(w_out[:, None] * wf, axis=0)[0]
-            Xr[fidx] = np.sum(w_out[:, None] * wf, axis=0)[1]
-            if arch == "dual_diaphragm":
-                wr = x[off_w + NM:off_w + NM + NF, :]
-                Bf[fidx] = np.sum(w_out[:, None] * wr, axis=0)[0]
-                Br[fidx] = np.sum(w_out[:, None] * wr, axis=0)[1]
-            else:
+            wr = (x[off_w + NM:off_w + NM + NF, :]
+                  if arch == "dual_diaphragm" else None)
+            neu = {"recip": None}
+            for w_name, w_v in w_outs.items():
+                xf_ = np.sum(w_v[:, None] * wf, axis=0)
+                if wr is not None:
+                    bf_ = np.sum(w_v[:, None] * wr, axis=0)
+                    neu[w_name] = (xf_[0], xf_[1], bf_[0], bf_[1])
+                else:
+                    neu[w_name] = (xf_[0], xf_[1], xf_[0], xf_[1])
+            if arch != "dual_diaphragm":
                 # Reziprozitäts-Diagnose der akustischen Zweitor-Ports
                 # (Flüsse IN das Netzwerk an den Quell-Terminals):
                 # Y21 = q_rück(p_front = 1) = −q_port = −p_knoten/B und
@@ -5293,8 +5360,10 @@ class MicrophoneCapsule:
                 q_rear_pf = -p_m[0] / Bb if abs(Bb) > 0 else 0.0
                 q_front_pr = -p_n[1] / Z_fr
                 self._recip_3d = (complex(q_rear_pf), complex(q_front_pr))
-                Bf[fidx] = Xf[fidx]
-                Br[fidx] = Xr[fidx]
+                neu["recip"] = self._recip_3d
+            Xf[fidx], Xr[fidx], Bf[fidx], Br[fidx] = neu[weight]
+            if speicher is not None:
+                speicher[float(om)] = neu
         if want_rear:
             return Xf, Xr, Bf, Br
         return Xf, Xr

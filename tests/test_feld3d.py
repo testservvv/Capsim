@@ -1244,3 +1244,136 @@ def test_gp54_statischer_versatz_2d_3d_aufgeklart():
               f"{now54:+.3f} dB; Ringmembran (m1 = {m1_54[3e-3]:.3f}): Θ "
               f"mit S_eff, 3D/2D {rp54[0.0]:.4f} -> {rp54[3e-3]:.4f} mit "
               f"Pfosten  OK")
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+def test_gp56_wiederverwendung_der_3d_loesung():
+    """Gegenprobe 56: Wiederverwendung der 3D-Feldlösung je Frequenz.
+
+    directivity, transfer_function, delay_diagnostics und die Diagnosen
+    lösen bei gleicher Frequenz dasselbe System; seit dieser Gegenprobe
+    wird es nur einmal faktorisiert (Lösungsspeicher an der Geometrie,
+    s. _solve_3d_cache). Geprüft wird:
+    a) BITGLEICH gegen den Löser ohne Speicher, über dieselbe Folge von
+       Aufrufen (Pattern, Übertragung, Rückmembran-Antworten mit dem
+       Gewicht 'volume', Laufzeit-Diagnose);
+    b) WIRKUNG: jede Frequenz genau einmal faktorisiert, eine neue
+       Frequenz in einem gemischten Aufruf genau einmal mehr;
+    c) VERFALL bei geändertem Zustand derselben Kapsel: Klassenmethode
+       (Strahlungsimpedanz) oder Instanzmethode getauscht -> neu gelöst,
+       bitgleich mit einer frisch gebauten Kapsel; zurückgetauscht ->
+       wieder bitgleich mit dem Original;
+    d) VERFALL bei neuem Gitter (_build_3d_geometry) -> neu gelöst,
+       bitgleich mit einer frisch gebauten Kapsel dieses Gitters;
+    e) Einzel-Backplate: die Reziprozitäts-Diagnose _recip_3d kommt auch
+       bei einem Treffer aus dem Speicher.
+    """
+    if not _HAS_SCIPY:
+        return
+    kw56 = dict(DEB_KWARGS, squeeze_model="3d", **DEB_CLEARANCE)
+    f56 = np.array([500.0, 1000.0])
+    om56 = 2.0 * np.pi * f56
+
+    def _lauf(cap):
+        return (cap.directivity(
+                    frequencies_hz=(1000.0,))["patterns"][1000.0]["db"],
+                cap.transfer_function(f56),
+                cap._solve_3d(om56, want_rear=True, weight="volume"),
+                cap.delay_diagnostics()["ratio"])
+
+    def _gleich(a, b):
+        return (np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
+                and all(np.array_equal(x, y) for x, y in zip(a[2], b[2]))
+                and a[3] == b[3])
+
+    # a) bitgleich gegen den Löser ohne Speicher
+    MicrophoneCapsule._REUSE_3D = False
+    try:
+        ref56 = MicrophoneCapsule(**kw56)
+        r_ref56 = _lauf(ref56)
+    finally:
+        MicrophoneCapsule._REUSE_3D = True
+    cap56 = MicrophoneCapsule(**kw56)
+    r56 = _lauf(cap56)
+    assert _gleich(r_ref56, r56), \
+        "a) mit Lösungsspeicher muss alles bitgleich sein"
+    # b) Wirkung
+    n_ohne56, n_mit56 = ref56._lu_3d_count, cap56._lu_3d_count
+    assert n_ohne56 == 6 and n_mit56 == 2, \
+        (f"b) zwei Frequenzen, je einmal faktorisiert ({n_ohne56} ohne, "
+         f"{n_mit56} mit Speicher)")
+    cap56.transfer_function([1000.0, 2000.0])
+    assert cap56._lu_3d_count == 3, \
+        (f"b) bekannte + neue Frequenz: genau eine Faktorisierung mehr "
+         f"({cap56._lu_3d_count})")
+
+    # c) Zustand derselben Kapsel geändert: Klassen- und Instanzmethode
+    _rad56 = MicrophoneCapsule._radiation_impedance_membrane
+    h1_56 = cap56.transfer_function([1000.0])
+
+    def _rad2(self, omega):
+        return 50.0 * _rad56(self, omega)
+
+    try:
+        MicrophoneCapsule._radiation_impedance_membrane = _rad2
+        n0 = cap56._lu_3d_count
+        h_tausch56 = cap56.transfer_function([1000.0])
+        assert cap56._lu_3d_count == n0 + 1, \
+            "c) getauschte Klassenmethode: neu lösen"
+        h_frisch56 = MicrophoneCapsule(**kw56).transfer_function([1000.0])
+    finally:
+        MicrophoneCapsule._radiation_impedance_membrane = _rad56
+    d_tausch56 = float(abs(20 * np.log10(abs(h_tausch56[0] / h1_56[0]))))
+    assert np.array_equal(h_tausch56, h_frisch56) and d_tausch56 > 1e-3, \
+        (f"c) getauscht: wie eine frisch gebaute Kapsel und sichtbar anders "
+         f"({d_tausch56:.4f} dB)")
+    assert np.array_equal(cap56.transfer_function([1000.0]), h1_56), \
+        "c) zurückgetauscht: wieder das Original"
+    cap56._radiation_impedance_membrane = types.MethodType(_rad2, cap56)
+    n0 = cap56._lu_3d_count
+    h_inst56 = cap56.transfer_function([1000.0])
+    del cap56._radiation_impedance_membrane
+    assert cap56._lu_3d_count == n0 + 1 and \
+        np.array_equal(h_inst56, h_tausch56), \
+        "c) auf der Instanz getauschte Methode: neu lösen, gleiches Ergebnis"
+
+    # d) neues Gitter
+    cap56._n_phi_3d = cap56._g3d["Np"] // 2
+    cap56._build_3d_geometry()
+    n0 = cap56._lu_3d_count
+    h_gitter56 = cap56.transfer_function([1000.0])
+    frisch56 = MicrophoneCapsule(**kw56)
+    frisch56._n_phi_3d = cap56._n_phi_3d
+    frisch56._build_3d_geometry()
+    assert cap56._lu_3d_count == n0 + 1 and \
+        np.array_equal(h_gitter56, frisch56.transfer_function([1000.0])) \
+        and not np.array_equal(h_gitter56, h1_56), \
+        "d) neues Gitter: neu lösen, wie eine frisch gebaute Kapsel"
+
+    # e) Einzel-Backplate: _recip_3d aus dem Speicher
+    cs56 = MicrophoneCapsule(
+        architecture="single", membrane_resonance_hz=8000.0,
+        membrane_diameter=12.0e-3, membrane_thickness=5e-6,
+        membrane_tension=400.0, air_gap=25e-6,
+        backplate_diameter=11.0e-3, backplate_thickness=1.5e-3,
+        bias_voltage=1.0, n_blind_holes=0, n_through_holes=48,
+        through_hole_diameter=0.33e-3, cavity_length=4.0e-3,
+        n_cavity_holes=0, squeeze_model="3d")
+    om1_56 = np.array([2.0 * np.pi * 1000.0])
+    x1_56 = cs56._solve_3d(om1_56)
+    rec56 = cs56._recip_3d
+    cs56._recip_3d = None
+    x2_56 = cs56._solve_3d(om1_56, weight="volume")
+    x3_56 = cs56._solve_3d(om1_56)
+    assert cs56._lu_3d_count == 1 and cs56._recip_3d == rec56 and \
+        all(np.array_equal(a, b) for a, b in zip(x1_56, x3_56)) and \
+        not np.array_equal(x1_56[0], x2_56[0]), \
+        ("e) Treffer: eine Faktorisierung, _recip_3d wie gelöst, "
+         "Gewichte getrennt")
+    print(f"Wiederverwendung 3D-Lösung: bitgleich (Pattern, H, Rückmembran, "
+          f"Laufzeit); Faktorisierungen {n_ohne56} -> {n_mit56}, neue "
+          f"Frequenz +1; Strahlungsimpedanz getauscht -> neu gelöst "
+          f"({d_tausch56:.2f} dB anders, wie frisch gebaut), zurück "
+          f"bitgleich; Instanzmethode und neues Gitter -> neu gelöst; "
+          f"Einzel-Backplate: Reziprozitäts-Diagnose aus dem Speicher  OK")

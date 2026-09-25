@@ -109,7 +109,11 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   Gültigkeits-Gatter im Testlauf. DEUTLICH langsamer (LU-Faktorisierung
   je Frequenzpunkt: einteilig ~24 000 Unbekannte, ~1–2 s; K67-Typ mit
   drittem Film und feinerer Azimut-Auflösung bis ~10 s bei 60 Löchern)
-  — in der GUI die Frequenzpunkte reduzieren. Absolute Empfindlichkeit
+  — in der GUI die Frequenzpunkte reduzieren. Jede Frequenz wird je
+  Kapsel nur einmal gelöst (Gegenprobe 56): Richtdiagramm,
+  Empfindlichkeit, Laufzeit-Diagnose und `summary()` teilen sich die
+  Lösung, und in der GUI kostet eine zusätzliche Richtfrequenz nur ihre
+  eigene. Absolute Empfindlichkeit
   weicht modellbedingt ≤ 2–3 dB von 1D/2D ab (Membran als Feld statt
   Grundmode). **Gitter:** grob (Standard) oder fein (`grid_3d="fine"`,
   GUI-Schalter „Feines 3D-Gitter"), s. Gegenprobe 50.
@@ -1401,6 +1405,45 @@ altem und neuem Faktor und den Hochtongrenzwert der Modenreihe über
 400 Moden für Vollkreis und Ring (ρ = 0,1). Der alte Wert bleibt über
 den Klassenschalter `_MASS_EXACT` für Vergleiche erreichbar;
 Gegenprobe 54 stellt damit ihre historische Zerlegung nach.
+
+### Wiederverwendung der 3D-Lösung (Gegenprobe 56)
+
+Richtdiagramm, Übertragungsfunktion, Laufzeit-Diagnose und `summary()`
+lösen bei gleicher Frequenz dasselbe 3D-System. Bisher wurde es jedes
+Mal neu aufgestellt und LU-faktorisiert, bei der K67 im 3D-Modus rund
+17 s je Lösung. Jetzt bewahrt die Kapsel ihre Lösungen je Frequenz auf.
+Gespeichert sind nur die Ausgaben (für beide Gewichte, `output` und
+`volume`, mit den Rückmembran-Antworten und der Reziprozitäts-
+Diagnose), nicht die Feldvektoren; das sind etwa 1 kB je Frequenz.
+
+Der Speicher hängt am 3D-Gitter und ist nach einem Neubau des Gitters
+leer. Außerdem wird er verworfen, sobald sich etwas ändert, das die
+Lösung nach dem Bau der Kapsel noch beeinflussen kann: Schalter und
+Methoden der Klasse (auch ausgetauschte, wie in den Gegenproben 27 und
+52), auf der Kapsel ersetzte Methoden und die Stoffwerte der Luft. Die
+übrigen Parameter liegen mit dem Bau fest; nachträglich geändert würden
+auch ihre abgeleiteten Größen nicht nachgeführt.
+
+Gegenprobe 56 prüft:
+- dieselbe Aufruffolge mit und ohne Speicher ergibt bitgleiche
+  Ergebnisse (Pattern, Übertragung, Rückmembran, Laufzeit);
+- jede Frequenz wird genau einmal faktorisiert (6 → 2), eine neue
+  Frequenz in einem gemischten Aufruf genau einmal mehr;
+- nach dem Tausch einer Klassen- oder Instanzmethode wird neu gelöst,
+  bitgleich mit einer frisch gebauten Kapsel, und nach dem Zurücktausch
+  ergibt sich wieder das Original;
+- nach einem neuen Gitter wird neu gelöst, bitgleich mit einer frisch
+  gebauten Kapsel dieses Gitters;
+- die Reziprozitäts-Diagnose der Einzel-Backplate kommt auch aus dem
+  Speicher.
+
+**Wirkung:** In der GUI (Debenham-Beispiel im 3D-Modus, 40 Punkte, 5
+Richtfrequenzen) braucht die erste Berechnung 43 statt 45 Lösungen.
+`summary()` kostet in beiden Sprachen nichts mehr (vorher je eine
+Lösung), und eine zusätzliche Richtfrequenz braucht 1 statt 46 Lösungen
+(1 statt 38 s). Im Selbsttest sinkt die Summe der Testzeiten um etwa
+5 %; die Wandzeit bleibt bei rund 3 Minuten, weil die Gegenproben 23
+und 48 fast nur verschiedene Systeme lösen (48: 20 von 20).
 
 ## Verlustmechanismen (vollständig erfasst)
 
