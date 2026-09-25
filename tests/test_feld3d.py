@@ -250,172 +250,205 @@ def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht):
           f"Geometriefrage  OK")
 
 
+# --------- Gegenprobe 23: 3D-Löser für single/dual-Architekturen ----------
+# Der 3D-Löser rechnet auch die Einzel-Backplate- und die Dual-Backplate-
+# Bauform: EIN Membranfeld, ein Film je Backplate, Durchgangslöcher als
+# Zweitor in SAMMELKNOTEN, deren Abschluss die baugleiche Lumped-Kette des
+# 1D/2D-Pfads bildet (_rear_chain_mats; vorn: Strahlung + Gewebe).
+# Verankert ohne Fit-Koeffizient, in unabhängigen Teilprüfungen a)–f).
+_F23 = np.array([100.0, 1000.0])
+_SG23 = dict(architecture="single",
+             membrane_material="PET", membrane_resonance_hz=8000.0,
+             membrane_diameter=22e-3, membrane_thickness=6e-6,
+             membrane_tension=400.0, air_gap=40e-6,
+             backplate_diameter=20e-3, backplate_thickness=3e-3,
+             bias_voltage=60.0, n_through_holes=60,
+             through_hole_diameter=1.0e-3, n_blind_holes=30,
+             blind_hole_diameter=1.2e-3, delay_length=3e-3,
+             cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
+             n_cavity_holes=200, cavity_hole_diameter=0.2e-3,
+             cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
+             fabric_rear_rayl=0.0, body_diameter=24e-3,
+             include_diffraction=False)
+# K103: Spacer + Rückplatte
+_K23 = dict(architecture="single",
+            membrane_resonance_hz=1800.0, membrane_diameter=25.4e-3,
+            membrane_thickness=6e-6, membrane_tension=100.0,
+            air_gap=50e-6, backplate_diameter=24e-3,
+            backplate_thickness=3e-3, bias_voltage=60.0,
+            n_through_holes=36, through_hole_diameter=1.0e-3,
+            n_blind_holes=0, blind_hole_diameter=1.2e-3,
+            blind_hole_depth=1e-3, rear_spacer_height=40e-6,
+            rear_plate_thickness=2e-3,
+            rear_plate_hole_diameter=1.0e-3, delay_length=0.0,
+            cavity_length=0.0, n_cavity_holes=0,
+            fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+            body_diameter=27e-3, include_diffraction=False)
+
+
+@pytest.mark.feld3d
+def test_gp23a_reziprok_single():
+    """Gegenprobe 23 a: REZIPROZITÄT der akustischen Ports,
+    q_rück(p_front = 1) == q_front(p_rück = 1) — exakt
+    (Maschinengenauigkeit), validiert alle Kopplungsvorzeichen
+    (Film-Membran, Knoten, Ketten). Offene Niere, fordert alle Pfade;
+    bei geschlossener Rückseite ist der Kreuzfluss trivial 0."""
+    if not _HAS_SCIPY:
+        return
+    card3 = MicrophoneCapsule(**{**_SG23, "n_cavity_holes": 60,
+                                 "cavity_hole_diameter": 0.6e-3},
+                              squeeze_model="3d")
+    card3.transfer_function(np.array([1000.0]))
+    rez_s = abs(card3._recip_3d[0]) / abs(card3._recip_3d[1])
+    assert abs(rez_s - 1.0) < 1e-6, \
+        f"3D single muss reziprok sein ({rez_s:.8f})"
+    print(f"3D single/dual a) reziprok single {rez_s:.6f}  OK")
+
+
+@pytest.mark.feld3d
+def test_gp23b_geschlossen_kugel():
+    """Gegenprobe 23 b: GESCHLOSSENE RÜCKSEITE — exakte Kugel (ohne
+    Beugung) und Übereinstimmung mit 1D nach Betrag UND PHASE: die
+    3D-Ausgänge folgen der Ketten-Flussrichtung (Vorzeichenkonvention)."""
+    if not _HAS_SCIPY:
+        return
+    cl3 = MicrophoneCapsule(**{**_SG23, "n_cavity_holes": 0},
+                            squeeze_model="3d")
+    cl1 = MicrophoneCapsule(**{**_SG23, "n_cavity_holes": 0},
+                            squeeze_model="1d")
+    lin_c = cl3.directivity(
+        frequencies_hz=(1000.0,))["patterns"][1000.0]["linear"]
+    assert np.max(np.abs(lin_c - 1.0)) < 1e-6, \
+        "3D single geschlossen muss exakte Kugel liefern"
+    r_cl = (cl3.transfer_function(_F23[:1])
+            / cl1.transfer_function(_F23[:1]))[0]
+    assert 0.90 < abs(r_cl) < 1.02, \
+        f"3D/1D geschlossen @100 Hz ({abs(r_cl):.3f})"
+    assert abs(np.angle(r_cl)) < np.deg2rad(12.0), \
+        (f"3D muss der Ketten-Phasenkonvention folgen "
+         f"({np.rad2deg(np.angle(r_cl)):.1f}°)")
+    print(f"3D single/dual b) geschlossen = Kugel, 3D/1D @100 Hz "
+          f"{abs(r_cl):.3f} ∠{np.rad2deg(np.angle(r_cl)):+.1f}°  OK")
+
+
+@pytest.mark.feld3d
+def test_gp23c_k103_dicht():
+    """Gegenprobe 23 c: K103-GRENZFALL DICHT (Spacer + Rückplatte ohne
+    Durchlass): 3D == 1D auf wenige Prozent über das Band.
+
+    Die Struktur wird an der VOLUMENverschiebung geprüft; die
+    Θ-konsistente Wandlung prüft Gegenprobe 54. Die Spannung trifft die
+    Kette im Tiefton; bei 1 kHz liegt sie im 3D tiefer: bei 60 V ist der
+    Spalt in der Mitte nur 0.74·h, der Film dort 2.5-fach steifer, die
+    Mitte bleibt zurück — und die Spannung gewichtet die Mitte (1/g²).
+    Formanpassung, die das Einmodenbild nicht kann (ausgegeben)."""
+    if not _HAS_SCIPY:
+        return
+    kd3 = MicrophoneCapsule(**_K23, n_rear_plate_holes=0,
+                            squeeze_model="3d")
+    kd1 = MicrophoneCapsule(**_K23, n_rear_plate_holes=0,
+                            squeeze_model="1d")
+    h1_kd = kd1.transfer_function(_F23)
+    pf_kd, pr_kd = kd3._source_pressures(2 * np.pi * _F23,
+                                         np.array([0.0]))
+    Xf_kd, Xr_kd = kd3._solve_3d(2 * np.pi * _F23, weight="volume")
+    r_kdv = np.abs((Xf_kd * pf_kd[:, 0] + Xr_kd * pr_kd[:, 0])
+                   / (h1_kd / kd1._theta))
+    assert np.all((r_kdv > 0.93) & (r_kdv < 1.07)), \
+        f"K103 dicht: 3D-Volumenfluss muss 1D treffen ({r_kdv})"
+    r_kd = np.abs(kd3.transfer_function(_F23) / h1_kd)
+    assert abs(r_kd[0] - 1.0) < 0.03, \
+        f"K103 dicht: Spannung im Tiefton == 1D ({r_kd[0]:.3f})"
+    print(f"3D single/dual c) K103 dicht Volumen {r_kdv.round(3)}, "
+          f"Spannung {r_kd.round(3)} (1 kHz: Formanpassung bei 60 V)  OK")
+
+
+@pytest.mark.feld3d
+def test_gp23d_k103_offen():
+    """Gegenprobe 23 d: K103 OFFEN — die interne Rück-Übertragung D_r
+    (das Verhältnis beider Pfade) stimmt mit dem 2D-Feldmodell auf ~1 %
+    überein. Die absoluten Empfindlichkeiten tragen die dokumentierte
+    Membranfeld-Klasse (±2–3 dB), ihr VERHÄLTNIS ist robust."""
+    if not _HAS_SCIPY:
+        return
+    dr23 = {}
+    for sm in ("2d", "3d"):
+        ko = MicrophoneCapsule(**_K23, n_rear_plate_holes=60,
+                               squeeze_model=sm)
+        dr23[sm] = ko.angle_responses(_F23)["D_r"]
+    d_dr = np.max(np.abs(dr23["3d"] - dr23["2d"]))
+    assert d_dr < 0.05, \
+        (f"K103 offen: interne Rück-Übertragung D_r muss das "
+         f"2D-Feldmodell treffen (|ΔD_r| = {d_dr:.3f})")
+    print(f"3D single/dual d) K103 offen |ΔD_r| = {d_dr:.3f}  OK")
+
+
+@pytest.mark.feld3d
+def test_gp23e_niere():
+    """Gegenprobe 23 e: NIERE (Laufzeitglied + Hohlraum) — Richtdiagramm
+    3D nahe 2D (90°/180°/Minimum-Winkel), Empfindlichkeit in der
+    Klasse."""
+    if not _HAS_SCIPY:
+        return
+    n23 = dict(architecture="single",
+               membrane_resonance_hz=2100.0, membrane_diameter=25.4e-3,
+               membrane_thickness=6e-6, membrane_tension=45.0,
+               air_gap=38.1e-6, backplate_diameter=23.9e-3,
+               backplate_thickness=3.125e-3, bias_voltage=50.0,
+               n_through_holes=48, through_hole_diameter=1.0e-3,
+               n_blind_holes=24, blind_hole_diameter=1.2e-3,
+               blind_hole_depth=1.5e-3, delay_length=3e-3,
+               cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
+               n_cavity_holes=60, cavity_hole_diameter=0.6e-3,
+               cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
+               fabric_rear_rayl=0.0, body_diameter=28e-3)
+    pat23 = {}
+    for sm in ("2d", "3d"):
+        cn = MicrophoneCapsule(**n23, squeeze_model=sm)
+        di = cn.directivity(frequencies_hz=(1000.0,))
+        db = di["patterns"][1000.0]["db"]
+        lin = di["patterns"][1000.0]["linear"]
+        na = di["angles_deg"][:181][int(np.argmin(lin[:181]))]
+        H1 = abs(cn.transfer_function(np.array([1000.0]))[0])
+        pat23[sm] = (db[90], db[180], na, H1)
+    assert abs(pat23["3d"][0] - pat23["2d"][0]) < 1.5, \
+        (f"Niere 90°: 3D nahe 2D ({pat23['2d'][0]:.1f} vs. "
+         f"{pat23['3d'][0]:.1f} dB)")
+    assert abs(pat23["3d"][1] - pat23["2d"][1]) < 2.5, \
+        (f"Niere 180°: 3D nahe 2D ({pat23['2d'][1]:.1f} vs. "
+         f"{pat23['3d'][1]:.1f} dB)")
+    assert abs(pat23["3d"][2] - pat23["2d"][2]) <= 15.0, \
+        (f"Minimum-Winkel: 3D nahe 2D ({pat23['2d'][2]:.0f}° vs. "
+         f"{pat23['3d'][2]:.0f}°)")
+    r_e = pat23["3d"][3] / pat23["2d"][3]
+    assert 0.6 < r_e < 1.05, \
+        f"Niere Empfindlichkeit 3D/2D @1 kHz ({r_e:.2f})"
+    print(f"3D single/dual e) Niere 90/180/Min: 2D {pat23['2d'][0]:.1f}/"
+          f"{pat23['2d'][1]:.1f}/{pat23['2d'][2]:.0f}° vs. 3D "
+          f"{pat23['3d'][0]:.1f}/{pat23['3d'][1]:.1f}/"
+          f"{pat23['3d'][2]:.0f}°, Empf. {r_e:.2f}  OK")
+
+
 @pytest.mark.slow
 @pytest.mark.feld3d
-def test_gp23_3d_loser_fur_single_dual():
-    """Gegenprobe 23: 3D-Löser für single/dual-Architekturen."""
-    # Der 3D-Löser rechnet jetzt auch die Einzel-Backplate- und die
-    # Dual-Backplate-Bauform: EIN Membranfeld, ein Film je Backplate,
-    # Durchgangslöcher als Zweitor in SAMMELKNOTEN, deren Abschluss die
-    # baugleiche Lumped-Kette des 1D/2D-Pfads bildet (_rear_chain_mats;
-    # vorn: Strahlung + Gewebe). Verankert ohne Fit-Koeffizient:
-    # a) REZIPROZITÄT der akustischen Ports: q_rück(p_front = 1) ==
-    #    q_front(p_rück = 1) — exakt (Maschinengenauigkeit), validiert
-    #    alle Kopplungsvorzeichen (Film-Membran, Knoten, Ketten).
-    # b) GESCHLOSSENE RÜCKSEITE: exakte Kugel (ohne Beugung) und
-    #    Übereinstimmung mit 1D nach Betrag UND PHASE — die 3D-Ausgänge
-    #    folgen jetzt der Ketten-Flussrichtung (Vorzeichenkonvention).
-    # c) K103-GRENZFALL DICHT (Spacer + Rückplatte ohne Durchlass):
-    #    3D == 1D auf wenige Prozent über das Band.
-    # d) K103 OFFEN: die interne Rück-Übertragung D_r (das Verhältnis
-    #    beider Pfade) stimmt mit dem 2D-Feldmodell auf ~1 % überein —
-    #    die absoluten Empfindlichkeiten tragen die dokumentierte
-    #    Membranfeld-Klasse (±2–3 dB), ihr VERHÄLTNIS ist robust.
-    # e) NIERE (Laufzeitglied + Hohlraum): Richtdiagramm 3D nahe 2D
-    #    (90°/180°/Minimum-Winkel), Empfindlichkeit in der Klasse.
-    # f) DUAL: Reziprozität + LF-Empfindlichkeit nahe 2D.
-    if _HAS_SCIPY:
-        f23 = np.array([100.0, 1000.0])
-        sg23 = dict(architecture="single",
-                    membrane_material="PET", membrane_resonance_hz=8000.0,
-                    membrane_diameter=22e-3, membrane_thickness=6e-6,
-                    membrane_tension=400.0, air_gap=40e-6,
-                    backplate_diameter=20e-3, backplate_thickness=3e-3,
-                    bias_voltage=60.0, n_through_holes=60,
-                    through_hole_diameter=1.0e-3, n_blind_holes=30,
-                    blind_hole_diameter=1.2e-3, delay_length=3e-3,
-                    cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
-                    n_cavity_holes=200, cavity_hole_diameter=0.2e-3,
-                    cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
-                    fabric_rear_rayl=0.0, body_diameter=24e-3,
-                    include_diffraction=False)
-        # b) geschlossene Rückseite: Kugel + Betrag/Phase == 1D
-        cl3 = MicrophoneCapsule(**{**sg23, "n_cavity_holes": 0},
-                                squeeze_model="3d")
-        cl1 = MicrophoneCapsule(**{**sg23, "n_cavity_holes": 0},
-                                squeeze_model="1d")
-        lin_c = cl3.directivity(
-            frequencies_hz=(1000.0,))["patterns"][1000.0]["linear"]
-        assert np.max(np.abs(lin_c - 1.0)) < 1e-6, \
-            "3D single geschlossen muss exakte Kugel liefern"
-        r_cl = (cl3.transfer_function(f23[:1])
-                / cl1.transfer_function(f23[:1]))[0]
-        assert 0.90 < abs(r_cl) < 1.02, \
-            f"3D/1D geschlossen @100 Hz ({abs(r_cl):.3f})"
-        assert abs(np.angle(r_cl)) < np.deg2rad(12.0), \
-            (f"3D muss der Ketten-Phasenkonvention folgen "
-             f"({np.rad2deg(np.angle(r_cl)):.1f}°)")
-        # a) Reziprozität (offene Niere, fordert alle Pfade; bei
-        # geschlossener Rückseite ist der Kreuzfluss trivial 0)
-        card3 = MicrophoneCapsule(**{**sg23, "n_cavity_holes": 60,
-                                     "cavity_hole_diameter": 0.6e-3},
-                                  squeeze_model="3d")
-        card3.transfer_function(np.array([1000.0]))
-        rez_s = abs(card3._recip_3d[0]) / abs(card3._recip_3d[1])
-        assert abs(rez_s - 1.0) < 1e-6, \
-            f"3D single muss reziprok sein ({rez_s:.8f})"
-        # c)+d) K103: dicht == 1D; offen: D_r == 2D
-        k23 = dict(architecture="single",
-                   membrane_resonance_hz=1800.0, membrane_diameter=25.4e-3,
-                   membrane_thickness=6e-6, membrane_tension=100.0,
-                   air_gap=50e-6, backplate_diameter=24e-3,
-                   backplate_thickness=3e-3, bias_voltage=60.0,
-                   n_through_holes=36, through_hole_diameter=1.0e-3,
-                   n_blind_holes=0, blind_hole_diameter=1.2e-3,
-                   blind_hole_depth=1e-3, rear_spacer_height=40e-6,
-                   rear_plate_thickness=2e-3,
-                   rear_plate_hole_diameter=1.0e-3, delay_length=0.0,
-                   cavity_length=0.0, n_cavity_holes=0,
-                   fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
-                   body_diameter=27e-3, include_diffraction=False)
-        kd3 = MicrophoneCapsule(**k23, n_rear_plate_holes=0,
-                                squeeze_model="3d")
-        kd1 = MicrophoneCapsule(**k23, n_rear_plate_holes=0,
-                                squeeze_model="1d")
-        # Struktur (Abstandshalter + Rückplatte) an der VOLUMENverschiebung;
-        # die Θ-konsistente Wandlung prüft Gegenprobe 54. Die Spannung
-        # trifft die Kette im Tiefton; bei 1 kHz liegt sie im 3D tiefer:
-        # bei 60 V ist der Spalt in der Mitte nur 0.74·h, der Film dort
-        # 2.5-fach steifer, die Mitte bleibt zurück — und die Spannung
-        # gewichtet die Mitte (1/g²). Formanpassung, die das Einmodenbild
-        # nicht kann (ausgegeben).
-        h1_kd = kd1.transfer_function(f23)
-        pf_kd, pr_kd = kd3._source_pressures(2 * np.pi * f23,
-                                             np.array([0.0]))
-        Xf_kd, Xr_kd = kd3._solve_3d(2 * np.pi * f23, weight="volume")
-        r_kdv = np.abs((Xf_kd * pf_kd[:, 0] + Xr_kd * pr_kd[:, 0])
-                       / (h1_kd / kd1._theta))
-        assert np.all((r_kdv > 0.93) & (r_kdv < 1.07)), \
-            f"K103 dicht: 3D-Volumenfluss muss 1D treffen ({r_kdv})"
-        r_kd = np.abs(kd3.transfer_function(f23) / h1_kd)
-        assert abs(r_kd[0] - 1.0) < 0.03, \
-            f"K103 dicht: Spannung im Tiefton == 1D ({r_kd[0]:.3f})"
-        dr23 = {}
-        for sm in ("2d", "3d"):
-            ko = MicrophoneCapsule(**k23, n_rear_plate_holes=60,
-                                   squeeze_model=sm)
-            dr23[sm] = ko.angle_responses(f23)["D_r"]
-        d_dr = np.max(np.abs(dr23["3d"] - dr23["2d"]))
-        assert d_dr < 0.05, \
-            (f"K103 offen: interne Rück-Übertragung D_r muss das "
-             f"2D-Feldmodell treffen (|ΔD_r| = {d_dr:.3f})")
-        # e) Niere: Richtdiagramm 3D nahe 2D
-        n23 = dict(architecture="single",
-                   membrane_resonance_hz=2100.0, membrane_diameter=25.4e-3,
-                   membrane_thickness=6e-6, membrane_tension=45.0,
-                   air_gap=38.1e-6, backplate_diameter=23.9e-3,
-                   backplate_thickness=3.125e-3, bias_voltage=50.0,
-                   n_through_holes=48, through_hole_diameter=1.0e-3,
-                   n_blind_holes=24, blind_hole_diameter=1.2e-3,
-                   blind_hole_depth=1.5e-3, delay_length=3e-3,
-                   cavity_length=12e-3, cavity_wall_thickness=1.5e-3,
-                   n_cavity_holes=60, cavity_hole_diameter=0.6e-3,
-                   cavity_hole_axial_position=6e-3, fabric_front_rayl=0.0,
-                   fabric_rear_rayl=0.0, body_diameter=28e-3)
-        pat23 = {}
-        for sm in ("2d", "3d"):
-            cn = MicrophoneCapsule(**n23, squeeze_model=sm)
-            di = cn.directivity(frequencies_hz=(1000.0,))
-            db = di["patterns"][1000.0]["db"]
-            lin = di["patterns"][1000.0]["linear"]
-            na = di["angles_deg"][:181][int(np.argmin(lin[:181]))]
-            H1 = abs(cn.transfer_function(np.array([1000.0]))[0])
-            pat23[sm] = (db[90], db[180], na, H1)
-        assert abs(pat23["3d"][0] - pat23["2d"][0]) < 1.5, \
-            (f"Niere 90°: 3D nahe 2D ({pat23['2d'][0]:.1f} vs. "
-             f"{pat23['3d'][0]:.1f} dB)")
-        assert abs(pat23["3d"][1] - pat23["2d"][1]) < 2.5, \
-            (f"Niere 180°: 3D nahe 2D ({pat23['2d'][1]:.1f} vs. "
-             f"{pat23['3d'][1]:.1f} dB)")
-        assert abs(pat23["3d"][2] - pat23["2d"][2]) <= 15.0, \
-            (f"Minimum-Winkel: 3D nahe 2D ({pat23['2d'][2]:.0f}° vs. "
-             f"{pat23['3d'][2]:.0f}°)")
-        r_e = pat23["3d"][3] / pat23["2d"][3]
-        assert 0.6 < r_e < 1.05, \
-            f"Niere Empfindlichkeit 3D/2D @1 kHz ({r_e:.2f})"
-        # f) dual: Reziprozität + LF nahe 2D
-        du23 = dict(sg23, architecture="dual", n_cavity_holes=200,
-                    cavity_hole_diameter=0.2e-3)
-        du3 = MicrophoneCapsule(**du23, squeeze_model="3d")
-        du2 = MicrophoneCapsule(**du23, squeeze_model="2d")
-        r_du = (du3.transfer_function(f23[:1])
-                / du2.transfer_function(f23[:1]))[0]
-        rez_d = abs(du3._recip_3d[0]) / abs(du3._recip_3d[1])
-        assert abs(rez_d - 1.0) < 1e-6, \
-            f"3D dual muss reziprok sein ({rez_d:.8f})"
-        assert 0.75 < abs(r_du) < 1.05, \
-            f"dual: 3D/2D @100 Hz ({abs(r_du):.3f})"
-        print(f"3D single/dual: reziprok (single {rez_s:.6f}, dual "
-              f"{rez_d:.6f}); geschlossen = Kugel, 3D/1D @100 Hz "
-              f"{abs(r_cl):.3f} ∠{np.rad2deg(np.angle(r_cl)):+.1f}°; "
-              f"K103 dicht Volumen {r_kdv.round(3)}, Spannung "
-              f"{r_kd.round(3)} (1 kHz: Formanpassung bei 60 V), offen "
-              f"|ΔD_r| = {d_dr:.3f}; "
-              f"Niere 90/180/Min: 2D {pat23['2d'][0]:.1f}/"
-              f"{pat23['2d'][1]:.1f}/{pat23['2d'][2]:.0f}° vs. 3D "
-              f"{pat23['3d'][0]:.1f}/{pat23['3d'][1]:.1f}/"
-              f"{pat23['3d'][2]:.0f}°, Empf. {r_e:.2f}; dual @100 Hz "
-              f"{abs(r_du):.3f}  OK")
+def test_gp23f_dual():
+    """Gegenprobe 23 f: DUAL — Reziprozität + LF-Empfindlichkeit nahe
+    2D."""
+    if not _HAS_SCIPY:
+        return
+    du23 = dict(_SG23, architecture="dual", n_cavity_holes=200,
+                cavity_hole_diameter=0.2e-3)
+    du3 = MicrophoneCapsule(**du23, squeeze_model="3d")
+    du2 = MicrophoneCapsule(**du23, squeeze_model="2d")
+    r_du = (du3.transfer_function(_F23[:1])
+            / du2.transfer_function(_F23[:1]))[0]
+    rez_d = abs(du3._recip_3d[0]) / abs(du3._recip_3d[1])
+    assert abs(rez_d - 1.0) < 1e-6, \
+        f"3D dual muss reziprok sein ({rez_d:.8f})"
+    assert 0.75 < abs(r_du) < 1.05, \
+        f"dual: 3D/2D @100 Hz ({abs(r_du):.3f})"
+    print(f"3D single/dual f) reziprok dual {rez_d:.6f}, 3D/2D @100 Hz "
+          f"{abs(r_du):.3f}  OK")
 
 
 @pytest.mark.feld3d

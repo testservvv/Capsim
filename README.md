@@ -107,9 +107,11 @@ gerechnet werden (umschaltbar per `squeeze_model` bzw. GUI-Schalter):
   Grenzfälle einteilig ≡ zweiteilig-ausgerichtet (5-µm-Spalt, 2 %) und
   Stufenbohrung → glatte Bohrung (winzige Senkung, 0,8 %) sowie die
   Gültigkeits-Gatter im Testlauf. DEUTLICH langsamer (LU-Faktorisierung
-  je Frequenzpunkt: einteilig ~24 000 Unbekannte, ~1–2 s; K67-Typ mit
-  drittem Film und feinerer Azimut-Auflösung bis ~10 s bei 60 Löchern)
-  — in der GUI die Frequenzpunkte reduzieren. Jede Frequenz wird je
+  je Frequenzpunkt, auf einem Kern gemessen: einteilig ~24 000
+  Unbekannte, ~1–2 s; K67-Typ mit drittem Film 17 s verdreht, 52 s mit
+  ausgerichteten Hälften; Doppel-Backplate `dual` rund 140 s, weil die
+  LU-Zerlegung dort stark auffüllt — für die GUI praktisch zu langsam,
+  offen) — in der GUI die Frequenzpunkte reduzieren. Jede Frequenz wird je
   Kapsel nur einmal gelöst (Gegenprobe 56): Richtdiagramm,
   Empfindlichkeit, Laufzeit-Diagnose und `summary()` teilen sich die
   Lösung, und in der GUI kostet eine zusätzliche Richtfrequenz nur ihre
@@ -243,11 +245,13 @@ Markierungen: `slow` (über etwa 10 s), `feld3d` (3D-Feldlöser), `bem`
 Klassenschalter wie `MicrophoneCapsule._MASS_EXACT` werden nach jedem
 Test zurückgesetzt, auch wenn er scheitert.
 
-Laufzeit auf 4 Kernen: alle Gegenproben etwa 3 Minuten (nacheinander
-knapp 10), die schnelle Stufe (45 Proben) etwa 20 s. Das ist die
-Untergrenze aus der Summe der Testzeiten geteilt durch die Kerne; die
-längsten Einzelproben sind jetzt 23 und 48 (je rund 2 Minuten).
-Gegenprobe 22 ist in die Teile 22a–22e aufgeteilt, die parallel laufen.
+Laufzeit auf 4 Kernen: alle Gegenproben knapp 3 Minuten (nacheinander
+knapp 10), die schnelle Stufe (56 Proben) etwa 25 s. Das liegt an der
+Untergrenze aus der Summe der Testzeiten geteilt durch die Kerne. Die
+Gegenproben 22, 23 und 48 sind in unabhängige Teilprüfungen aufgeteilt
+(22a–e, 23a–f, 48a–g3), die parallel laufen; einzeln aufgerufen sind
+die meisten Teile in Sekunden fertig. Die längste Einzelprüfung ist 23f
+(Doppel-Backplate im 3D-Löser, gut 2 Minuten für eine Frequenz).
 Damit die Worker gleich lange rechnen, merkt sich pytest die
 Laufzeiten jedes Laufs (`.pytest_cache`) und ordnet danach die Tests
 für die Verteilung `--dist worksteal`, die `python microphone_capsule.py`
