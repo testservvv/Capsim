@@ -68,6 +68,7 @@
     "center_gap_um": 0.0,
     "d_through_mm": 0.71,
     "th_rings": [[6, 21.84], [3, 17.48], [3, 8.74]],
+    "th_stepped": false,
     "d_blind_mm": 1.2,
     "blind_depth_mm": 3.0,
     "bh_rings": [[12, 21.84], [12, 17.48], [12, 13.11], [6, 8.74], [4, 4.37]],

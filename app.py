@@ -261,6 +261,14 @@ _BOOL_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, bool)}
 _RING_PREFIX = {"th_rings": "th", "bh_rings": "bh"}
 MAX_RINGS = 8
 
+# Fehlt ein Schlüssel im Projekt, gilt die Voreinstellung (DEFAULTS =
+# K67). Für Merkmale, deren K67-Wert nicht der neutrale ist, wäre das
+# falsch: ein Projekt ohne den Schlüssel stammt aus der Zeit vor dem
+# Merkmal und kann es nicht gemeint haben. Ohne diese Regel bekam das
+# Debenham-Beispiel beim Laden Stufenbohrungen (12 der 46 Sacklöcher
+# wurden zu Senkungen der Durchgangslöcher).
+_FEHLT_IM_PROJEKT = {"th_stepped": False}
+
 
 def _set_ring_state(prefix, rings):
     """Ringliste [[Anzahl, Lochkreis-Ø mm], ...] in die Widget-Session-Keys
@@ -388,7 +396,7 @@ def _load_project():
         # enthaltene Parameter fallen auf die Voreinstellung zurück
         # (ältere Projekte kennen z. B. Spacer/Rückplatte noch nicht).
         for key, default in DEFAULTS.items():
-            val = staged.get(key, default)
+            val = staged.get(key, _FEHLT_IM_PROJEKT.get(key, default))
             if key in _RING_PREFIX:
                 _set_ring_state(_RING_PREFIX[key], val)
             else:

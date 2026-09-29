@@ -36,6 +36,7 @@
     "center_gap_um": 0.0,
     "d_through_mm": 0.8,
     "th_rings": [[24, 0.0]],
+    "th_stepped": false,
     "d_blind_mm": 1.2,
     "blind_depth_mm": 1.5,
     "clr_dia_mm": 0.0,
