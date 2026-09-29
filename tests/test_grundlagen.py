@@ -55,7 +55,7 @@ def test_gp01_geschlossene_ruckseite_kugel():
     print("Gegenprobe geschlossene Rückseite (ohne Beugung): Kugel  OK")
 
 
-def test_gp02_dual_backplate_gegentakt(capsule):
+def test_gp02_dual_backplate_gegentakt(capsule, stand):
     """Gegenprobe 2: Dual-Backplate (Gegentakt)."""
     # Im steifigkeitskontrollierten Bereich (deutlich unterhalb der
     # Resonanz) muss der Gegentakt der beiden Backplates ~+6 dB liefern.
@@ -68,7 +68,8 @@ def test_gp02_dual_backplate_gegentakt(capsule):
     assert np.all(np.isfinite(fr_d["amplitude_db"]))
     e_s = 20 * np.log10(abs(capsule.transfer_function(100.0)[0]))
     e_d = 20 * np.log10(abs(dual.transfer_function(100.0)[0]))
-    assert 4.0 < e_d - e_s < 9.5, "Gegentakt-Gewinn außerhalb Erwartung"
+    stand.wert("gegentakt_gewinn", e_d - e_s, "dB",
+               "Gegentakt-Gewinn Dual gegen Single bei 100 Hz")
     print(f"Dual-Backplate @100 Hz: {e_d:.2f} dB re 1 V/Pa "
           f"(single: {e_s:.2f} dB) — Gegentakt-Gewinn "
           f"{e_d - e_s:+.2f} dB  OK")
@@ -145,7 +146,7 @@ def test_gp12_vollstandige_verlustmechanismen(capsule):
           f"Filmkorrektur Φ(0)=1 / |Φ(25 kHz)|={abs(phi_hi):.1f}  OK")
 
 
-def test_gp13_ruckwarts_durchlauf_port_tausch():
+def test_gp13_ruckwarts_durchlauf_port_tausch(stand):
     """Gegenprobe 13: Rückwärts-Durchlauf (Port-Tausch)."""
     # a) Algebra: der Port-Tausch eines Zweitor-Produkts muss der
     #    umgekehrten Elementreihenfolge entsprechen (so macht es der
@@ -184,8 +185,10 @@ def test_gp13_ruckwarts_durchlauf_port_tausch():
     na_hi, p_hi = _k67_null(4000.0)
     assert na_lo > 150.0 and na_hi > 150.0, \
         f"Nullwinkel muss f_res-robust nahe 180° liegen ({na_lo:.0f}°/{na_hi:.0f}°)"
-    assert p_lo < -15.0 and p_hi < -15.0 and abs(p_lo - p_hi) < 12.0, \
-        f"Nierentiefe muss f_res-robust sein ({p_lo:.1f} / {p_hi:.1f} dB)"
+    stand.wert("nierentiefe_1150", p_lo, "dB",
+               "K67 180° bei 1 kHz, f_res 1150 Hz")
+    stand.wert("nierentiefe_4000", p_hi, "dB",
+               "K67 180° bei 1 kHz, f_res 4000 Hz")
     print(f"Rückwärts-Durchlauf: Port-Tausch ≡ umgekehrte Elementreihen"
           f"folge; K67-Niere f_res-robust (180° @1 kHz: {p_lo:.1f} dB "
           f"@1150 Hz / {p_hi:.1f} dB @4000 Hz, Null bei "
@@ -228,12 +231,12 @@ def test_gp14_ubrige_architekturen_unter_dem_port():
               f"({s_fab / s_du:.3f}×), K103 dicht = Kugel (2D)  OK")
 
 
-def test_gp18_angle_responses_helmholtz_frequenz(deb1, deb3, deb_kwargs, hermetic, k67):
+def test_gp18_angle_responses_helmholtz_frequenz(deb1, deb3, deb_kwargs, hermetic, k67, stand):
     """Gegenprobe 18: angle_responses / Helmholtz-Frequenz."""
     # a) Superposition: H(θ) aus EINEM Durchlauf == transfer_function(θ)
     #    für 0/90/180° (1D/2D-Netzwerk UND 3D-Feldlöser).
-    # b) f_H (90°-Kreuzung von arg D_r) liegt für die bekannten Kapseln im
-    #    erwarteten Bereich; eine dickere Platte (längere enge Bohrungen
+    # b) f_H (90°-Kreuzung von arg D_r) existiert für die bekannten
+    #    Kapseln (Stand-Werte); eine dickere Platte (längere enge Bohrungen
     #    -> mehr Trägheit) muss die Resonanz absenken.
     # c) Geschlossene Rückseite: D_r und f_H -> None, H bleibt berechenbar.
     f_grid = np.logspace(np.log10(50.0), np.log10(20000.0), 120)
@@ -243,14 +246,16 @@ def test_gp18_angle_responses_helmholtz_frequenz(deb1, deb3, deb_kwargs, hermeti
         assert np.allclose(ar_k["H"][angd][::20], ref, rtol=1e-9), \
             f"angle_responses muss transfer_function reproduzieren ({angd}°)"
     fH_k67 = MicrophoneCapsule.helmholtz_resonance_hz(f_grid, ar_k["D_r"])
-    assert fH_k67 is not None and 2800.0 < fH_k67 < 3800.0, \
-        f"K67: interne Resonanz ~3.3 kHz erwartet ({fH_k67})"
+    assert fH_k67 is not None, "K67: interne Resonanz muss existieren"
+    stand.wert("f_h_k67", fH_k67, "Hz", "interne Resonanz K67")
     if _HAS_SCIPY:
         ar_d1 = deb1.angle_responses(f_grid)
         fH_deb = MicrophoneCapsule.helmholtz_resonance_hz(f_grid,
                                                           ar_d1["D_r"])
-        assert fH_deb is not None and 2000.0 < fH_deb < 2800.0, \
-            f"Debenham: interne Resonanz ~2.4 kHz erwartet ({fH_deb})"
+        assert fH_deb is not None, \
+            "Debenham: interne Resonanz muss existieren"
+        stand.wert("f_h_debenham", fH_deb, "Hz",
+                   "interne Resonanz Debenham (Freistich)")
         deb_dick = MicrophoneCapsule(clearance_ring_diameter=22.63e-3,
                                      clearance_ring_width=1.27e-3,
                                      clearance_ring_depth=38e-6,

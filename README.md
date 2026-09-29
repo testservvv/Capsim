@@ -10,7 +10,7 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 | `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung); `python microphone_capsule.py` startet den Selbsttest |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
 | `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
-| `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures |
+| `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures, `stand.py` und `basis_werte.json` die Stand-Werte und Sperrklinken |
 
 ## Sprache / Language
 
@@ -232,6 +232,7 @@ python microphone_capsule.py                  # alle, parallel über alle Kerne
 python microphone_capsule.py -m "not slow"    # schnelle Stufe
 python microphone_capsule.py -k gp48          # eine Gegenprobe
 python microphone_capsule.py --lf             # nur die zuletzt gescheiterten
+python microphone_capsule.py --basis-uebernehmen   # Stand-Werte bewusst übernehmen
 ```
 
 `python microphone_capsule.py` ruft pytest auf (mit pytest-xdist auf
@@ -255,9 +256,59 @@ Damit die Worker gleich lange rechnen, merkt sich pytest die
 Laufzeiten jedes Laufs (`.pytest_cache`) und ordnet danach die Tests
 für die Verteilung `--dist worksteal`, die `python microphone_capsule.py`
 einstellt (direkt: `pytest -n auto --dist worksteal`). Parallel rechnet
-jeder Worker mit einem BLAS-Thread; im Protokoll kann das in der letzten
-Stelle numerisch empfindlicher Werte sichtbar werden (Gegenprobe 27,
-Grenzfall Z → 0: 0.093 statt 0.090).
+jeder Worker mit einem BLAS-Thread; seit der symmetrischen Zerlegung
+(Gegenprobe 57) hängen die Ergebnisse davon nur noch im Bereich von
+10⁻⁸ ab.
+
+### Drei Arten von Prüfungen
+
+Jede Aussage einer Gegenprobe gehört zu einer von drei Arten; nur die
+ersten beiden sind `assert`s.
+
+- **Invariante**: exakte Identität, Grenzfall, Reziprozität,
+  Konvergenz, Literaturformel, Richtung einer Wirkung,
+  Programmverhalten. Hartes `assert`; die Toleranz ist die des
+  Grenzfalls (Rundung, Gitter), kein Fenster um den heutigen Wert.
+- **Fremdreferenz**: Messung, FEM, digitalisierte Kurve, Datenblatt.
+  `assert` mit einer Toleranz aus der Unsicherheit der Referenz.
+- **Stand-Wert**: eine eigene Rechengröße ohne äußeren Grund. Bisher
+  stand hier ein Zahlenfenster um das, was das Modell gerade lieferte
+  (etwa „K67-Fok-Faktor zwischen 0,70 und 0,80“). Jetzt meldet der Test
+  sie mit `stand.wert(...)`, ohne `assert`. Der Lauf vergleicht sie mit
+  `tests/basis_werte.json`, und der Abschnitt „Stand-Werte gegenüber
+  der Basis“ am Ende nennt jede Verschiebung mit altem Wert und Prozent.
+  Eine Modelländerung bricht damit keine Probe mehr, die nur ihren
+  eigenen alten Wert festhielt; sie zeigt ihre Wirkung als Liste.
+
+Sonderfall **Sperrklinke** (`stand.sperrklinke(...)`): ein bekannter
+Restfehler, der nur kleiner werden darf. Das sind die Resonanzlage
+gegen die FEM (Gegenprobe 32, 2D und 3D), der Spaltwiderstand gegen
+Zuckerwar (38, beide Kapseln), die Restlücke der modenweisen Anregung
+(34), der Off-Axis-Rest gegen Fig. 6 (41, RMS und 14 kHz) und die
+Obergrenze der Aktuatorlast (52). Wird ein solcher Wert schlechter als
+die Basis (über eine kleine Toleranz hinaus), scheitert der Test; wird
+er besser, meldet es der Bericht.
+
+Die Basis ändert sich nur bewusst: `--basis-uebernehmen` schreibt die
+Werte aller bestandenen Tests hinein. Auch mit `-k` bleiben die Werte
+nicht gelaufener Tests stehen, und Werte verschwundener Tests fallen
+heraus. Eine gescheiterte Sperrklinke kommt so nicht hinein; sie zu
+lockern heißt, ihren Eintrag von Hand aus der Datei zu entfernen. Als
+gleich gilt ein Wert bis 10⁻⁵ relativ, weit über dem Rundungsrauschen.
+
+Wo eine Aussage beides enthielt, ist sie geteilt: die Richtung bleibt
+Invariante, der Betrag wird Stand-Wert. Beispiel Gegenprobe 24: dass
+das Gewebe am Einlass die Laufzeit verlängert, wird geprüft, um wie
+viel, wird gemeldet (ebenso 17, 18, 19, 52 und 53). Modellvergleiche
+(2D gegen 3D, 1D gegen 2D) sind Stand-Werte, außer im Grenzfall, in
+dem beide dasselbe Problem beschreiben. Dort sind sie eng geprüft:
+geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
+(23b, 23f: 1 %) und K103 dicht im Tiefton (23c: 2 %). Festgehaltene
+Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
+dass eine Korrektur genau den früheren Befund erklärt.
+
+Die Basis umfasst 66 Werte aus 25 Gegenproben, davon 8 Sperrklinken.
+Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Beispielprojekte
 

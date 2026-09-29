@@ -7,6 +7,9 @@
   jedem Test zurückgesetzt, auch wenn er mittendrin scheitert.
 * Am Ende steht das Protokoll: die OK-Zeilen aller bestandenen
   Gegenproben in Nummernfolge (auch mit ``-n``, s. pytest_terminal_summary).
+* Stand-Werte und Sperrklinken (Fixture ``stand``, s. ``stand.py``) werden
+  gegen ``basis_werte.json`` verglichen; der Bericht steht nach dem
+  Protokoll, ``--basis-uebernehmen`` schreibt die Basis fort.
 """
 import os
 import re
@@ -22,6 +25,7 @@ import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
 import basis  # noqa: E402
+import stand as stand_werte  # noqa: E402
 from basis import MicrophoneCapsule, _HAS_SCIPY  # noqa: E402
 
 np.set_printoptions(precision=3, suppress=True)
@@ -93,6 +97,33 @@ def hermetic():
 
 
 # ----------------------------------------------------------------------
+# Stand-Werte und Sperrklinken
+# ----------------------------------------------------------------------
+_BASIS = stand_werte.lade()
+_GEMELDET = {}
+_BESTANDEN = set()
+
+
+@pytest.fixture
+def stand(request):
+    """Meldestelle für Stand-Werte (``stand.wert``) und Sperrklinken
+    (``stand.sperrklinke``). Die Meldungen reisen über die user_properties
+    des Berichts auch aus den xdist-Workern zum steuernden Prozess."""
+    return stand_werte.Stand(
+        request.node.nodeid, _BASIS,
+        lambda k, e: request.node.user_properties.append(
+            ("capsim_stand", (k, e))))
+
+
+def _gibt_es(config, nodeid):
+    """Gibt es den Test noch? (umbenannte oder aufgeteilte Tests nicht
+    ewig mitschleppen)"""
+    datei, _, name = nodeid.partition("::")
+    pfad = config.rootpath / datei
+    return pfad.is_file() and f"def {name}(" in pfad.read_text()
+
+
+# ----------------------------------------------------------------------
 # Klassenschalter nach jedem Test zurücksetzen
 # ----------------------------------------------------------------------
 @pytest.fixture(autouse=True)
@@ -125,33 +156,44 @@ def pytest_runtest_logreport(report):
                        if name.startswith("Captured stdout"))
         if text.strip():
             _PROTOKOLL[report.nodeid] = text.rstrip("\n")
+        _BESTANDEN.add(report.nodeid)
+        for name, wert in report.user_properties:
+            if name == "capsim_stand":
+                k, e = wert
+                _GEMELDET[k] = e
 
 
 def pytest_sessionfinish(session, exitstatus):
     """Laufzeiten für die Reihenfolge des nächsten Laufs merken (nur der
     steuernde Prozess, bei xdist nicht die Worker)."""
     config = session.config
+    if hasattr(config, "workerinput"):
+        return
+    if config.getoption("--basis-uebernehmen") and _BESTANDEN:
+        neu = stand_werte.uebernehme(_BASIS, _GEMELDET, _BESTANDEN,
+                                     lambda n: _gibt_es(config, n))
+        stand_werte.schreibe(neu)
+        config._capsim_uebernommen = len(neu)
     cache = getattr(config, "cache", None)
-    if cache is None or hasattr(config, "workerinput") or not _DAUERN:
+    if cache is None or not _DAUERN:
         return
     alt = cache.get(_DAUER_KEY, {})
     alt.update({k: round(v, 2) for k, v in _DAUERN.items()})
-
-    def _gibt_es(nodeid):
-        # umbenannte oder aufgeteilte Tests nicht ewig mitschleppen
-        datei, _, name = nodeid.partition("::")
-        pfad = config.rootpath / datei
-        return pfad.is_file() and f"def {name}(" in pfad.read_text()
-
-    cache.set(_DAUER_KEY, {k: v for k, v in alt.items() if _gibt_es(k)})
+    cache.set(_DAUER_KEY, {k: v for k, v in alt.items()
+                           if _gibt_es(config, k)})
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    if not _PROTOKOLL or config.getoption("--kein-protokoll"):
-        return
-    terminalreporter.section("Protokoll der Gegenproben")
-    for nodeid in sorted(_PROTOKOLL, key=_gp_key):
-        terminalreporter.write_line(_PROTOKOLL[nodeid])
+    if _PROTOKOLL and not config.getoption("--kein-protokoll"):
+        terminalreporter.section("Protokoll der Gegenproben")
+        for nodeid in sorted(_PROTOKOLL, key=_gp_key):
+            terminalreporter.write_line(_PROTOKOLL[nodeid])
+    if _GEMELDET or any(v.get("test") in _BESTANDEN for v in _BASIS.values()):
+        erg = stand_werte.vergleiche(_BASIS, _GEMELDET, _BESTANDEN)
+        terminalreporter.section("Stand-Werte gegenüber der Basis")
+        for zeile in stand_werte.bericht(
+                erg, getattr(config, "_capsim_uebernommen", None)):
+            terminalreporter.write_line(zeile)
 
 
 _DAUER_KEY = "capsim/dauern"
@@ -200,3 +242,6 @@ def pytest_collection_modifyitems(config, items):
 def pytest_addoption(parser):
     parser.addoption("--kein-protokoll", action="store_true",
                      help="OK-Zeilen der Gegenproben nicht ausgeben")
+    parser.addoption("--basis-uebernehmen", action="store_true",
+                     help="Stand-Werte und Sperrklinken der bestandenen "
+                          "Tests in tests/basis_werte.json übernehmen")

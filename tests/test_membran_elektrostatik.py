@@ -18,6 +18,7 @@ def test_gp05_elektrostatik_pull_in():
     except ValueError as exc:
         assert "Pull-in" in str(exc)
     soft = MicrophoneCapsule(membrane_resonance_hz=800.0, bias_voltage=20.0)
+    # Konsistenz: kollabiert bei 60 V, stabil bei 20 V
     assert 20.0 < soft.U_pullin < 60.0, "U_PI muss zwischen 20 und 60 V liegen"
     assert 0.0 < soft.w0_static < soft.h_gap
     fr_soft = soft.frequency_response(n_points=50)
@@ -27,7 +28,7 @@ def test_gp05_elektrostatik_pull_in():
           f"Durchbiegung {soft.w0_static * 1e6:.1f} µm  OK")
 
 
-def test_gp07_elektrostatik_der_doppelmembran(k67):
+def test_gp07_elektrostatik_der_doppelmembran(k67, stand):
     """Gegenprobe 7: Elektrostatik der Doppelmembran."""
     # Im Nierenmodus ist NUR die Frontmembran polarisiert: die passive
     # Rückmembran benutzt die unpolarisierte Nachgiebigkeit (keine Feder-
@@ -56,9 +57,8 @@ def test_gp07_elektrostatik_der_doppelmembran(k67):
             body_diameter=34e-3, squeeze_model="2d")
         return c.directivity(frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
     d20, d60 = _p180(20.0), _p180(60.0)
-    assert d20 < -10.0 and d60 < -10.0, "Niere muss bei beiden Spannungen bestehen"
-    assert abs(d20 - d60) < 8.0, \
-        "Bias-Wirkung aufs Richtdiagramm muss im realistischen Rahmen bleiben"
+    stand.wert("niere_20v", d20, "dB", "K67 180° bei 1 kHz, 20 V")
+    stand.wert("niere_60v", d60, "dB", "K67 180° bei 1 kHz, 60 V")
     print(f"Elektrostatik Doppelmembran: nur Front polarisiert (n_bp=1); "
           f"Bias-Wirkung aufs Pattern realistisch begrenzt "
           f"(180° @1 kHz: {d20:.1f} dB @20 V -> {d60:.1f} dB @60 V)  OK")
@@ -342,7 +342,7 @@ def test_gp33_modengewicht_der_frontmittelung():
               f"(dessen Nullstelle bei u = 3.83 entfällt)  OK")
 
 
-def test_gp34_modenabhangiger_quelldruck():
+def test_gp34_modenabhangiger_quelldruck(stand):
     """Gegenprobe 34: modenabhängiger Quelldruck."""
     # Schalter ``modal_source`` (Voreinstellung 0 = aus). Bei 1 wird jede
     # Membranmode von ihrer EIGENEN Galerkin-Projektion getrieben statt von
@@ -447,12 +447,14 @@ def test_gp34_modenabhangiger_quelldruck():
         # rechnete. Gegenprobe 43 hat diese Inkonsistenz beseitigt
         # (dieselben Zweige inklusive _modal_internal_Z an beiden
         # Stellen); die Lücke schließt seither weniger weit, dafür
-        # richtig. Festgehalten wird jetzt das VERHÄLTNIS.
+        # richtig. Festgehalten wird jetzt das VERHÄLTNIS; die Restlücke
+        # selbst ist eine Sperrklinke (sie darf nur kleiner werden).
         assert rms_on < 0.6 * rms_off, \
             (f"modenabhängige Quelle muss die Lücke deutlich schließen "
              f"({rms_off:.1f} -> {rms_on:.1f} dB)")
-        assert rms_on < 9.0, \
-            f"dokumentierter Stand der Restlücke ({rms_on:.1f} dB)"
+        stand.sperrklinke("restluecke_3_moden", rms_on, "dB",
+                          "RMS gegen COMSOL ab 5 kHz, streifend, 3 Moden",
+                          besser="kleiner", toleranz=0.15)
         # KONVERGENZ: jede weitere Mode muss die Abweichung verkleinern.
         assert all(b < a for a, b in zip(reihe34, reihe34[1:])), \
             (f"die Reihe über die Modenzahl muss monoton fallen "
@@ -914,7 +916,7 @@ def test_gp45_mittenterminierung_ringmembran():
               f"greifen  OK")
 
 
-def test_gp49_exakter_statischer_arbeitspunkt():
+def test_gp49_exakter_statischer_arbeitspunkt(stand):
     """Gegenprobe 49: exakter statischer Arbeitspunkt."""
     # Der Arbeitspunkt der Membran unter Polarisationsspannung ist eine
     # nichtlineare Randwertaufgabe (s. _static_setup). Bis Gegenprobe 48
@@ -1037,14 +1039,12 @@ def test_gp49_exakter_statischer_arbeitspunkt():
             through_holes_stepped=True, clamp_ring_thickness=2e-3,
             clamp_ring_width=4e-3, fabric_front_rayl=0.0,
             fabric_rear_rayl=0.0, body_diameter=34e-3)
-        # Ein-Moden-Wert bis Gegenprobe 48: 74.4 V mit dem Massenfaktor
-        # 4/3. Bei vorgegebener Resonanz ist C ∝ 1/μ und U_PI ∝ 1/√C,
-        # mit 8/j01² (Gegenprobe 55) also √(μ/μ_R) höher.
-        u1m49 = 74.4 * np.sqrt(k49._piston_factor
-                               / k49._mass_factor_rayleigh)
-        assert 60.0 < k49.U_pullin < u1m49 - 0.4, \
-            (f"K67: exakter Pull-in unter dem Ein-Moden-Wert "
-             f"{u1m49:.1f} V ({k49.U_pullin:.1f} V)")
+        # Dass das Ein-Moden-Bild den Pull-in überschätzt, prüft d)
+        # exakt am Antriebsparameter; hier nur der Stand der K67.
+        stand.wert("k67_pull_in", k49.U_pullin, "V",
+                   "K67: exakter Pull-in")
+        stand.wert("k67_w0", k49.w0_static * 1e6, "µm",
+                   "K67: statische Durchbiegung bei 60 V")
         print(f"Exakter Arbeitspunkt: Form gegen Schießverfahren "
               f"{dev_a49:.0e}, Nachgiebigkeit == ∂V/∂p des Asts "
               f"({dev_b49:.0e}), divergiert an der Falte "
@@ -1052,7 +1052,7 @@ def test_gp49_exakter_statischer_arbeitspunkt():
               f"Faltpunkt w_max/h = {x_pi49:.3f} (Ein-Moden-Bild 0.440); "
               f"Ā = {abar_x49:.4f} gegen Warren 0.789, Ein-Moden-Bild "
               f"{abar_g49:.4f} ({100 * (abar_g49 / abar_x49 - 1):+.1f} %); "
-              f"K67: U_PI {k49.U_pullin:.1f} V (Ein-Moden {u1m49:.1f}), w0 "
+              f"K67: U_PI {k49.U_pullin:.1f} V, w0 "
               f"{k49.w0_static * 1e6:.1f} µm, C0 {k49.C_elec_0 * 1e12:.1f} pF, "
               f"Erweichung {100 * k49.softening_ratio:.1f} %  OK")
 

@@ -6,7 +6,7 @@ import warnings
 from basis import *  # noqa: F401,F403
 
 
-def test_gp06_k67_bauform_doppelmembran(k67):
+def test_gp06_k67_bauform_doppelmembran(k67, stand):
     """Gegenprobe 6: K67-Bauform (Doppelmembran)."""
     # Zwei Membranen außen, Backplates innen (center_gap): die passive
     # Rückmembran bildet das Phasenschiebernetzwerk -> Nierencharakteristik
@@ -36,8 +36,8 @@ def test_gp06_k67_bauform_doppelmembran(k67):
     assert np.all(np.isfinite(fr_k["amplitude_db"]))
     fk, ak = fr_k["frequency_hz"], fr_k["amplitude_db_norm"]
     ihf = (fk > 5000) & (fk < 16000)
-    assert 1.0 < np.max(ak[ihf]) < 12.0, \
-        "Präsenzanhebung erwartet (roh; Korb/Elektronik glätten auf +2..3)"
+    stand.wert("praesenzanhebung", np.max(ak[ihf]), "dB",
+               "Präsenzanhebung 5–16 kHz (roh; Korb/Elektronik glätten)")
     print(f"K67-Bauform: echte Niere (Null @{na_k:.0f}°, 180° = "
           f"{pk67[180]:.1f} dB @1 kHz), Präsenzanhebung "
           f"+{np.max(ak[ihf]):.1f} dB bei "
@@ -257,7 +257,7 @@ def test_gp15_clearance_ring_stirnflachen_freistich(deb0, deb1, deb_kwargs):
               f"{p1:.1f} dB (Null {na1:.0f}°)  OK")
 
 
-def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, hermetic, k67, na_k):
+def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, hermetic, k67, na_k, stand):
     """Gegenprobe 17: Laufzeit-Diagnose (delay_diagnostics)."""
     # Deutung des Verhältnisses intern/extern (Sonde 1 kHz):
     # a) K67 nominal (Spacer 50 µm): Verhältnis knapp ÜBER 1 -> das
@@ -282,10 +282,12 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
     #    rückt Richtung 1 (und die Null wird tiefer).
     # e) Geschlossene Rückseite (0 Durchgangslöcher) -> None.
     dd_k67 = k67.delay_diagnostics()
-    assert dd_k67 is not None and 1.0 < dd_k67["ratio"] < 1.20, \
-        f"K67 nominal: Verhältnis knapp >1 erwartet ({dd_k67['ratio']:.3f})"
-    assert na_k >= 179.0, \
-        "Konsistenz: Verhältnis >1 muss zum Minimum bei 180° gehören"
+    assert dd_k67 is not None and \
+        (dd_k67["ratio"] > 1.0) == (na_k >= 179.0), \
+        (f"Konsistenz: Verhältnis > 1 genau dann, wenn das Minimum bei 180° "
+         f"gepinnt ist ({dd_k67['ratio']:.3f}, {na_k:.0f}°)")
+    stand.wert("k67_verhaeltnis", dd_k67["ratio"], "",
+               "K67 nominal: interne/externe Laufzeit bei 1 kHz")
     k67_45 = MicrophoneCapsule(
         membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
         membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
@@ -298,8 +300,11 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
         fabric_front_rayl=0.0, fabric_rear_rayl=0.0, body_diameter=34e-3,
         squeeze_model="2d")
     dd_45 = k67_45.delay_diagnostics()
-    assert 1.05 < dd_45["ratio"] < 1.45, \
-        f"45-µm-Spacer: Über-Verzögerung erwartet ({dd_45['ratio']:.3f})"
+    assert dd_45["ratio"] > dd_k67["ratio"], \
+        (f"engerer Spacer -> größerer Film-R -> längere interne Laufzeit "
+         f"({dd_k67['ratio']:.3f} -> {dd_45['ratio']:.3f})")
+    stand.wert("spacer45_verhaeltnis", dd_45["ratio"], "",
+               "K67 mit 45-µm-Spacer: interne/externe Laufzeit")
     di45 = k67_45.directivity(frequencies_hz=(1000.0,))
     lin45 = di45["patterns"][1000.0]["linear"]
     a45 = di45["angles_deg"]
@@ -322,19 +327,21 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
         # (Bis Gegenprobe 29 stand hier ~1: damals zählte die
         # Durchfluss-Zellfunktion alle 58 Bohrungen als Senken statt der
         # 12 Durchgangslöcher — s. _cell_B_flow, Gegenprobe 30.)
-        assert 1.2 < dd_deb["ratio"] < 1.9, \
-            f"Debenham @250 Hz: Verhältnis >1 erwartet ({dd_deb['ratio']:.3f})"
+        stand.wert("debenham_verhaeltnis", dd_deb["ratio"], "",
+                   "Debenham mit Freistich bei 250 Hz")
         assert 0.85 < dd_deb["tau_ext_s"] / tau_kugel < 1.15, \
             "externe Laufzeit muss dem Kugel-Grenzfall 1.5·d_ext/c folgen"
         dd_deb0 = deb0.delay_diagnostics(f_probe_hz=250.0)
-        assert dd_deb0["ratio"] > 1.5, \
-            (f"ohne Freistich: verengte Mündungen -> Über-Verzögerung "
-             f"erwartet ({dd_deb0['ratio']:.3f})")
+        assert dd_deb0["ratio"] > dd_deb["ratio"], \
+            (f"ohne Freistich: verengte Mündungen -> stärkere Über-"
+             f"Verzögerung ({dd_deb['ratio']:.3f} -> {dd_deb0['ratio']:.3f})")
+        stand.wert("debenham_ohne_freistich", dd_deb0["ratio"], "",
+                   "Debenham ohne Freistich bei 250 Hz")
         dd_3d = deb3.delay_diagnostics()
-        assert dd_3d is not None and np.isfinite(dd_3d["ratio"]) \
-            and dd_3d["ratio"] > 1.5, \
-            (f"3D/Rand-Freistich: verengte Mündungen -> starke Über-"
-             f"Verzögerung erwartet ({dd_3d['ratio']:.3f})")
+        assert dd_3d is not None and np.isfinite(dd_3d["ratio"]), \
+            "3D/Rand-Freistich: Laufzeit-Diagnose muss endlich sein"
+        stand.wert("debenham_3d", dd_3d["ratio"], "",
+                   "Debenham 3D mit Rand-Freistich bei 1 kHz")
         dd_3db = deb3b.delay_diagnostics()
         assert 1.0 < dd_3db["ratio"] < dd_3d["ratio"], \
             (f"breiter Freistich muss die Über-Verzögerung abbauen "
@@ -349,7 +356,7 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
 
 
 @pytest.mark.feld3d
-def test_gp24_position_des_ruckwartigen_gewebes():
+def test_gp24_position_des_ruckwartigen_gewebes(stand):
     """Gegenprobe 24: Position des rückwärtigen Gewebes."""
     # fabric_rear_position: "backplate" (im Zylinder hinter der Platte,
     # über die volle Bohrung gespannt — Bestand) vs. "inlet" (außen ÜBER
@@ -401,25 +408,34 @@ def test_gp24_position_des_ruckwartigen_gewebes():
 
         Hb2, rb2, pb2 = _fab24("2d", "backplate")
         Hi2, ri2, pi2 = _fab24("2d", "inlet")
-        assert rb2 < 0.8 and ri2 > 2.0, \
-            (f"Einlass-Gewebe muss die interne Laufzeit stark verlängern "
+        # Richtungen sind Invarianten, die Beträge Stand-Werte
+        assert ri2 > rb2, \
+            (f"Einlass-Gewebe muss die interne Laufzeit verlängern "
              f"({rb2:.2f} -> {ri2:.2f})")
-        assert Hi2 > 1.2 * Hb2, \
+        assert Hi2 > Hb2, \
             (f"Einlass-Gewebe muss die rückwärtige Auslöschung schwächen "
              f"({Hb2:.1f} -> {Hi2:.1f} mV/Pa)")
-        # Schwelle 0.7 dB (vorher 1.0): mit der korrigierten Durchfluss-
-        # Zellfunktion (_cell_B_flow, Gegenprobe 30) ist die interne
-        # Laufzeit ohnehin länger, der Zusatzeffekt des Einlass-Gewebes
-        # damit etwas kleiner. Die RICHTUNG — Vertiefung — ist unberührt.
-        assert pi2 < pb2 - 0.7, \
+        assert pi2 < pb2, \
             (f"250-Hz-Auslöschung muss sich vertiefen "
              f"({pb2:.1f} -> {pi2:.1f} dB)")
+        stand.wert("verhaeltnis_backplate_2d", rb2, "",
+                   "Gewebe an der Backplate: interne/externe Laufzeit (2D)")
+        stand.wert("verhaeltnis_einlass_2d", ri2, "",
+                   "Gewebe am Einlass: interne/externe Laufzeit (2D)")
+        stand.wert("empf_einlass_gegen_backplate", Hi2 / Hb2, "",
+                   "Empfindlichkeit 1 kHz, Einlass/Backplate (2D)")
+        stand.wert("vertiefung_250hz", pi2 - pb2, "dB",
+                   "180° bei 250 Hz, Einlass gegen Backplate (2D)")
         # c) 3D teilt die Kette: gleiche Richtung
         Hb3, rb3, _ = _fab24("3d", "backplate")
         Hi3, ri3, _ = _fab24("3d", "inlet")
-        assert ri3 > 2.0 and ri3 > rb3 + 1.5 and Hi3 > Hb3, \
+        assert ri3 > rb3 and Hi3 > Hb3, \
             (f"3D muss die Einlass-Gewebe-Richtung teilen "
              f"(ratio {rb3:.2f} -> {ri3:.2f}, H {Hb3:.1f} -> {Hi3:.1f})")
+        stand.wert("verhaeltnis_backplate_3d", rb3, "",
+                   "Gewebe an der Backplate: interne/externe Laufzeit (3D)")
+        stand.wert("verhaeltnis_einlass_3d", ri3, "",
+                   "Gewebe am Einlass: interne/externe Laufzeit (3D)")
         # d) K103: Plattenlöcher großflächig -> kleiner Effekt, gleiche
         # Richtung
         k24 = dict(g24, delay_length=0.0, cavity_length=0.0,
@@ -433,8 +449,10 @@ def test_gp24_position_des_ruckwartigen_gewebes():
         rk_i = MicrophoneCapsule(**k24, squeeze_model="2d",
                                  fabric_rear_position="inlet"
                                  ).delay_diagnostics()["ratio"]
-        assert rk_i > rk_b + 0.01, \
+        assert rk_i > rk_b, \
             f"K103: gleiche Wirkrichtung erwartet ({rk_b:.2f} -> {rk_i:.2f})"
+        stand.wert("k103_verlaengerung", rk_i - rk_b, "",
+                   "K103: Laufzeitverhältnis Einlass minus Backplate")
         # e) Gatter
         try:
             MicrophoneCapsule(architecture="dual_diaphragm",

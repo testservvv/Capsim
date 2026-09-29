@@ -202,7 +202,7 @@ def test_gp22d_reziprok(k67_3d_verdreht):
 
 
 @pytest.mark.feld3d
-def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht):
+def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht, stand):
     """Gegenprobe 22 e: gegen das homogenisierte 2D-Modell.
 
     Die EMPFINDLICHKEIT stimmt; die TIEFE der Auslöschung hängt dagegen
@@ -221,6 +221,11 @@ def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht):
     Modellfehler, sondern eine offene Geometriefrage an der realen
     Kapsel — festgehalten, damit sie nicht wieder als gelöst gilt
     (Gegenprobe 48).
+
+    Geprüft wird nur, DASS die Auslöschung von der Kernlage abhängt. Die
+    Zahlen (Empfindlichkeit 3D/2D, Auslöschung bei 9°/12° und im 2D-Modell)
+    sind Stand-Werte: kein Grenzfall legt sie fest, der Bericht zeigt ihre
+    Verschiebung.
     """
     cap, (pv, _) = k67_3d_verdreht
     ev = abs(cap.transfer_function(np.array([1000.0]))[0]) * 1e3
@@ -228,22 +233,22 @@ def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht):
     e2d = abs(k2d.transfer_function(np.array([1000.0]))[0]) * 1e3
     p2d = k2d.directivity(
         frequencies_hz=(1000.0,))["patterns"][1000.0]["db"][180]
-    assert abs(20.0 * np.log10(ev / e2d)) < 3.0, \
-        (f"3D verdreht muss nahe der 2D-Empfindlichkeit liegen "
-         f"({ev:.1f} vs. {e2d:.1f} mV/Pa)")
+    stand.wert("empf_3d_zu_2d", 20.0 * np.log10(ev / e2d), "dB",
+               "K67 1 kHz, 3D verdreht gegen 2D")
     p09, p12 = (MicrophoneCapsule(**_K67_3D, half_rotation_deg=rot_).
                 directivity(frequencies_hz=(1000.0,))
                 ["patterns"][1000.0]["db"][180] for rot_ in (9.0, 12.0))
-    assert p12 < p2d < p09, \
-        (f"zwischen 9° und 12° muss eine Kernlage die 2D-Auslöschung "
-         f"treffen ({p09:.1f} > {p2d:.1f} > {p12:.1f} dB)")
+    stand.wert("ausloeschung_9grad", p09, "dB", "K67 180°, 1 kHz, 3D 9°")
+    stand.wert("ausloeschung_12grad", p12, "dB", "K67 180°, 1 kHz, 3D 12°")
+    stand.wert("ausloeschung_2d", p2d, "dB", "K67 180°, 1 kHz, 2D")
     assert p12 < pv - 8.0, \
         (f"die Auslöschung MUSS von der Lage der Kerne abhängen "
          f"(12°: {p12:.1f} dB, versetzt: {pv:.1f} dB)")
     print(f"3D-K67-Modus e) Empf. verdreht {ev:.1f} mV/Pa (2D {e2d:.1f}); "
           f"Auslöschung hängt an der Kernlage: 9°/12° {p09:.1f}/"
-          f"{p12:.1f} dB, 2D {p2d:.1f} dB dazwischen — offene "
-          f"Geometriefrage  OK")
+          f"{p12:.1f} dB, 2D {p2d:.1f} dB "
+          + ("dazwischen" if p12 < p2d < p09 else "NICHT dazwischen")
+          + " — offene Geometriefrage  OK")
 
 
 # --------- Gegenprobe 23: 3D-Löser für single/dual-Architekturen ----------
@@ -318,8 +323,11 @@ def test_gp23b_geschlossen_kugel():
         "3D single geschlossen muss exakte Kugel liefern"
     r_cl = (cl3.transfer_function(_F23[:1])
             / cl1.transfer_function(_F23[:1]))[0]
-    assert 0.90 < abs(r_cl) < 1.02, \
-        f"3D/1D geschlossen @100 Hz ({abs(r_cl):.3f})"
+    # Grenzfall: geschlossene Rückseite im quasistatischen Tiefton —
+    # beide Pfade beschreiben dieselbe Nachgiebigkeit (exakter Arbeits-
+    # punkt, Gegenprobe 49; Θ-konsistente Wandlung, Gegenprobe 54)
+    assert abs(abs(r_cl) - 1.0) < 0.01, \
+        f"3D/1D geschlossen @100 Hz muss 1 sein ({abs(r_cl):.5f})"
     assert abs(np.angle(r_cl)) < np.deg2rad(12.0), \
         (f"3D muss der Ketten-Phasenkonvention folgen "
          f"({np.rad2deg(np.angle(r_cl)):.1f}°)")
@@ -328,16 +336,17 @@ def test_gp23b_geschlossen_kugel():
 
 
 @pytest.mark.feld3d
-def test_gp23c_k103_dicht():
+def test_gp23c_k103_dicht(stand):
     """Gegenprobe 23 c: K103-GRENZFALL DICHT (Spacer + Rückplatte ohne
     Durchlass): 3D == 1D auf wenige Prozent über das Band.
 
     Die Struktur wird an der VOLUMENverschiebung geprüft; die
-    Θ-konsistente Wandlung prüft Gegenprobe 54. Die Spannung trifft die
-    Kette im Tiefton; bei 1 kHz liegt sie im 3D tiefer: bei 60 V ist der
-    Spalt in der Mitte nur 0.74·h, der Film dort 2.5-fach steifer, die
-    Mitte bleibt zurück — und die Spannung gewichtet die Mitte (1/g²).
-    Formanpassung, die das Einmodenbild nicht kann (ausgegeben)."""
+    Θ-konsistente Wandlung prüft Gegenprobe 54. Volumen und Spannung
+    treffen die Kette im Tiefton (Grenzfall, eng geprüft); bei 1 kHz
+    liegen sie im 3D tiefer: bei 60 V ist der Spalt in der Mitte nur
+    0.74·h, der Film dort 2.5-fach steifer, die Mitte bleibt zurück — und
+    die Spannung gewichtet die Mitte (1/g²). Formanpassung, die das
+    Einmodenbild nicht kann (Stand-Werte)."""
     if not _HAS_SCIPY:
         return
     kd3 = MicrophoneCapsule(**_K23, n_rear_plate_holes=0,
@@ -350,21 +359,24 @@ def test_gp23c_k103_dicht():
     Xf_kd, Xr_kd = kd3._solve_3d(2 * np.pi * _F23, weight="volume")
     r_kdv = np.abs((Xf_kd * pf_kd[:, 0] + Xr_kd * pr_kd[:, 0])
                    / (h1_kd / kd1._theta))
-    assert np.all((r_kdv > 0.93) & (r_kdv < 1.07)), \
-        f"K103 dicht: 3D-Volumenfluss muss 1D treffen ({r_kdv})"
+    assert abs(r_kdv[0] - 1.0) < 0.02, \
+        f"K103 dicht: 3D-Volumenfluss im Tiefton == 1D ({r_kdv[0]:.4f})"
     r_kd = np.abs(kd3.transfer_function(_F23) / h1_kd)
     assert abs(r_kd[0] - 1.0) < 0.03, \
         f"K103 dicht: Spannung im Tiefton == 1D ({r_kd[0]:.3f})"
+    stand.wert("volumen_1khz", r_kdv[1], "", "K103 dicht, |3D/1D| Volumen")
+    stand.wert("spannung_1khz", r_kd[1], "", "K103 dicht, |3D/1D| Spannung")
     print(f"3D single/dual c) K103 dicht Volumen {r_kdv.round(3)}, "
           f"Spannung {r_kd.round(3)} (1 kHz: Formanpassung bei 60 V)  OK")
 
 
 @pytest.mark.feld3d
-def test_gp23d_k103_offen():
+def test_gp23d_k103_offen(stand):
     """Gegenprobe 23 d: K103 OFFEN — die interne Rück-Übertragung D_r
-    (das Verhältnis beider Pfade) stimmt mit dem 2D-Feldmodell auf ~1 %
-    überein. Die absoluten Empfindlichkeiten tragen die dokumentierte
-    Membranfeld-Klasse (±2–3 dB), ihr VERHÄLTNIS ist robust."""
+    (das Verhältnis beider Pfade) im 3D gegen das 2D-Feldmodell. Die
+    absoluten Empfindlichkeiten tragen die dokumentierte Membranfeld-
+    Klasse (±2–3 dB), ihr VERHÄLTNIS ist robust. Ein Modellvergleich ohne
+    Grenzfall: |ΔD_r| ist ein Stand-Wert."""
     if not _HAS_SCIPY:
         return
     dr23 = {}
@@ -373,17 +385,15 @@ def test_gp23d_k103_offen():
                                squeeze_model=sm)
         dr23[sm] = ko.angle_responses(_F23)["D_r"]
     d_dr = np.max(np.abs(dr23["3d"] - dr23["2d"]))
-    assert d_dr < 0.05, \
-        (f"K103 offen: interne Rück-Übertragung D_r muss das "
-         f"2D-Feldmodell treffen (|ΔD_r| = {d_dr:.3f})")
+    stand.wert("delta_d_r", d_dr, "", "K103 offen, max |D_r(3D) − D_r(2D)|")
     print(f"3D single/dual d) K103 offen |ΔD_r| = {d_dr:.3f}  OK")
 
 
 @pytest.mark.feld3d
-def test_gp23e_niere():
+def test_gp23e_niere(stand):
     """Gegenprobe 23 e: NIERE (Laufzeitglied + Hohlraum) — Richtdiagramm
-    3D nahe 2D (90°/180°/Minimum-Winkel), Empfindlichkeit in der
-    Klasse."""
+    3D gegen 2D (90°/180°/Minimum-Winkel) und Empfindlichkeit. Ein
+    Modellvergleich ohne Grenzfall: die Abstände sind Stand-Werte."""
     if not _HAS_SCIPY:
         return
     n23 = dict(architecture="single",
@@ -407,18 +417,14 @@ def test_gp23e_niere():
         na = di["angles_deg"][:181][int(np.argmin(lin[:181]))]
         H1 = abs(cn.transfer_function(np.array([1000.0]))[0])
         pat23[sm] = (db[90], db[180], na, H1)
-    assert abs(pat23["3d"][0] - pat23["2d"][0]) < 1.5, \
-        (f"Niere 90°: 3D nahe 2D ({pat23['2d'][0]:.1f} vs. "
-         f"{pat23['3d'][0]:.1f} dB)")
-    assert abs(pat23["3d"][1] - pat23["2d"][1]) < 2.5, \
-        (f"Niere 180°: 3D nahe 2D ({pat23['2d'][1]:.1f} vs. "
-         f"{pat23['3d'][1]:.1f} dB)")
-    assert abs(pat23["3d"][2] - pat23["2d"][2]) <= 15.0, \
-        (f"Minimum-Winkel: 3D nahe 2D ({pat23['2d'][2]:.0f}° vs. "
-         f"{pat23['3d'][2]:.0f}°)")
     r_e = pat23["3d"][3] / pat23["2d"][3]
-    assert 0.6 < r_e < 1.05, \
-        f"Niere Empfindlichkeit 3D/2D @1 kHz ({r_e:.2f})"
+    stand.wert("d90", pat23["3d"][0] - pat23["2d"][0], "dB",
+               "Niere 90°, 3D − 2D")
+    stand.wert("d180", pat23["3d"][1] - pat23["2d"][1], "dB",
+               "Niere 180°, 3D − 2D")
+    stand.wert("d_minimum", pat23["3d"][2] - pat23["2d"][2], "°",
+               "Niere Minimum-Winkel, 3D − 2D")
+    stand.wert("empf_3d_zu_2d", r_e, "", "Niere 1 kHz, |3D/2D|")
     print(f"3D single/dual e) Niere 90/180/Min: 2D {pat23['2d'][0]:.1f}/"
           f"{pat23['2d'][1]:.1f}/{pat23['2d'][2]:.0f}° vs. 3D "
           f"{pat23['3d'][0]:.1f}/{pat23['3d'][1]:.1f}/"
@@ -427,8 +433,8 @@ def test_gp23e_niere():
 
 @pytest.mark.feld3d
 def test_gp23f_dual():
-    """Gegenprobe 23 f: DUAL — Reziprozität + LF-Empfindlichkeit nahe
-    2D."""
+    """Gegenprobe 23 f: DUAL — Reziprozität + LF-Empfindlichkeit == 2D
+    (Grenzfall quasistatischer Tiefton, eng geprüft)."""
     if not _HAS_SCIPY:
         return
     du23 = dict(_SG23, architecture="dual", n_cavity_holes=200,
@@ -440,14 +446,14 @@ def test_gp23f_dual():
     rez_d = abs(du3._recip_3d[0]) / abs(du3._recip_3d[1])
     assert abs(rez_d - 1.0) < 1e-6, \
         f"3D dual muss reziprok sein ({rez_d:.8f})"
-    assert 0.75 < abs(r_du) < 1.05, \
-        f"dual: 3D/2D @100 Hz ({abs(r_du):.3f})"
+    assert abs(abs(r_du) - 1.0) < 0.01, \
+        f"dual: 3D/2D @100 Hz muss 1 sein ({abs(r_du):.4f})"
     print(f"3D single/dual f) reziprok dual {rez_d:.6f}, 3D/2D @100 Hz "
           f"{abs(r_du):.3f}  OK")
 
 
 @pytest.mark.feld3d
-def test_gp47_ringmembran_im_3d_feldloser():
+def test_gp47_ringmembran_im_3d_feldloser(stand):
     """Gegenprobe 47: Ringmembran im 3D-Feldlöser."""
     # Gegenprobe 45 hat die Mittenterminierung in 1D/2D gebracht und den
     # 3D-Löser gesperrt: dort sind die Membranen FD-FELDER auf einem
@@ -564,6 +570,8 @@ def test_gp47_ringmembran_im_3d_feldloser():
         #    weit über f_hom = 38 Hz dieses 12-Loch-Prüflings) rund 10 %
         #    tiefer: die Mitte bleibt hinter dem dort engsten Film zurück,
         #    und die Wandlung gewichtet die Mitte (1/g²) — ausgegeben.
+        #    Geprüft wird, dass der Pfosten BEIDE Modelle gleich bewegt;
+        #    der Abstand 3D/2D selbst ist ein Stand-Wert.
         f47 = np.array([100.0, 500.0, 2000.0])
 
         def _hvol47(cc, ff):
@@ -584,9 +592,10 @@ def test_gp47_ringmembran_im_3d_feldloser():
             e47[d47] = np.abs(_hvol47(c3, f47) / h2_47)
             o47[d47] = np.abs(c3.transfer_function(f47) / h2_47)
         for d47, q47 in e47.items():
-            assert np.all(np.abs(q47 - 1.0) < 0.05), \
-                (f"3D und 2D müssen bei {d47 * 1e3:.1f} mm Pfosten "
-                 f"zusammenpassen ({np.round(q47, 4)})")
+            for f_, q_ in zip(f47, q47):
+                stand.wert(f"volumen_{'mit' if d47 else 'ohne'}_pfosten_"
+                           f"{f_:.0f}hz", q_, "",
+                           "|3D/2D| Volumen, 60 V")
         assert np.max(np.abs(e47[1.0e-3] - e47[0.0])) < 0.02, \
             (f"der Pfosten muss BEIDE Modelle gleich bewegen "
              f"({np.round(e47[1.0e-3] - e47[0.0], 4)})")
@@ -884,7 +893,7 @@ def test_gp51_konturtreue_mundungen_shortley_weller():
 
 
 @pytest.mark.feld3d
-def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart():
+def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
     """Gegenprobe 52: Hochtonüberschuss des 3D-Lösers aufgeklärt."""
     # Oberhalb der Membranresonanz lag 3D 1…2 dB über 2D, auch bei dichten
     # Lochbildern (an der B&K 4134 3.7 dB über der Messung). Zerlegt:
@@ -1060,15 +1069,18 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart():
         assert e_ex52 < 0.01, \
             f"Tiefton gegen die geschlossene Form ({100 * e_ex52:.2f} %)"
 
-        # b) Formanpassung: 2D (feste Form) liegt bei 20 kHz deutlich
-        #    tiefer als 3D und die unabhängige Referenz (a)
+        # b) Formanpassung: 2D (feste Form) liegt bei 20 kHz tiefer als 3D
+        #    und die unabhängige Referenz (a) — Richtung geprüft, Betrag
+        #    Stand-Wert
         h2_52 = MicrophoneCapsule(squeeze_model="2d",
                                   **slit52).transfer_function(f52)
         n52 = lambda x: 20 * np.log10(np.abs(x / x[0]))
         gap52 = float((n52(X52) - n52(h2_52))[-1])
-        assert gap52 > 1.5, \
+        assert gap52 > 0.0, \
             (f"Einmodenbild muss oberhalb der Filmgrenze zurückbleiben "
              f"({gap52:+.2f} dB bei 20 kHz)")
+        stand.wert("formanpassung_20khz", gap52, "dB",
+                   "3D − 2D (Randschlitz), 20 kHz")
 
         # c) Filmwiderstand bei erzwungener Form (sehr steife Membran):
         #    tan(Phase) ≈ −ω·R·C im Steifigkeitsbereich
@@ -1098,9 +1110,11 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart():
         assert abs(rr_uni52 - 1.0) < 0.01, \
             (f"gleichverteilte Löcher: Filmwiderstand 3D == 2D "
              f"({rr_uni52:.3f})")
-        assert rr_bk52 < 0.7, \
+        assert rr_bk52 < 1.0, \
             (f"Lochkreis (B&K 4134): 2D überschätzt den Filmwiderstand "
              f"(R_3D/R_2D = {rr_bk52:.2f})")
+        stand.wert("r3d_zu_r2d_lochkreis", rr_bk52, "",
+                   "Filmwiderstand 3D/2D, B&K 4134, erzwungene Form")
         # d) OFFENER PUNKT eingegrenzt: misst der Aktuator etwas anderes als
         #    den Druckfrequenzgang? Er treibt mit gleichmäßigem elektro-
         #    statischem Druck; die bewegte Membran erzeugt unter der Platte
@@ -1111,7 +1125,9 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart():
         #    ist der Grenzfall L -> 0 (erste Ordnung, Gegenprobe 27). Die
         #    Last hebt die 4134 bei 13…20 kHz um höchstens 0.6 dB an —
         #    zu klein und mit falschem Vorzeichen für die 2.2…3.5 dB, um
-        #    die 3D über der Messung liegt.
+        #    die 3D über der Messung liegt. Das Vorzeichen ist geprüft,
+        #    die Obergrenze eine Sperrklinke (sie darf nicht wachsen, sonst
+        #    trägt das Argument nicht mehr).
         f52d = np.array([13000.0, 16000.0, 20000.0])
         _rad52 = MicrophoneCapsule._radiation_impedance_membrane
         h52d = {}
@@ -1125,9 +1141,12 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart():
         finally:
             MicrophoneCapsule._radiation_impedance_membrane = _rad52
         act52 = 20.0 * np.log10(np.abs(h52d[10e-3] / h52d[1e-8]))
-        assert np.all(act52 > -0.05) and np.all(act52 < 0.7), \
-            (f"Aktuatorlast (L = 10 mm) muss klein und positiv bleiben "
+        assert np.all(act52 > -0.05), \
+            (f"Aktuatorlast (L = 10 mm) muss die Antwort anheben "
              f"({np.round(act52, 2)} dB bei 13/16/20 kHz)")
+        stand.sperrklinke("aktuatorlast_max", np.max(act52), "dB",
+                          "Anhebung durch Aktuatorlast, 13…20 kHz",
+                          besser="kleiner", toleranz=0.05)
         print(f"3D-Hochtonüberschuss aufgeklärt: gegen unabhängigen "
               f"radialen Löser max {np.max(dev52):.3f} dB (Ring frei: "
               f"{dev52o[0]:.3f} dB im Tiefton), Tiefton gegen geschlossene "

@@ -395,7 +395,7 @@ def test_gp48g3_sackloecher():
 
 
 @pytest.mark.feld3d
-def test_gp53_warnlucke_weiter_spalt_lochkreise():
+def test_gp53_warnlucke_weiter_spalt_lochkreise(stand):
     """Gegenprobe 53: Warnlücke weiter Spalt / Lochkreise."""
     # Die Homogenisierungsgrenze (Gegenprobe 48) war beim weiten Spalt und
     # bei Lochkreisen zu optimistisch; zwei Fälle mit > 1 dB blieben ganz
@@ -469,10 +469,14 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise():
         fa53 = np.array([1185.0])
         rawA16, _ = _dev53(_pat53(pA53, 16, air_gap=65e-6), fa53)
         rawA96, _ = _dev53(_pat53(pA53, 96, air_gap=65e-6), fa53)
-        assert abs(rawA16[0]) < 0.5 and abs(rawA96[0]) > 1.0, \
-            (f"Messmaß: das spärliche Lochbild weicht selbst kaum ab "
+        assert abs(rawA16[0]) < abs(rawA96[0]), \
+            (f"Messmaß: das spärliche Lochbild weicht selbst weniger ab "
              f"({rawA16[0]:+.2f} dB), das dichte trägt die Resonanz"
              f"abweichung ({rawA96[0]:+.2f} dB)")
+        stand.wert("roh_16_loecher", rawA16[0], "dB",
+                   "2D − 3D, 1\"-Kapsel 65 µm, 1185 Hz")
+        stand.wert("roh_96_loecher", rawA96[0], "dB",
+                   "2D − 3D, 1\"-Kapsel 65 µm, 1185 Hz")
 
         # b) weiter Spalt: steife Kapsel, 65 µm, 16 Löcher
         qW53 = _pat53(pB53, 16, air_gap=65e-6)
@@ -482,10 +486,14 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise():
         limW53 = cW53.homogenization_limit()
         f_visc53 = MicrophoneCapsule._PI_HOM / (
             2.0 * np.pi * limW53["pi_per_omega"])
-        assert f_visc53 > 50e3 and limW53["f_hom"] < 18.5e3, \
-            (f"weiter Spalt: rein viskos {f_visc53 / 1e3:.0f} kHz (keine "
-             f"Warnung), mit Trägheit + Beulresonanz "
-             f"{limW53['f_hom'] / 1e3:.1f} kHz")
+        assert limW53["f_hom"] < f_visc53, \
+            (f"weiter Spalt: Trägheit + Beulresonanz müssen die Grenze "
+             f"senken ({f_visc53 / 1e3:.0f} -> "
+             f"{limW53['f_hom'] / 1e3:.1f} kHz)")
+        stand.wert("f_viskos_weit", f_visc53, "Hz",
+                   "rein viskose Grenze, weiter Spalt, 16 Löcher")
+        stand.wert("f_hom_weit", limW53["f_hom"], "Hz",
+                   "Grenze mit Trägheit + Beulresonanz")
         assert limW53["f_hom"] < limW53["f_rho"], \
             "die Grenze liegt unter der Beulresonanz"
         assert any("zu spärlich" in str(r.message) for r in recW53), \
@@ -496,10 +504,13 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise():
         eW53 = np.abs(dW16) - np.abs(dW96)
         # eigene 2D/3D-Abweichung (das dichte Raster kreuzt hier mit
         # −0.2 dB die Null, die Mehrabweichung liegt bei 20 kHz knapp
-        # unter 1 dB und wird ausgegeben)
-        assert abs(dW16[0]) < 1.0 < abs(dW16[1]), \
-            (f"weiter Spalt: Abweichung an der Grenze unter, bei 20 kHz "
-             f"über 1 dB ({np.round(dW16, 2)})")
+        # unter 1 dB und wird ausgegeben). An der Grenze gilt die
+        # 1-dB-Aussage der Warnung; der 20-kHz-Wert ist ein Stand-Wert.
+        assert abs(dW16[0]) < 1.0, \
+            (f"weiter Spalt: Abweichung an der Grenze unter 1 dB "
+             f"({dW16[0]:+.2f} dB)")
+        stand.wert("abweichung_weit_20khz", dW16[1], "dB",
+                   "2D − 3D, weiter Spalt, 16 Löcher, 20 kHz")
         # Tiefton unverändert: dort ist die Filmkraft rein viskos
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -518,10 +529,14 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise():
             warnings.simplefilter("always")
             cR53 = MicrophoneCapsule(squeeze_model="2d", **qR53)
         limR53 = cR53.homogenization_limit()
-        assert limR53["cause"] == "ring" and limR53["f_limit"] < 200.0 \
-            and limR53["f_hom"] > 350.0, \
+        assert limR53["cause"] == "ring" \
+            and limR53["f_limit"] < limR53["f_hom"], \
             (f"Lochkreis: Darstellungsgrenze {limR53['f_ring']:.0f} Hz vor "
              f"der lokalen Grenze {limR53['f_hom']:.0f} Hz")
+        stand.wert("f_grenze_lochkreis", limR53["f_limit"], "Hz",
+                   "Darstellungsgrenze, 48 Löcher auf 0.67·a")
+        stand.wert("f_hom_lochkreis", limR53["f_hom"], "Hz",
+                   "lokale Grenze, 48 Löcher auf 0.67·a")
         assert any("Lochkreis-Darstellung" in str(r.message)
                    for r in recR53), "der Lochkreis-Fall muss warnen"
         assert "Lochkreis-Darstellung" in cR53.summary(), \

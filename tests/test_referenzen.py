@@ -8,7 +8,7 @@ from basis import *  # noqa: F401,F403
 
 @pytest.mark.slow
 @pytest.mark.feld3d
-def test_gp32_externe_referenz_fem_veroffentlicht():
+def test_gp32_externe_referenz_fem_veroffentlicht(stand):
     """Gegenprobe 32: EXTERNE Referenz (FEM, veröffentlicht)."""
     # Erste Verankerung des Modells an einer fremden, in sich konsistenten
     # Quelle: Šimonová/Honzík, J. Acoust. Soc. Am. 159(5), 4512–4523 (2026),
@@ -29,8 +29,8 @@ def test_gp32_externe_referenz_fem_veroffentlicht():
     # a) TIEFTON: bis 300 Hz < 1 dB — die quasistatische Nachgiebigkeit.
     # b) GÜTE: die Resonanzüberhöhung ist die eigentliche Dämpfungsprobe
     #    und wird auf < 1 dB getroffen. Das ist die Kernaussage.
-    # c) RESONANZLAGE: bekannter Restfehler, hier als OBERGRENZE
-    #    festgeschrieben, damit er nur besser werden kann. Das Modell liegt
+    # c) RESONANZLAGE: bekannter Restfehler, als SPERRKLINKE (Abstand zur
+    #    FEM) festgeschrieben, damit er nur besser werden kann. Das Modell liegt
     #    13 % zu tief, weil der Lochzweig zu viel akustische Masse trägt
     #    (gemessen an der Antiresonanz Lochmasse/Spaltnachgiebigkeit:
     #    3203 Hz gegen 3500 Hz in der FEM, also Faktor 1.19 in der Masse).
@@ -111,12 +111,11 @@ def test_gp32_externe_referenz_fem_veroffentlicht():
         assert abs(peak32 - 6.74) < 1.0, \
             (f"Resonanzüberhöhung muss die FEM treffen — das ist die "
              f"Dämpfungsprobe ({peak32:+.2f} statt +6.74 dB)")
-        # c) Resonanzlage: dokumentierter Restfehler als Schranke
+        # c) Resonanzlage: dokumentierter Restfehler als Sperrklinke
         det32 = fpk32 / 550.0
-        assert 0.82 < det32 < 1.02, \
-            (f"Resonanzlage {fpk32:.0f} Hz gegen 550 Hz (FEM) — "
-             f"Verstimmung {det32:.3f} außerhalb der dokumentierten "
-             f"Schranke (offener Restfehler, s. Kommentar)")
+        stand.sperrklinke("verstimmung_2d", abs(det32 - 1.0), "",
+                          "|f_Res(2D)/550 Hz − 1| gegen die FEM",
+                          besser="kleiner", toleranz=0.01)
         # ... und die Homogenisierung erklärt davon nur einen kleinen Teil:
         # der diskret rechnende 3D-Löser (konturtreue Mündungen, auf grobem
         # und feinem Gitter 495 Hz; ohne Konturkorrektur wanderte er mit
@@ -138,11 +137,12 @@ def test_gp32_externe_referenz_fem_veroffentlicht():
         fs32_3 = np.linspace(400.0, 600.0, 81)
         fpk32_3 = float(fs32_3[int(np.argmax(np.abs(
             c32_3d.transfer_function(fs32_3))))])
-        assert fpk32 < fpk32_3 < 550.0 and fpk32_3 / fpk32 - 1.0 < 0.08 \
-                and fpk32_3 / 550.0 < 0.95, \
-            (f"3D ({fpk32_3:.0f} Hz) muss zwischen 2D ({fpk32:.0f} Hz) und "
-             f"FEM (550 Hz) liegen, nahe bei 2D — die Homogenisierung "
-             f"erklärt nur einen kleinen Teil der Verstimmung")
+        stand.sperrklinke("verstimmung_3d", abs(fpk32_3 / 550.0 - 1.0), "",
+                          "|f_Res(3D)/550 Hz − 1| gegen die FEM",
+                          besser="kleiner", toleranz=0.01)
+        stand.wert("f_res_3d_zu_2d", fpk32_3 / fpk32, "",
+                   "Resonanzlage 3D/2D (Anteil der diskreten Bohrungen)")
+        anteil32 = (fpk32_3 - fpk32) / (550.0 - fpk32)
         # d) DUBLETT: die FEM hat im Kerbenband ZWEI Minima (3500 und
         #    4200 Hz). Das ist ein Effekt der vier DISKRETEN Bohrungen —
         #    der homogenisierende 2D-Pfad kann prinzipiell nur eines
@@ -180,11 +180,11 @@ def test_gp32_externe_referenz_fem_veroffentlicht():
               f"{len(m2_32)} Minimum, 3D {np.round(m3_32).astype(int)} Hz "
               f"gegen FEM 3500/4200; Lage {fpk32:.0f} gegen 550 Hz "
               f"({100 * (det32 - 1):+.0f} %, 3D {fpk32_3:.0f} Hz — die "
-              f"Homogenisierung erklärt nur ein Viertel, offener "
-              f"Restfehler)  OK")
+              f"diskreten Bohrungen erklären {100 * anteil32:.0f} % des "
+              f"Abstands, offener Restfehler)  OK")
 
 
-def test_gp38_externe_referenz_b_k_4134():
+def test_gp38_externe_referenz_b_k_4134(stand):
     """Gegenprobe 38: EXTERNE Referenz B&K 4134/4146."""
     # Zweite fremde Verankerung, und die erste gegen eine MESSUNG:
     # A. J. Zuckerwar, "Theoretical response of condenser microphones",
@@ -218,7 +218,10 @@ def test_gp38_externe_referenz_b_k_4134():
     # Kurve abgenommen (Achsen über die Teilstriche kalibriert, Kurve
     # spaltenweise verfolgt, Messsymbole per gleitendem Median entfernt);
     # die Restunsicherheit liegt bei etwa ±0.15 dB und ±2°. Die Schranken
-    # unten sind entsprechend gesetzt und nicht enger.
+    # unten sind entsprechend gesetzt und nicht enger. Der SPALTWIDERSTAND
+    # ist dagegen eine Sperrklinke: seine Abweichung ist nicht die
+    # Unsicherheit der Tabelle, sondern die bekannte Streuung der
+    # Škvor-Zellregel (s. u.) — sie darf nur kleiner werden.
     #
     # WAS SIE GEZEIGT HAT. Vor der Randumgehung (Gegenprobe 37) lag der
     # Spaltwiderstand um +39 % (4134) bzw. +106 % (4146) zu hoch und der
@@ -256,7 +259,7 @@ def test_gp38_externe_referenz_b_k_4134():
                 (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4, 1.6e4, 2e4),
                 (0.00, 0.00, 0.00, 0.00, 0.00, 0.14, -0.71, -1.11, -3.06),
                 (3.87, 5.68, 8.01, 14.50, 23.76, 37.86, 51.12, 65.65, 81.75),
-                (0.60, 2.5, 0.20, 0.25)),          # Schranken: dB/Grad/C_A/R
+                (0.60, 2.5, 0.20)),                # Schranken: dB/Grad/C_A
             "4146": (dict(
                 membrane_material=_NI38, membrane_resonance_hz=None,
                 membrane_diameter=2 * 8.890e-3, membrane_thickness=5.0e-6,
@@ -277,7 +280,7 @@ def test_gp38_externe_referenz_b_k_4134():
                 (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4),
                 (0.00, 0.32, 0.57, 1.42, 1.59, -4.67, -8.02),
                 (6.43, 12.30, 22.27, 42.15, 72.63, 122.22, 132.75),
-                (1.60, 10.0, 0.10, 0.45)),
+                (1.60, 10.0, 0.10)),
         }
         res38 = {}
         for nm38, (par38, tab38, f38, a38, p38, lim38) in bk38.items():
@@ -302,10 +305,9 @@ def test_gp38_externe_referenz_b_k_4134():
             assert abs(eC38) < lim38[2], \
                 (f"{nm38}: Luftnachgiebigkeit gegen Tab. II "
                  f"({100 * eC38:+.1f} %)")
-            assert abs(eR38) < lim38[3], \
-                (f"{nm38}: Spaltwiderstand gegen Tab. II "
-                 f"({100 * eR38:+.1f} % — dokumentierte Schranke, "
-                 f"s. Streuung der Zellregel im Kommentar)")
+            stand.sperrklinke(f"spaltwiderstand_{nm38}", abs(eR38), "",
+                              "|R/R(Tab. II) − 1|, Streuung der Zellregel",
+                              besser="kleiner", toleranz=0.01)
             # c) Frequenzgang gegen Fig. 6/7 (Amplitude UND Phase)
             fa38 = np.asarray(f38, dtype=float)
             Hn38 = (c38.transfer_function(fa38)

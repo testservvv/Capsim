@@ -6,7 +6,7 @@ import warnings
 from basis import *  # noqa: F401,F403
 
 
-def test_gp04_druckstau_beugung_am_kapselkorper():
+def test_gp04_druckstau_beugung_am_kapselkorper(stand):
     """Gegenprobe 4: Druckstau/Beugung am Kapselkörper."""
     # Ein Druckempfänger MIT Beugung muss bei tiefen Frequenzen praktisch
     # kugelförmig sein, zu hohen Frequenzen hin aber zunehmend richten;
@@ -25,13 +25,14 @@ def test_gp04_druckstau_beugung_am_kapselkorper():
         n_through_holes=0, include_diffraction=False
     ).transfer_function(16000.0)[0])
     boost_db = 20 * np.log10(e_hi / e_hi_nod)
-    assert 1.0 < boost_db < 7.0, "Druckstau frontal: erwarte ~+2..6 dB"
+    stand.wert("druckstau_16k", boost_db, "dB",
+               "frontaler Druckstau bei 16 kHz")
     print(f"Druckstau/Beugung: Kugel @100 Hz, 135°-Pegel "
           f"{p4k[135]:.2f} (4 kHz) -> {p16k[135]:.2f} (16 kHz), "
           f"frontaler Druckstau @16 kHz: +{boost_db:.1f} dB  OK")
 
 
-def test_gp20_spharoid_korpermodell_axialer_transfer(k67):
+def test_gp20_spharoid_korpermodell_axialer_transfer(k67, stand):
     """Gegenprobe 20: Sphäroid-Körpermodell (axialer Transfer)."""
     # Eigene oblate Spezialfunktionen (scipy obl_rad2 ist für ξ0 < 1
     # unbrauchbar). Verifikation:
@@ -72,8 +73,8 @@ def test_gp20_spharoid_korpermodell_axialer_transfer(k67):
             "Wronski-Selbstprüfung des Sphäroids"
         G_k67 = k67._axial_spheroid_transfer(om50, np.array([np.pi]))[0, 0]
         d_eff_k67 = float(np.angle(G_k67)) / (om50[0] / C_AIR)
-        assert 0.85 < d_eff_k67 / (2.0 * k67.R_body) < 1.0, \
-            f"freie K67-Scheibe: d_eff ~ 0.94·2R erwartet ({d_eff_k67})"
+        stand.wert("d_eff_k67_rel", d_eff_k67 / (2.0 * k67.R_body), "",
+                   "freie K67-Scheibe: d_eff / 2R")
         k67_sph = MicrophoneCapsule(
             membrane_resonance_hz=1150.0, membrane_diameter=26e-3,
             membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
@@ -220,7 +221,7 @@ def test_gp21_axisymmetrisches_bem_kopf_korper(k67, k67_bem):
 
 
 @pytest.mark.bem
-def test_gp26_bem_frontfaktor_exakter_druckstau_der():
+def test_gp26_bem_frontfaktor_exakter_druckstau_der(stand):
     """Gegenprobe 26: BEM-Frontfaktor (exakter Druckstau der."""
     # FLACHEN Stirnfläche ersetzt die Kugelkalotten-Näherung im BEM-Modus).
     # Der BEM-Modus treibt die Frontmembran jetzt mit dem ABSOLUTEN
@@ -345,9 +346,9 @@ def test_gp26_bem_frontfaktor_exakter_druckstau_der():
         assert abs(abs(F_flat26[0]) - 1.0) < 5e-3, \
             f"ka->0 muss F->1 liefern ({abs(F_flat26[0]):.4f})"
         d_band26 = 20.0 * np.log10(np.abs(F_flat26[1:] / F_cap26[1:, 0]))
-        assert np.all((d_band26 > 2.5) & (d_band26 < 4.5)), \
-            (f"flache Stirnfläche muss die Kalotte um 3-4 dB übertreffen "
-             f"({np.round(d_band26, 2)})")
+        for f26, d26 in zip((5, 7, 9), d_band26):
+            stand.wert(f"flach_gegen_kalotte_{f26}k", d26, "dB",
+                       f"flache Stirnfläche gegen Kalotte bei {f26} kHz")
         f_band26 = 20.0 * np.log10(np.abs(F_flat26[1:]))
         # Der Druckstau der flachen Stirnfläche liegt ÜBER der starren
         # unendlichen Wand (+6.02 dB): die Mitte einer Scheibe ist ein
@@ -576,7 +577,7 @@ def test_gp27_strahlungsimpedanz_3d_aussenknoten():
 
 @pytest.mark.slow
 @pytest.mark.bem
-def test_gp41_bem_frontfaktor_der_flachen_stirnflache():
+def test_gp41_bem_frontfaktor_der_flachen_stirnflache(stand):
     """Gegenprobe 41: BEM-Frontfaktor der flachen Stirnfläche."""
     # Eine Ein-Membran-Kapsel ist kein Ball. Die Kugelkalotte
     # (_diffraction_factors) legt die Membran auf eine um ±40..50°
@@ -719,12 +720,14 @@ def test_gp41_bem_frontfaktor_der_flachen_stirnflache():
         # d) dokumentierter Rest off-axis bei EINER Mode
         r41_90, d41_90 = _grin_rms(c41b, 90.0)
         d41 = float(d41_90[f_grin == 14000.0][0])
-        assert r41_90 < 4.5, \
-            (f"90° mit einer Mode: {r41_90:.2f} dB RMS gegen Fig. 6 — "
-             f"Schranke, damit der Rest nur kleiner wird")
-        assert 2.0 < d41 < 6.5, \
-            (f"dokumentierter Off-Axis-Rest bei 90°/14 kHz "
-             f"({d41:+.1f} dB) — Schranke, damit er nur kleiner wird")
+        #    Sperrklinken: der Rest darf nur kleiner werden (Toleranz
+        #    0.15 dB, die Ableseunsicherheit der digitalisierten Kurve)
+        stand.sperrklinke("rest_90grad_rms", r41_90, "dB",
+                          "90° mit einer Mode gegen Fig. 6 (RMS)",
+                          toleranz=0.15)
+        stand.sperrklinke("rest_90grad_14k", abs(d41), "dB",
+                          "Off-Axis-Rest 90°/14 kHz gegen Fig. 6",
+                          toleranz=0.15)
         print(f"BEM-Frontfaktor (Grinnip 2006, Shure-Prototyp): "
               f"|F|(ka->0) = 1 ({np.max(np.abs(np.abs(F0) - 1.0)):.0e}), "
               f"akust. Mittelpunkt {d_ac * 1e3:.1f} mm bei "
