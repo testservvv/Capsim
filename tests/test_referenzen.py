@@ -135,8 +135,15 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
             fabric_rear_rayl=0.0, include_diffraction=False),
             "squeeze_model": "3d"})
         fs32_3 = np.linspace(400.0, 600.0, 81)
-        fpk32_3 = float(fs32_3[int(np.argmax(np.abs(
-            c32_3d.transfer_function(fs32_3))))])
+        H32_3 = np.abs(c32_3d.transfer_function(fs32_3))
+        fpk32_3 = float(fs32_3[int(np.argmax(H32_3))])
+        # Überhöhung des 3D-Lösers gegen die FEM: die FEM rechnet Navier–
+        # Stokes statt Reynolds — der Abstand zeigt, wie viel Dämpfung dem
+        # Reynolds-Film fehlt (Gegenprobe 58)
+        peak32_3 = float(20.0 * np.log10(np.max(H32_3) / np.abs(
+            c32_3d.transfer_function(np.array([100.0]))[0])))
+        stand.wert("ueberhoehung_3d_minus_fem", peak32_3 - 6.74, "dB",
+                   "Resonanzüberhöhung 3D minus FEM (+6.74 dB)")
         stand.sperrklinke("verstimmung_3d", abs(fpk32_3 / 550.0 - 1.0), "",
                           "|f_Res(3D)/550 Hz − 1| gegen die FEM",
                           besser="kleiner", toleranz=0.01)
@@ -182,6 +189,55 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
               f"({100 * (det32 - 1):+.0f} %, 3D {fpk32_3:.0f} Hz — die "
               f"diskreten Bohrungen erklären {100 * anteil32:.0f} % des "
               f"Abstands, offener Restfehler)  OK")
+
+
+# Zuckerwar, JASA 64, 1278 (1978): B&K 4134 und 4146 — Tab. I (Geometrie),
+# Tab. II (Ersatzelemente), Fig. 6/7 (digitalisiert). Gegenproben 38, 58.
+_NI38 = {"rho": 8900.0, "E": 200.0e9, "nu": 0.31}   # Tab. I: Nickel
+_BK38 = {
+    # (Parameter, Tab.-II-Ersatzelemente, Fig.-6/7-Punkte)
+    "4134": (dict(
+        membrane_material=_NI38, membrane_resonance_hz=None,
+        membrane_diameter=2 * 4.445e-3, membrane_thickness=5.0e-6,
+        membrane_tension=3162.3, air_gap=2.077e-5,
+        backplate_diameter=2 * 3.607e-3,
+        backplate_thickness=0.843e-3, bias_voltage=28.0,
+        architecture="single", n_through_holes=6,
+        through_hole_diameter=2 * 5.080e-4,
+        through_hole_pcd=2 * 2.032e-3, n_blind_holes=0,
+        ring_vent_width=0.838e-3, ring_vent_length=3.048e-4,
+        rear_network_enabled=True, delay_length=0.0,
+        cavity_length=1.264e-7 / (np.pi * 3.607e-3**2),
+        n_cavity_holes=0, fabric_front_rayl=0.0,
+        fabric_rear_rayl=0.0, include_diffraction=False,
+        squeeze_model="2d"),
+        dict(M=955.0, C_M=0.485e-13, C_A=9.01e-13, R=18.9e7),
+        (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4, 1.6e4, 2e4),
+        (0.00, 0.00, 0.00, 0.00, 0.00, 0.14, -0.71, -1.11, -3.06),
+        (3.87, 5.68, 8.01, 14.50, 23.76, 37.86, 51.12, 65.65, 81.75),
+        (0.60, 2.5, 0.20)),                # Schranken: dB/Grad/C_A
+    "4146": (dict(
+        membrane_material=_NI38, membrane_resonance_hz=None,
+        membrane_diameter=2 * 8.890e-3, membrane_thickness=5.0e-6,
+        membrane_tension=2140.9, air_gap=2.655e-5,
+        backplate_diameter=2 * 6.617e-3,
+        backplate_thickness=1.6633e-3, bias_voltage=28.0,
+        architecture="single",
+        through_hole_rings=[(12, 2 * 4.763e-3), (6, 2 * 2.375e-3),
+                            (1, 0.0)],
+        through_hole_diameter=2 * 4.763e-4, n_blind_holes=0,
+        ring_vent_width=1.473e-3, ring_vent_length=3.556e-4,
+        rear_network_enabled=True, delay_length=0.0,
+        cavity_length=6.736e-7 / (np.pi * 6.617e-3**2),
+        n_cavity_holes=0, fabric_front_rayl=0.0,
+        fabric_rear_rayl=0.0, include_diffraction=False,
+        squeeze_model="2d"),
+        dict(M=239.0, C_M=11.45e-13, C_A=48.6e-13, R=1.91e7),
+        (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4),
+        (0.00, 0.32, 0.57, 1.42, 1.59, -4.67, -8.02),
+        (6.43, 12.30, 22.27, 42.15, 72.63, 122.22, 132.75),
+        (1.60, 10.0, 0.10)),
+}
 
 
 def test_gp38_externe_referenz_b_k_4134(stand):
@@ -237,51 +293,7 @@ def test_gp38_externe_referenz_b_k_4134(stand):
     # naheliegende Alternative „Zellfläche = Lochabstand²" wurde geprüft
     # und ist SCHLECHTER: RMS(log) 0.33 gegen 0.19).
     if _HAS_SCIPY:
-        _NI38 = {"rho": 8900.0, "E": 200.0e9, "nu": 0.31}   # Tab. I: Nickel
-        bk38 = {
-            # (Parameter, Tab.-II-Ersatzelemente, Fig.-6/7-Punkte)
-            "4134": (dict(
-                membrane_material=_NI38, membrane_resonance_hz=None,
-                membrane_diameter=2 * 4.445e-3, membrane_thickness=5.0e-6,
-                membrane_tension=3162.3, air_gap=2.077e-5,
-                backplate_diameter=2 * 3.607e-3,
-                backplate_thickness=0.843e-3, bias_voltage=28.0,
-                architecture="single", n_through_holes=6,
-                through_hole_diameter=2 * 5.080e-4,
-                through_hole_pcd=2 * 2.032e-3, n_blind_holes=0,
-                ring_vent_width=0.838e-3, ring_vent_length=3.048e-4,
-                rear_network_enabled=True, delay_length=0.0,
-                cavity_length=1.264e-7 / (np.pi * 3.607e-3**2),
-                n_cavity_holes=0, fabric_front_rayl=0.0,
-                fabric_rear_rayl=0.0, include_diffraction=False,
-                squeeze_model="2d"),
-                dict(M=955.0, C_M=0.485e-13, C_A=9.01e-13, R=18.9e7),
-                (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4, 1.6e4, 2e4),
-                (0.00, 0.00, 0.00, 0.00, 0.00, 0.14, -0.71, -1.11, -3.06),
-                (3.87, 5.68, 8.01, 14.50, 23.76, 37.86, 51.12, 65.65, 81.75),
-                (0.60, 2.5, 0.20)),                # Schranken: dB/Grad/C_A
-            "4146": (dict(
-                membrane_material=_NI38, membrane_resonance_hz=None,
-                membrane_diameter=2 * 8.890e-3, membrane_thickness=5.0e-6,
-                membrane_tension=2140.9, air_gap=2.655e-5,
-                backplate_diameter=2 * 6.617e-3,
-                backplate_thickness=1.6633e-3, bias_voltage=28.0,
-                architecture="single",
-                through_hole_rings=[(12, 2 * 4.763e-3), (6, 2 * 2.375e-3),
-                                    (1, 0.0)],
-                through_hole_diameter=2 * 4.763e-4, n_blind_holes=0,
-                ring_vent_width=1.473e-3, ring_vent_length=3.556e-4,
-                rear_network_enabled=True, delay_length=0.0,
-                cavity_length=6.736e-7 / (np.pi * 6.617e-3**2),
-                n_cavity_holes=0, fabric_front_rayl=0.0,
-                fabric_rear_rayl=0.0, include_diffraction=False,
-                squeeze_model="2d"),
-                dict(M=239.0, C_M=11.45e-13, C_A=48.6e-13, R=1.91e7),
-                (1e3, 2e3, 3e3, 5e3, 7e3, 1e4, 1.3e4),
-                (0.00, 0.32, 0.57, 1.42, 1.59, -4.67, -8.02),
-                (6.43, 12.30, 22.27, 42.15, 72.63, 122.22, 132.75),
-                (1.60, 10.0, 0.10)),
-        }
+        bk38 = _BK38
         res38 = {}
         for nm38, (par38, tab38, f38, a38, p38, lim38) in bk38.items():
             c38 = MicrophoneCapsule(**par38)
@@ -332,3 +344,111 @@ def test_gp38_externe_referenz_b_k_4134(stand):
               f"gegen Fig. 7, C_A {100 * res38['4146'][2]:+.1f} %, "
               f"R {100 * res38['4146'][3]:+.1f} % (Streuung der Škvor-"
               f"Zellregel, dokumentiert)  OK")
+
+
+@pytest.mark.feld3d
+def test_gp58_daempfung_am_lochkreis_befund(stand):
+    """Gegenprobe 58: Dämpfung am Lochkreis — was dem 3D-Modell fehlt."""
+    # Offener Punkt (README, „Offene Punkte" 1): an der B&K 4134 liegt der
+    # 3D-Löser bei 13–20 kHz 2–3.5 dB über Zuckerwars Messung; das 2D-
+    # Modell trifft sie, weil es den Filmwiderstand am Lochkreis 1.7-fach
+    # überschätzt (Gegenprobe 52). Die Recherche grenzt ein, WAS fehlt und
+    # ob es allgemeine Physik ist. Die Referenz sind Zuckerwars Messungen
+    # (Fig. 6/7, Amplitude UND Phase) an beiden Kapseln derselben Arbeit.
+    # a) PHASE: schon weit unter der Resonanz (2–10 kHz, 4134-Resonanz
+    #    ~23 kHz) fehlt dem 3D-Modell Nacheilung, etwa ein fester Anteil
+    #    der gemessenen. Dort wirken Masse und Steife nicht auf die Phase,
+    #    nur Widerstand: es fehlt WIDERSTAND, keine Resonanzverschiebung.
+    # b) EIN frequenzunabhängiger Serienwiderstand vor der Membran
+    #    (5000 Rayl = 8.1e7 Pa·s/m³, rund 2/3 des exakten Filmwiderstands)
+    #    bringt am 4134 Amplitude UND Phase zugleich zur Messung; ebenso
+    #    ein fast dichter Randschlitz (wirksam 15 µm statt 0.838 mm). Beide
+    #    Deutungen scheitern am 4146 derselben Arbeit: dort verschlechtert
+    #    jede zusätzliche Dämpfung die Übereinstimmung — der unveränderte
+    #    3D-Löser trifft ihn besser als 2D (Gegenprobe 38).
+    # c) Die naheliegenden Geometrie-Deutungen passen schon am 4134
+    #    schlechter als der Serienwiderstand: ein kleinerer Spalt (18 µm,
+    #    R ∝ h⁻³) und eine geschlossene Ringnut statt des Schlitzes.
+    # d) Gegen die volle thermoviskose FEM (Gegenprobe 32, Navier–Stokes
+    #    statt Reynolds, vier Löcher auf einem Kreis) liegt die 3D-
+    #    Überhöhung nur 0.2–0.3 dB über der FEM (Stand-Wert dort).
+    # Folgerung: dem 3D-Film fehlt keine allgemeine Physik; die Abweichung
+    # ist 4134-spezifisch (Geometrie der realen Kapsel oder ihrer Messung).
+    if not _HAS_SCIPY:
+        return
+
+    def _fig(nm, **kw):
+        par, _, f, a, p, _ = _BK38[nm]
+        c = MicrophoneCapsule(**{**par, "squeeze_model": "3d", **kw})
+        fa = np.asarray(f, dtype=float)
+        H = c.transfer_function(fa) / c.transfer_function(np.array([250.0]))[0]
+        da = 20.0 * np.log10(np.abs(H)) - np.asarray(a)
+        dp = -np.rad2deg(np.unwrap(np.angle(H))) - np.asarray(p)
+        return (fa, da, dp, float(np.sqrt(np.mean(da**2))),
+                float(np.sqrt(np.mean(dp**2))))
+
+    # a) Phasendefizit unter der Resonanz
+    f34, da34, dp34, ra34, rp34 = _fig("4134")
+    tief = (f34 >= 2000.0) & (f34 <= 10000.0)
+    p34 = np.asarray(_BK38["4134"][4])
+    assert np.all(dp34[tief] < 0.0), \
+        (f"4134: dem 3D-Modell muss unter der Resonanz Phase fehlen "
+         f"({np.round(dp34[tief], 1)}°)")
+    anteil58 = float(np.mean((p34[tief] + dp34[tief]) / p34[tief]))
+    stand.wert("phase_3d_anteil_4134", anteil58, "",
+               "3D-Nacheilung / gemessene, Mittel 2–10 kHz")
+    stand.wert("rms_3d_4134_db", ra34, "dB", "3D gegen Fig. 6, Amplitude")
+    stand.wert("rms_3d_4134_grad", rp34, "°", "3D gegen Fig. 6, Phase")
+
+    # b) Serienwiderstand bzw. gedrosselter Schlitz: am 4134 besser ...
+    _, _, _, raR, rpR = _fig("4134", fabric_front_rayl=5000.0)
+    _, _, _, raS, rpS = _fig("4134", ring_vent_width=15e-6)
+    assert raR < ra34 and rpR < rp34, \
+        (f"4134: ein Serienwiderstand muss Amplitude UND Phase verbessern "
+         f"({ra34:.2f} -> {raR:.2f} dB, {rp34:.2f} -> {rpR:.2f}°)")
+    assert raS < ra34 and rpS < rp34, \
+        (f"4134: ein gedrosselter Schlitz muss beides verbessern "
+         f"({ra34:.2f} -> {raS:.2f} dB, {rp34:.2f} -> {rpS:.2f}°)")
+    stand.wert("rms_4134_mit_serien_r_db", raR, "dB",
+               "3D + 5000 Rayl gegen Fig. 6, Amplitude")
+    stand.wert("rms_4134_mit_serien_r_grad", rpR, "°",
+               "3D + 5000 Rayl gegen Fig. 6, Phase")
+    stand.wert("rms_4134_schlitz_15um_db", raS, "dB",
+               "3D, Randschlitz 15 µm, gegen Fig. 6")
+    # ... am 4146 derselben Arbeit schlechter
+    _, _, _, ra46, rp46 = _fig("4146")
+    _, _, _, ra46R, _ = _fig("4146", fabric_front_rayl=1000.0)
+    _, _, _, ra46S, _ = _fig("4146", ring_vent_width=15e-6)
+    assert ra46R > ra46 and ra46S > ra46, \
+        (f"4146: zusätzliche Dämpfung muss die Übereinstimmung "
+         f"verschlechtern ({ra46:.2f} dB; +1000 Rayl {ra46R:.2f}, "
+         f"Schlitz 15 µm {ra46S:.2f})")
+    stand.wert("rms_3d_4146_db", ra46, "dB", "3D gegen Fig. 7, Amplitude")
+    stand.wert("rms_3d_4146_grad", rp46, "°", "3D gegen Fig. 7, Phase")
+    stand.wert("rms_4146_mit_serien_r_db", ra46R, "dB",
+               "3D + 1000 Rayl gegen Fig. 7, Amplitude")
+
+    # c) Geometrie-Deutungen am 4134: Phase schlechter als mit R
+    _, _, _, raH, rpH = _fig("4134", air_gap=18e-6)
+    _, _, _, raN, rpN = _fig("4134", ring_vent_width=0.0,
+                             ring_vent_length=None,
+                             backplate_diameter=2 * 4.445e-3,
+                             clearance_ring_diameter=2 * 4.026e-3,
+                             clearance_ring_width=0.838e-3,
+                             clearance_ring_depth=0.305e-3)
+    assert rpH > rpR and rpN > rpR, \
+        (f"4134: Spalt 18 µm ({rpH:.2f}°) und geschlossene Ringnut "
+         f"({rpN:.2f}°) müssen die Phase schlechter treffen als der "
+         f"Serienwiderstand ({rpR:.2f}°)")
+    stand.wert("rms_4134_spalt_18um_grad", rpH, "°",
+               "3D, Spalt 18 µm, gegen Fig. 6, Phase")
+    stand.wert("rms_4134_ringnut_grad", rpN, "°",
+               "3D, geschlossene Ringnut, gegen Fig. 6, Phase")
+    print(f"Dämpfung am Lochkreis: 4134 3D {ra34:.2f} dB / {rp34:.1f}° RMS "
+          f"gegen Fig. 6, Nacheilung unter der Resonanz nur "
+          f"{100 * anteil58:.0f} % der gemessenen (fehlender Widerstand); "
+          f"+8.1e7 Pa·s/m³ seriell {raR:.2f} dB / {rpR:.1f}°, Schlitz 15 µm "
+          f"{raS:.2f} dB / {rpS:.1f}° — am 4146 beides schlechter "
+          f"({ra46:.2f} -> {ra46R:.2f} / {ra46S:.2f} dB); Spalt 18 µm "
+          f"{rpH:.1f}°, Ringnut {rpN:.1f}° Phase — 4134-spezifisch, keine "
+          f"allgemeine Filmphysik  OK")

@@ -308,7 +308,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 66 Werte aus 25 Gegenproben, davon 8 Sperrklinken.
+Die Basis umfasst 78 Werte aus 26 Gegenproben, davon 8 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -349,9 +349,16 @@ Schreiben.
      radiale Druckfeld mitnimmt, fehlt; sie würde validierte Ergebnisse
      (B&K 4134, Debenham) verschieben.
 
-   Nächster Schritt: Recherche, welche Physik am Lochkreis zusätzlich
-   dämpft (Literatur zu Messmikrofon-Backplates, Mündungs- und
-   Eintrittsverlusten, Gasverdünnung, Oberflächen).
+   - **Stand der Recherche (Gegenprobe 58):** dem 3D-Modell fehlt am
+     4134 ein frequenzunabhängiger Widerstand (Phasenbeleg unterhalb der
+     Resonanz); ein Serienwiderstand von 8·10⁷ Pa·s/m³ bringt es auf
+     0,13 dB / 1,3° RMS. Dieselbe Korrektur verschlechtert aber den 4146,
+     und gegen die volle thermoviskose FEM fehlt dem 3D-Film kaum
+     Dämpfung (Überhöhung +0,23 dB, `gp32.ueberhoehung_3d_minus_fem`).
+     Die Abweichung ist damit 4134-spezifisch, keine allgemeine
+     Filmphysik. Offen ist, welche Eigenschaft der realen 4134 sie
+     trägt; dafür fehlen Quellen zur tatsächlichen Geometrie (s.
+     Abschnitt „Dämpfung am Lochkreis").
 
 2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 478 Hz, 3D
    495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,13,
@@ -1719,6 +1726,78 @@ mit der pivotisierenden Zerlegung; die Auffüllung der Doppel-Backplate
 (22 %); den erzwungenen Rückfall (bitgleich) und eine Matrix mit
 winziger Diagonale, an der die Prüfung die instabile Zerlegung
 erkennen muss.
+
+### Dämpfung am Lochkreis: Recherche (Gegenprobe 58)
+
+Ausgangspunkt ist der offene Punkt aus Gegenprobe 52: an der B&K 4134
+liegt der 3D-Löser bei 13–20 kHz 2,2–3,5 dB über Zuckerwars Messung,
+das 2D-Modell trifft sie nur, weil es den Filmwiderstand am Lochkreis
+1,7-fach überschätzt. Gefragt war: welche Physik dämpft die reale
+Kapsel zusätzlich?
+
+**Was fehlt, ist Widerstand.** Zuckerwars Fig. 6 enthält auch die
+Phase. Schon weit unter der Resonanz (2–10 kHz, Resonanz ~23 kHz), wo
+Masse und Steife die Phase nicht bewegen, eilt das 3D-Modell nur zu
+rund 70 % so stark nach wie die Messung (`gp58.phase_3d_anteil_4134`).
+Eine Resonanzverschiebung sähe anders aus. Ein einziger
+frequenzunabhängiger Serienwiderstand vor der Membran, 5000 Rayl bzw.
+8,1·10⁷ Pa·s/m³ (rund zwei Drittel des exakten Filmwiderstands), bringt
+Amplitude **und** Phase zugleich zur Messung: 0,13 dB / 1,3° RMS statt
+1,67 dB / 7,6° (2D: 0,30 dB / 0,98°). 3D-Film (etwa 0,59 × 2D, also
+rund 1,2·10⁸) plus Zusatz ergibt etwa 2·10⁸ Pa·s/m³, die Größe von
+Zuckerwars Tabellenwert R.
+
+**Aber nicht am 4146.** Eine echte physikalische Ursache müsste auch die
+zweite Kapsel derselben Arbeit treffen. Dort ist der unveränderte
+3D-Löser schon besser als 2D (0,75 gegen 1,09 dB RMS), und jede
+zusätzliche Dämpfung verschlechtert ihn (+1000 Rayl: 1,38 dB). Dasselbe
+gilt für die zweite Deutung, die am 4134 passt: ein fast dichter
+Randschlitz (wirksam 15 µm statt 0,838 mm; 4134 0,28 dB, 4146
+0,75 → 4,1 dB).
+
+**Keine fehlende Filmphysik.** Gegen die volle thermoviskose FEM der
+Gegenprobe 32 (Navier–Stokes statt Reynolds, vier Löcher auf einem
+Kreis) liegt die 3D-Überhöhung nur 0,23 dB über der FEM, rund 3 % zu
+wenig Dämpfung. Beide Feldmodelle führen im Film ohnehin die volle
+Dünnschicht-Physik (viskose Trägheit, polytrope Kompressibilität mit
+thermischer Relaxation). Nur abgeschätzt, nicht eigens gerechnet:
+Gasverdünnung wirkt in die falsche Richtung (Knudsen-Zahl 0,003,
+Schlupf senkt die Dämpfung); Eintrittsverluste an Löchern und Schlitz
+sind bei Mündungsradien vom 25-Fachen des Spalts klein; eine
+Luftschicht vor dem Aktuator lieferte 8·10⁷ Pa·s/m³ erst bei etwa
+47 µm Abstand (randbelüftet, 3μ/(2πd³)), und seine Massenlast wirkt
+mit falschem Vorzeichen (Gegenprobe 52).
+
+**Geometrie-Deutungen verworfen:** ein kleinerer Spalt (18 µm statt
+20,77 µm, R ∝ h⁻³) trifft die Amplitude, verfehlt aber die Phase
+oberhalb 13 kHz (6,4° RMS); eine geschlossene Ringnut statt des
+Schlitzes ebenso (10,2°); die Lesart des Lochkreises als Durchmesser
+(1,19 dB / 4,9°). Nebenbefund: die Dämpfung hängt stark an der Lage
+des Lochkreises; bei etwa 1,5 mm Radius ist sie am kleinsten, weil sich
+Loch- und Randentlüftung dort die Wege teilen.
+
+**Folgerung:** dem 3D-Film fehlt keine allgemeine Physik. Die
+Abweichung am 4134 ist kapselspezifisch — eine Eigenschaft der realen
+4134 (Luftwege an Plattenrand und Isolator, Bohrungsgeometrie) oder
+ihrer Messung, die Zuckerwars Tabelle I nicht wiedergibt. Für die
+2D-Lochkreis-Darstellung heißt das: näher an 3D würde den 4146 und die
+FEM besser treffen, den 4134 schlechter.
+
+**Quellen für den nächsten Schritt** (Volltexte in dieser Umgebung
+nicht erreichbar, die Netzwerkregel sperrt die Verlagsserver):
+Homentcovschi & Miles, JASA 130, 3698 (2011) — Stokes-Lösung des
+Luftraums der 4134 mit Schlitz und Löchern, gegen Messwerte;
+das COMSOL-Anwendungsmodell der B&K 4134 (Geometrie von B&K,
+thermoviskos, gegen Messung); Honzík et al., JASA 134, 3573 (2013) —
+Membran, Randkavität und Spalt mit Stufe; Zuckerwars Tabelle I selbst
+(was „slit" dort genau bezeichnet). Entscheidend ist die reale
+Geometrie von Plattenrand und Schlitz der 4134.
+
+Die Gegenprobe prüft die Richtungen gegen Zuckerwars Messungen:
+Phasendefizit unter der Resonanz, Verbesserung des 4134 durch
+Serienwiderstand bzw. gedrosselten Schlitz, Verschlechterung des 4146
+durch beides, und dass Spalt und Ringnut die Phase schlechter treffen
+als der Serienwiderstand. Die Beträge sind Stand-Werte.
 
 ## Verlustmechanismen (vollständig erfasst)
 
