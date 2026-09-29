@@ -189,10 +189,11 @@ der axialen Körperbeugung) und **intern** (Phasensteigung der
 Netzwerk-Rückübertragung D_r), beide als Phase bei 1 kHz ausgewertet,
 samt Verhältnis intern/extern. Deutung (Gegenprobe 17, numerisch
 verifiziert): **≈ 1** — angepasst, tiefste Auslöschung bei 180°
-(opti.json: 1,00); **< 1** — interne Laufzeit zu kurz, das
-Pattern-Minimum wandert vor 180° (K67 nominal: 0,96, Minimum ~165°);
-**> 1** — zu lang, das Minimum bleibt bei 180° gepinnt, wird aber
-flacher (cardiodtest 45-µm-Spacer: 1,24). Die interne Laufzeit ist
+(opti.json: 1,00; K67 nominal: 1,05); **< 1** — interne Laufzeit zu
+kurz, das Pattern-Minimum wandert vor 180° (K103-Demo: 0,42, Minimum
+bei 114°); **> 1** — zu lang, das Minimum bleibt bei 180° gepinnt,
+wird aber flacher (cardiodtest 45-µm-Spacer: 1,32; Debenham-Beispiel:
+1,46). Die interne Laufzeit ist
 frequenzabhängig (RC-Phasenschieber mit Filmträgheit, kein reines
 Laufzeitglied) — der Klassen-Methode `delay_diagnostics(f_probe_hz=…)`
 kann eine andere Sondenfrequenz übergeben werden.
@@ -310,6 +311,172 @@ dass eine Korrektur genau den früheren Befund erklärt.
 Die Basis umfasst 66 Werte aus 25 Gegenproben, davon 8 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
+## Offene Punkte
+
+Alle bekannten offenen Punkte an einer Stelle; die Abschnitte weiter
+unten erzählen, wie sie entstanden sind. Zahlen in `Code-Schrift` sind
+Stand-Werte oder Sperrklinken aus `tests/basis_werte.json` — dort steht
+jeweils der aktuelle Wert, die Zahlen hier sind der Stand beim
+Schreiben.
+
+### Physik: Abweichungen gegen Referenzen
+
+1. **Dämpfung am Lochkreis (B&K 4134/4146; Gegenproben 38, 52, 53).**
+   Der wichtigste offene Punkt, und er verbindet drei Befunde:
+   - Der 3D-Löser rechnet die Modellgleichungen nachweislich richtig
+     (unabhängiger axialsymmetrischer Löser auf 0,001 dB), liegt an der
+     4134 aber bei 13/16/20 kHz 2,2/2,6/3,5 dB über der Messung. Das
+     2D-Modell trifft sie (höchstens 0,6 dB), weil es den Filmwiderstand
+     des Lochkreises überschätzt: 3D/2D bei erzwungener Form 0,59
+     (`gp52.r3d_zu_r2d_lochkreis`). Die reale Kapsel dämpft also rund
+     1,7-fach stärker als der Reynolds-Film. Das 2D-Ergebnis ist im
+     Hochton aus zwei ausgleichenden Näherungen zusammengesetzt.
+   - Die Aktuatormessung erklärt das nicht: ihre Zusatzlast hebt die
+     4134 um höchstens 0,56 dB an, mit falschem Vorzeichen
+     (`gp52.aktuatorlast_max`). Das Gitter auch nicht (fein ändert
+     höchstens 0,2 dB).
+   - Spaltwiderstand gegen Zuckerwars Tabelle II: 4134 +9,9 %, 4146
+     +34,6 % (`gp38.spaltwiderstand_4134`, `…_4146`). Ursache ist die
+     Streuung der Škvor-Zellregel q = n·r²/a_bp², die über 16
+     Ringgeometrien zwischen 0,78 und 1,44 der exakten Lösung liegt.
+     Der 4146 trifft Fig. 7 mit 1,09 dB / 7,2° RMS (Schranke 1,6 dB /
+     10°), der 4134 Fig. 6 mit 0,30 dB / 0,98°.
+   - Die Darstellung eines Lochkreises im 2D-Feld (verschmiertes Band)
+     ist nicht eindeutig; Band gegen Liniensenke macht bis 7,3 dB aus
+     (Gegenprobe 53, Warnung ab 0,5 dB). Eine physikalisch korrekte
+     Lochreihe (Liniensenke plus Konvergenzwiderstand) trifft 3D nicht
+     besser. Eine Darstellung, die die Formanpassung der Membran an das
+     radiale Druckfeld mitnimmt, fehlt; sie würde validierte Ergebnisse
+     (B&K 4134, Debenham) verschieben.
+
+   Nächster Schritt: Recherche, welche Physik am Lochkreis zusätzlich
+   dämpft (Literatur zu Messmikrofon-Backplates, Mündungs- und
+   Eintrittsverlusten, Gasverdünnung, Oberflächen).
+
+2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 478 Hz, 3D
+   495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,13,
+   `gp32.verstimmung_3d` 0,10). Die diskreten Bohrungen erklären 23 %
+   des Abstands, der Rest ist keine Homogenisierung. Untersucht wurde
+   bisher der Lochzweig an seiner Antiresonanz (Kerbe 3203 gegen
+   3500 Hz): kein Massenüberschuss der Zelle (wirbelfreie und
+   Stokes-Zelle liefern mehr, nicht weniger), die Mündungsmasse hebt
+   die Kerbe ganz gestrichen nur um 5,9 % (nötig 9,2 %), Membranmasse
+   und Rückvolumen wirken auf die Kerbe gar nicht, die
+   Spaltnachgiebigkeit höchstens 4 %. Einziger starker Hebel ist der
+   Lochradius (d ln f/d ln r = +0,61), ein direkt tabellierter Wert.
+   Für die Resonanzlage selbst ist die Ursache offen.
+   Getroffen werden Tiefton, Güte (+6,44 gegen +6,74 dB) und das Dublett
+   der vier Bohrungen (3D 3406/4127 Hz gegen 3500/4200 Hz).
+
+3. **Kolben- statt Modenkonvention im 1D-Pfad (Gegenproben 8, 29).**
+   Der 1D-Pfad rechnet den Filmwiderstand für gleichförmigen
+   Kolbenantrieb; das 2D-Feld projiziert auf die Membranform. Symptome:
+   rein randbelüftet liegen 1D und 2D im Tiefton 2,8 dB auseinander
+   (`gp29.abstand_1d_2d`), und im dichten Grenzfall von Gegenprobe 8
+   ist 2D/Škvor 1,13 statt 1 (die Probe lässt 0,8–1,6 zu). Probe: der
+   geschlossene Ausdruck der Randumgehung (Gegenprobe 37) für die
+   Membranform ist bei der Gegenprobe-29-Kapsel das 1,59-Fache des
+   Kolbenwerts; damit liegt 1D bei 200 Hz −0,39 dB und bei 1 kHz
+   −0,68 dB neben 2D, bei 5 kHz aber −5,2 statt −2,1 dB. Einzeln
+   austauschen geht also nicht; die Konvention muss im ganzen 1D-Pfad
+   stimmen.
+
+4. **Modenweise Anregung bei streifendem Einfall (Gegenprobe 34).**
+   Gegen COMSOL oberhalb 5 kHz 14,1 dB mit uniformer Anregung, 7,3 dB
+   mit drei Moden (`gp34.restluecke_3_moden`). Die Reihe über 1…5 Moden
+   (9,0/7,9/7,3/6,7/6,4 dB) flacht ab; mehr Moden allein schließen die
+   Lücke nicht.
+
+5. **Richtwirkung gegen Grinnip (Gegenproben 41, 43).** Auf Achse trifft
+   der BEM-Frontfaktor Grinnips Rechnung auf 1,0 dB RMS; gegen die
+   Messung (9–15 kHz) sind es 4,0 dB, Grinnips eigene Rechnung 3,1 dB —
+   beide liegen darüber. Bei 90° bleiben mit einer Mode 3,8 dB RMS
+   (`gp41.rest_90grad_rms`), bei 14 kHz 4,8 dB (`gp41.rest_90grad_14k`);
+   modenweise 2,4 dB (90°) und 1,7 dB (180°) gegen Grinnips Rechnung,
+   3,2 dB gegen die Messung bei 90°.
+
+6. **Debenham bei 1–2 kHz (Beispielprojekt).** Die Niere bleibt dort
+   ~10 dB flacher als im Artikel (−12/−8 dB bei 180°). Der 3D-Löser
+   ordnet es ein: mit nur dem Rand-Freistich der Zeichnung bleibt sie
+   flach, mit Freistich über allen Lochkreisen wird sie tief. Vermutet
+   sind angefaste Mündungen, die die Zeichnung nicht bemaßt (s.
+   Geometriefragen).
+
+### Modellgrenzen (dokumentiert, nicht behoben)
+
+- **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
+  ausweichen. 3D liegt deshalb oberhalb der Filmgrenze höher
+  (Randschlitz 20 kHz: `gp52.formanpassung_20khz` 1,6 dB; K103 dicht bei
+  60 V und 1 kHz: Spannung 3D/1D `gp23c.spannung_1khz` 0,92). Mehrere
+  2D-Moden helfen nicht, weil sie sich einen Spaltknoten teilen. Bei
+  weicher Membran mit Randspalt liegt 3D bis 8 dB über 2D (Gegenprobe
+  29).
+- **Homogenisierung der Löcher:** gilt bis f_hom bzw. bis zur
+  Lochkreis-Grenze f_ring (Gegenproben 48, 53); darüber warnen Modell
+  und GUI. Weiche Großmembran-Kapseln liegen fast immer im
+  Warnbereich. Bei der K67 liegen 2D und 3D auf Achse bis 3,2 dB
+  (8 kHz) auseinander, mit einem Tieftonversatz von 1,4 dB, den f_hom
+  nicht erklärt (`gp22e.empf_3d_zu_2d`, Zwischenspalt-Geometrie).
+- **Höhere Membranmoden (`membrane_modes`):** die elektrostatische
+  Feder-Erweichung wird nicht auf sie übertragen, und ihre
+  Filmdämpfung wird gleich der Grundmode gesetzt (konservativ).
+- **Strahlungsimpedanz:** Kolben in unendlicher Schallwand
+  (Gegenprobe 27).
+- **BEM:** der starr montierte Körper bildet einen ungedämpften
+  Ringspalt-Resonator (Welligkeit 4–6 kHz, real durch die elastische
+  Halterung bedämpft); offener Rückeinlass nur am glatten Zylinder
+  (Warnung, Gegenprobe 44).
+- **Gewebe im 3D-Doppelmembran-Pfad:** 3D und 2D rechnen den inneren
+  Gleichtaktpfad verschieden (3D bei 10 Hz 34 % größer); die
+  Gewebedämpfung liegt bei −5,3 gegen −6,0 dB (Gegenprobe 27, nur
+  ausgegeben). Welches Bild näher an der realen Kapsel liegt, ist
+  nicht geprüft.
+- **3D-Gitter:** grob meist auf ~0,2 dB; Mündungen, die azimutal
+  kleiner als eine Zelle sind (Debenham), brauchen das feine Gitter;
+  über 50 000 Zellen je Feld wird gewarnt (Gegenproben 50, 51).
+- **Gatter:** Randspalt nicht mit K103-Spacer/Rückplatte und im
+  1D-Pfad nur ohne Bohrungen; Eigenrauschen nur in 1D/2D; die
+  Empfindlichkeit gilt im Leerlauf an der Kapsel, ohne Verstärker und
+  Korb.
+
+### Geometriefragen an realen Kapseln
+
+Diese Punkte kann das Modell nicht entscheiden; sie brauchen Maße oder
+Messungen der realen Kapsel.
+
+- **K67-Kernlage (Gegenprobe 22e):** wie die Kerne beider
+  Elektrodenhälften im 50-µm-Zwischenspalt zueinander liegen, ist nicht
+  dokumentiert und bestimmt die Tiefe der Auslöschung: global 9°/12°
+  verdreht −18,6/−36,9 dB bei 180° und 1 kHz (`gp22e.ausloeschung_9grad`,
+  `…_12grad`), das 2D-Modell −28,1 dB dazwischen, vollständig versetzt
+  −17 dB. `half_rotation_deg` stellt sie ein.
+- **Debenham-Mündungsfasen:** s. Punkt 6 oben.
+- **K103:** die inneren Maße sind nicht veröffentlicht; die Demo ist
+  eine Vorlage zum Abstimmen und zurzeit keine Niere (Laufzeitverhältnis
+  0,42, Minimum bei 114°).
+
+### Werkzeug
+
+- GUI (`app.py`) und Übersetzungen haben keine Tests: weder eine Probe,
+  dass jeder Schlüssel Englisch und Deutsch hat, noch einen Starttest
+  der App in beiden Sprachen mit den Beispielprojekten. Ein Test, der
+  die Beispielprojekte lädt und ihre Kennwerte meldet, hätte den
+  Lader-Fehler gefunden, durch den das Debenham-Beispiel
+  Stufenbohrungen erbte (behoben, s. Beispielprojekte).
+- Kein automatischer Testlauf bei jedem Push (kein GitHub-Workflow).
+- Laufzeit: die BEM-Proben 41, 43, 44, 26 und 21 brauchen etwa 117 der
+  316 s Rechenzeit; Gegenprobe 41 allein (54 s) ist die Untergrenze des
+  parallelen Laufs. Eine wiederverwendete BEM-Körperlösung (wie beim
+  3D-Löser) würde helfen.
+- Zwei weite Fenster sind noch als Invariante formuliert: Gegenprobe 8
+  (2D/Škvor 0,8–1,6, s. Punkt 3) und Gegenprobe 48 (f_hom 1–12 kHz bzw.
+  4–20 kHz).
+- Die Zahlen in den Abschnitten unten sind Schnappschüsse; den
+  aktuellen Stand nennen die Basis und der Bericht am Ende jedes
+  Testlaufs.
+- `microphone_capsule.py` hat rund 7000 Zeilen; eine Aufteilung in
+  Module (Spaltfilm, 3D-Löser, BEM, Elektrostatik) steht aus.
+
 ## Beispielprojekte
 
 `examples/u87_k67_projekt.json` — recherchierter und modellvalidierter
@@ -335,28 +502,30 @@ die Membranen und definieren die ehrliche externe Distanz
 `d_ext = axial + 2·Ringdicke` (s. u.). Gerechnet wird mit dem
 **2D-Feldmodell** (`squeeze_2d = true`) und dem vermessenen
 Kapselkopf-Durchmesser als Beugungskörper. Ergebnis mit den nominellen
-inneren Maßen: Ruhekapazität C₀ = 50,3 pF (trifft den nachgemessenen
-Wert), Niere **−6,4/−17,3/−26,2 dB @ 90/135/180° (1 kHz)** — praktisch
-die publizierten U87-Werte —, glatter Präsenzpeak +3,3 dB @ 13,5 kHz,
-Empfindlichkeit 21,0 mV/Pa. **Wichtig für Datenblatt-Vergleiche:** das
+inneren Maßen: Ruhekapazität C₀ = 50,0 pF (trifft den nachgemessenen
+Wert), Niere **−6,0/−15,5/−28,1 dB @ 90/135/180° (1 kHz)** — praktisch
+die publizierten U87-Werte (−6/−17/−26 dB) —, Minimum bei 180° von
+250 Hz bis 2 kHz, glatter Präsenzpeak +5,4 dB @ 13,9 kHz (gegen 1 kHz,
+roh), Empfindlichkeit 20,1 mV/Pa. **Wichtig für Datenblatt-Vergleiche:** das
 Modell rechnet die **nackte Kapsel**. Die K67 ist bewusst hell ausgelegt
 („Pre-Emphasis"), und die U87-Elektronik nimmt das über Gegenkopplung
 wieder heraus („De-Emphasis"); dazu kommt der nicht modellierte Korb.
 Ein Kapselmodell **muss** im Hochton also ÜBER der veröffentlichten
 Gesamtkurve liegen — Übereinstimmung mit dem Datenblatt oberhalb
-~10 kHz wäre ein Warnzeichen, kein Gütesiegel. Das tiefste
-Minimum liegt in den Mitten knapp vor 180° (~160°);
-`examples/cardiodtest.json` pinnt es mit Spacer 45 µm exakt auf 180°.
+~10 kHz wäre ein Warnzeichen, kein Gütesiegel. (Bis Gegenprobe 30 lag
+das Minimum in den Mitten knapp vor 180°, ~160°.)
 Über „Projekt laden" importierbar.
 
 `examples/cardiodtest.json` — identisch zum nominellen K67-Datensatz
 bis auf **ein einziges Maß**: den Spacer zwischen den Elektrodenhälften
 (45 statt 50 µm — das am wenigsten sicher verifizierte innere Maß,
-plausibel 40–65 µm). Damit trifft die interne Phasenschieber-Laufzeit
-die externe exakt, und die Null sitzt bei **allen** Frequenzen im
-Übertragungsband auf 180° (−17/−19/−19/−17 dB @ 250/500/1k/2k,
-90° = −5,3 dB, C₀ = 50,3 pF, Frequenzgang flach). Die Niere entsteht
-dabei vollständig aus den akustischen Parametern (s. Abschnitt
+plausibel 40–65 µm). Gedacht war er, um die Null auf 180° zu pinnen;
+das tut seit Gegenprobe 30 schon die nominelle K67 (Laufzeitverhältnis
+1,05). Der engere Spacer verzögert jetzt über (1,32): die Null bleibt
+bei 180°, wird aber flacher (−15,6/−17,0/−17,1/−15,6 dB @
+250/500/1k/2k, 90° = −5,1 dB, C₀ = 50,0 pF, 18,1 mV/Pa). Die Datei
+zeigt damit die Über-Verzögerung; die Niere entsteht auch hier
+vollständig aus den akustischen Parametern (s. Abschnitt
 „Nierenbildung").
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
@@ -580,7 +749,9 @@ den Faktor 0,789 leichter; im Hochton hebt das den Pegel:
 Membranen ohnehin als Felder ohne Modenabschneidung führt und bei
 ausgerichteten Löchern sogar −7,7 dB zeigt. Ursache des Sattels bleibt
 die interne Antiresonanz, die die reale K67 über die **Verdrehung der
-Lochbilder** bedämpft (3D, 3°: −1,2 dB). Bewusste Näherungen: die
+Lochbilder** bedämpft (3D-Stand vor Gegenprobe 48: 3°, −1,2 dB; wie
+stark, hängt heute an der undokumentierten Kernlage, s. „Offene
+Punkte"). Bewusste Näherungen: die
 elektrostatische Feder-Erweichung wird nicht auf die höheren Moden
 übertragen, und deren Filmdämpfung wird gleich der Grundmode gesetzt
 (konservativ — real ist sie kleiner).
@@ -616,17 +787,18 @@ dichter Rand **entkoppelt** Membran und Rückport mindestens wie w³
 (sehr schmale Spalte sogar exponentiell, weil die Leitung dann ins
 Wellenleiter-Regime wechselt); die Wirkung ist monoton und sättigt,
 sobald nicht mehr der Kanal, sondern der Film selbst begrenzt
-(10 → 200 µm: +15,8 dB); das 2D-Zweitor bleibt mit Randknoten reziprok,
+(10 → 200 µm: +22,1 dB); das 2D-Zweitor bleibt mit Randknoten reziprok,
 auch mit Bohrungen **und** Randspalt gleichzeitig; 1D und 2D liegen im
-Tiefton 1,9 dB auseinander.
+Tiefton 2,8 dB auseinander (Stand-Wert; zur vermuteten Ursache s.
+„Offene Punkte").
 
 **Auch im 3D-Löser** hängt derselbe Ringkanal über den Randflächen-
 Leitwert an der äußersten Filmzellreihe. Verankert am **Kolben-
 Grenzfall**: nur wenn die Membran sich *nicht* verformen kann,
 beschreiben 1D/2D (Grundmode φ erzwungen) und 3D (freies Membranfeld)
 dasselbe Problem — mit steifer Membran im quasistatischen Tiefton fallen
-beide auf **0,4 dB** zusammen (seit Gegenprobe 50 mit exaktem
-Membranrand), und das Ergebnis ist von der azimutalen
+beide auf **0,01 dB** zusammen (seit dem Massenfaktor 8/j₀₁²,
+Gegenprobe 55; davor 0,3 dB), und das Ergebnis ist von der azimutalen
 Auflösung unabhängig (< 10⁻⁶ zwischen Np = 96 und 192).
 
 **Dokumentierter Modellunterschied, kein Fehler:** Bei *weicher* Membran
@@ -642,11 +814,9 @@ mit weicher Membran ist der **3D-Modus daher der belastbarere**.
 Gegenprobe 48 hat daraus das allgemeine Kriterium f_hom gemacht (der
 Randspalt zählt dort als Senke am Plattenrand).
 
-**Nebenbefund (nicht Teil dieses Features):** Der Kettenpfad führt den
+**Nebenbefund (erledigt mit Gegenprobe 31):** Der Kettenpfad führte den
 Škvor-Widerstand zweimal — einmal in `_membrane_impedance`, einmal im
-Backplate-Zweitor. Bei gelochten Platten macht das wenige dB (der
-3D-Wert liegt zwischen den beiden Varianten), bei randbelüfteten ~4 dB.
-Das ist eine bestehende Modellkonvention, die eigens zu klären wäre.
+Backplate-Zweitor. Er zählt jetzt genau einmal (s. u.).
 
 **Gatter (statt stiller Zahlen):** nur `single`/`dual` (bei der
 K67-Bauform versiegeln Spacer und Klemmringe den Rand); nicht mit
@@ -771,7 +941,7 @@ außen:
   (< 1 dB) und — die eigentliche Dämpfungsprobe — die
   Resonanzüberhöhung (+6,4 gegen +6,7 dB). Das **Dublett** der FEM im
   Kerbenband (3500/4200 Hz) kann der homogenisierende 2D-Pfad
-  prinzipiell nicht haben; der 3D-Löser zeigt es (3421/4127 Hz).
+  prinzipiell nicht haben; der 3D-Löser zeigt es (3406/4127 Hz).
   **Offen** bleibt die Resonanzlage: 2D liegt 13 % unter der FEM
   (478 gegen 550 Hz), der gitterkonvergente 3D-Löser mit konturtreuen
   Mündungen 10 % (495 Hz). Die diskreten Bohrungen erklären also rund
@@ -1238,8 +1408,8 @@ steifer Membran, ist der Filmwiderstand von 3D und 2D **identisch**
 (Verhältnis 1,000).
 
 **3. Kein Fehler: Löcher auf einem Lochkreis.** Bei erzwungener Form
-ist der Filmwiderstand der B&K 4134 im 3D nur das **0,57-Fache** des
-2D-Werts. Das 2D-Feld löst die radiale Zuströmung zum Lochring selbst
+ist der Filmwiderstand der B&K 4134 im 3D nur das **0,59-Fache** des
+2D-Werts (Stand-Wert; vor dem Massenfaktor 8/j₀₁² 0,57). Das 2D-Feld löst die radiale Zuströmung zum Lochring selbst
 auf und addiert zusätzlich die volle Škvor-Zelle, die diese Konvergenz
 nochmals enthält.
 
@@ -1598,12 +1768,18 @@ Stirnflächen-Freistich am Elektrodenrand (0,038 mm Abtrag über die
 `clearance_ring_*`). Dieser Freistich entlastet die
 Mündungs-Engstellen der wenigen engen Durchgangslöcher im 38-µm-Spalt —
 sie waren der begrenzende Widerstand des Nieren-Phasenschiebers. Damit
-trifft das Modell Fig. 9 bei 100 Hz fast exakt (−1,3/−5,4/−11,7/−13,6
-@ 45/90/135/180° vs. −1/−3/−10/−12), liefert −30 dB @ 250 Hz und die
-gemessene HF-Bündelung (10 kHz: Null 143° vs. 142°); bei 1–2 kHz bleibt
-es ~10 dB flacher als der Artikel (die axialsymmetrische
-Homogenisierung der 12 diskreten Löcher erfasst dort nur einen Teil der
-Mündungs-Entlastung — offener Rest, dokumentiert). Der strengere
+trifft das Modell Fig. 9 bei 100 Hz fast exakt (−1,2/−4,8/−10,2/−12,7
+@ 45/90/135/180° vs. −1/−3/−10/−12), hält die Null von 100 Hz bis
+2 kHz auf 180° (250 Hz: −19 dB; früher stand hier −30 dB) und trifft
+die gemessene HF-Bündelung (10 kHz: Null 144° vs. 142°); bei 1–2 kHz
+bleibt es ~10 dB flacher als der Artikel (−12/−8 dB bei 180°; die
+axialsymmetrische Homogenisierung der 12 diskreten Löcher erfasst dort
+nur einen Teil der Mündungs-Entlastung — offener Rest, s. „Offene
+Punkte"). Das Beispiel legt die Stufenbohrung ausdrücklich ab
+(`th_stepped: false`): bis zur Korrektur des Projekt-Laders erbte es
+sie von der K67-Voreinstellung, 12 der 46 Sacklöcher wurden zu
+Senkungen, und das Minimum lag bei 250 Hz–1 kHz auf 145–153°. Der
+strengere
 **3D-Löser** ordnet das ein: mit *nur* dem Rand-Freistich der Zeichnung
 bleibt die Niere flach (−4 dB @ 1 kHz — die inneren Lochmündungen
 bleiben verengt); deckt der Freistich dagegen alle Lochkreise ab (im
