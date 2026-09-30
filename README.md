@@ -285,8 +285,9 @@ Sonderfall **Sperrklinke** (`stand.sperrklinke(...)`): ein bekannter
 Restfehler, der nur kleiner werden darf. Das sind die Resonanzlage
 gegen die FEM (Gegenprobe 32, 2D und 3D), der Spaltwiderstand gegen
 Zuckerwar (38, beide Kapseln), die Restlücke der modenweisen Anregung
-(34), der Off-Axis-Rest gegen Fig. 6 (41, RMS und 14 kHz) und die
-Obergrenze der Aktuatorlast (52). Wird ein solcher Wert schlechter als
+(34), der Off-Axis-Rest gegen Fig. 6 (41, RMS und 14 kHz), die
+Obergrenze der Aktuatorlast (52) und der Abstand des 3D-Modells zur
+COMSOL-FEM der B&K 4134 (59). Wird ein solcher Wert schlechter als
 die Basis (über eine kleine Toleranz hinaus), scheitert der Test; wird
 er besser, meldet es der Bericht.
 
@@ -308,7 +309,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 81 Werte aus 26 Gegenproben, davon 8 Sperrklinken.
+Die Basis umfasst 87 Werte aus 27 Gegenproben, davon 9 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -321,54 +322,38 @@ Schreiben.
 
 ### Physik: Abweichungen gegen Referenzen
 
-1. **Dämpfung am Lochkreis (B&K 4134/4146; Gegenproben 38, 52, 53).**
-   Der wichtigste offene Punkt, und er verbindet drei Befunde:
-   - Der 3D-Löser rechnet die Modellgleichungen nachweislich richtig
-     (unabhängiger axialsymmetrischer Löser auf 0,001 dB), liegt an der
-     4134 aber bei 13/16/20 kHz 2,2/2,6/3,5 dB über der Messung. Das
-     2D-Modell trifft sie (höchstens 0,6 dB), weil es den Filmwiderstand
-     des Lochkreises überschätzt: 3D/2D bei erzwungener Form 0,59
-     (`gp52.r3d_zu_r2d_lochkreis`). Die reale Kapsel dämpft also rund
-     1,7-fach stärker als der Reynolds-Film. Das 2D-Ergebnis ist im
-     Hochton aus zwei ausgleichenden Näherungen zusammengesetzt.
-   - Die Aktuatormessung erklärt das nicht: ihre Zusatzlast hebt die
-     4134 um höchstens 0,56 dB an, mit falschem Vorzeichen
-     (`gp52.aktuatorlast_max`). Das Gitter auch nicht (fein ändert
-     höchstens 0,2 dB).
-   - Spaltwiderstand gegen Zuckerwars Tabelle II: 4134 +9,9 %, 4146
-     +34,6 % (`gp38.spaltwiderstand_4134`, `…_4146`). Ursache ist die
-     Streuung der Škvor-Zellregel q = n·r²/a_bp², die über 16
-     Ringgeometrien zwischen 0,78 und 1,44 der exakten Lösung liegt.
-     Der 4146 trifft Fig. 7 mit 1,09 dB / 7,2° RMS (Schranke 1,6 dB /
-     10°), der 4134 Fig. 6 mit 0,30 dB / 0,98°.
-   - Die Darstellung eines Lochkreises im 2D-Feld (verschmiertes Band)
-     ist nicht eindeutig; Band gegen Liniensenke macht bis 7,3 dB aus
-     (Gegenprobe 53, Warnung ab 0,5 dB). Eine physikalisch korrekte
-     Lochreihe (Liniensenke plus Konvergenzwiderstand) trifft 3D nicht
-     besser. Eine Darstellung, die die Formanpassung der Membran an das
-     radiale Druckfeld mitnimmt, fehlt; sie würde validierte Ergebnisse
-     (B&K 4134, Debenham) verschieben.
-
-   - **Stand der Recherche (Gegenprobe 58):** dem 3D-Modell fehlt am
-     4134 ein frequenzunabhängiger Widerstand (Phasenbeleg unterhalb der
-     Resonanz); ein Serienwiderstand von 8·10⁷ Pa·s/m³ bringt es auf
-     0,13 dB / 1,3° RMS. Dieselbe Korrektur verschlechtert aber den 4146,
-     und gegen die volle thermoviskose FEM fehlt dem 3D-Film kaum
-     Dämpfung (Überhöhung +0,23 dB, `gp32.ueberhoehung_3d_minus_fem`).
-     Die Abweichung ist damit 4134-spezifisch, keine allgemeine
-     Filmphysik. Der Aktuator scheidet nach B&K aus; der Spalt, mit dem
-     COMSOL auf B&Ks Originalgeometrie rechnet (19 statt 20,77 µm),
-     erklärt für sich etwa die Hälfte (`gp58.rms_4134_spalt_19um_db`);
-     zusammen mit dem übrigen Originalmaß (Lochkreis weiter innen)
-     bleibt die Abweichung aber bestehen. Die Stokes-Rechnung von
-     Homentcovschi & Miles (2011) mit derselben Geometrie ist nach
-     eigener Aussage überdämpft; die Messung liegt zwischen ihr und dem
-     3D-Modell. **Nachtrag:** B&Ks Originalgeometrie (COMSOL) hat einen
-     weit offenen Randweg und ändert am Befund nichts (1,73 dB RMS,
-     `gp58.rms_4134_bk_geometrie_db`); offen bleibt, ob der 3D-Film
-     für diese Geometrie Dämpfung verliert, die eine volle
-     thermoviskose Rechnung hat — das klärt ein Vergleich mit dem
-     gerechneten COMSOL-Ergebnis derselben Geometrie.
+1. **Lochkreise im 2D-Modell (Gegenproben 38, 52, 53, 58, 59).**
+   Der wichtigste offene Punkt — seit dem COMSOL-Vergleich (Gegenprobe
+   59) mit klarer Richtung:
+   - **Der 3D-Löser ist richtig.** Auf B&Ks Originalgeometrie der 4134
+     trifft er die volle thermoviskose FEM (COMSOL) über 1–20 kHz auf
+     0,10 dB RMS (`gp59.rms_3d_gegen_fem`) und die heutigen
+     B&K-Messungen auf 0,31 dB (bis 12,6 kHz im Streuband;
+     `gp59.rms_3d_gegen_messung`). Sein Filmwiderstand liegt 13 % über
+     dem der FEM (`gp59.widerstand_3d_zu_fem`).
+   - **Das 2D-Modell überschätzt den Filmwiderstand am Lochkreis**, auf
+     derselben Geometrie um 61 % (`gp59.widerstand_2d_zu_fem`), und ist
+     deshalb überdämpft (1,80 dB RMS gegen die FEM, −4,5 statt −0,25 dB
+     bei 20 kHz). Bei erzwungener Form ist es derselbe Faktor (3D/2D
+     0,59, `gp52.r3d_zu_r2d_lochkreis`). Die Darstellung als
+     verschmiertes Band ist zudem nicht eindeutig (bis 7,3 dB zwischen
+     Band und Liniensenke, Gegenprobe 53, Warnung ab 0,5 dB).
+   - **Zuckerwars Messung von 1978** (Gegenprobe 38) trifft das 2D-Modell
+     nur, weil sein Prüfling viel stärker gedämpft war als heutige 4134
+     (20 kHz: −3,1 gegen −1,2 dB) — zwei Abweichungen gleichen sich aus.
+     Sein Tabellenwert R und die Škvor-Zellregel liegen gleichermaßen
+     hoch. Warum sein Prüfling so gedämpft war, bleibt offen (Tabelle I
+     weicht von B&Ks Geometrie ab: Spalt 20,77 statt 18,6 µm, Lochkreis
+     2,03 statt 1,70 mm; mit Tabelle I liegt 3D 3,5 dB über seiner
+     Messung, Gegenprobe 58).
+   - Beim 4146 trifft der 3D-Löser Zuckerwars Messung besser als 2D
+     (0,75 gegen 1,09 dB; `gp58.rms_3d_4146_db`); der 2D-Spaltwiderstand
+     liegt dort 35 % über Tabelle II (`gp38.spaltwiderstand_4146`).
+   - **Nächster Schritt:** eine Lochkreis-Darstellung im 2D-Feld, die den
+     3D-Widerstand trifft (Anker: Gegenprobe 59 und die 16
+     Ringgeometrien der exakten Reynolds-Lösung aus Gegenprobe 38). Sie
+     wird den 2D-Treffer an Zuckerwars 4134 aufgeben — das ist dann
+     ehrlich so.
 
 2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 478 Hz, 3D
    495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,13,
@@ -1799,12 +1784,9 @@ Schlitzes (10,2° Phase); die Lesart des Lochkreises als Durchmesser
 des Lochkreises; bei etwa 1,5 mm Radius ist sie am kleinsten, weil sich
 Loch- und Randentlüftung dort die Wege teilen.
 
-**Folgerung:** dem 3D-Film fehlt keine allgemeine Physik. Die
-Abweichung am 4134 ist kapselspezifisch — eine Eigenschaft der realen
-4134 (Luftwege an Plattenrand und Isolator, Bohrungsgeometrie) oder
-ihrer Messung, die Zuckerwars Tabelle I nicht wiedergibt. Für die
-2D-Lochkreis-Darstellung heißt das: näher an 3D würde den 4146 und die
-FEM besser treffen, den 4134 schlechter.
+**Zwischenfolgerung:** dem 3D-Film fehlt keine allgemeine Physik; die
+Abweichung am 4134 ist kapselspezifisch. Der COMSOL-Vergleich unten
+bestätigt das und benennt die Ursache.
 
 **Zuckerwars Schlitz.** In Zuckerwars Theorie (ausführlich im
 NASA-Bericht zum Hochtemperatur-Wandler, NTRS 19770013461, Kap. II und
@@ -1876,6 +1858,46 @@ Phasendefizit unter der Resonanz, Verbesserung des 4134 durch
 Serienwiderstand bzw. gedrosselten Schlitz, Verschlechterung des 4146
 durch beides, und dass Spalt und Ringnut die Phase schlechter treffen
 als der Serienwiderstand. Die Beträge sind Stand-Werte.
+
+**Der COMSOL-Vergleich entscheidet (Gegenprobe 59).** Mit dem
+gerechneten Ergebnis des COMSOL-Anwendungsmodells (volle thermoviskose
+FEM auf B&Ks Originalgeometrie, 200 V) und den drei B&K-Messkurven
+desselben Modells (heutige 4134) steht erstmals eine Referenz zur
+Verfügung, die Geometrie und Physik zugleich festlegt. Capsim rechnet
+dieselbe Konfiguration (Maße s. o., 200 V, Rückseite geschlossen):
+
+| auf 251 Hz bezogen | 10 kHz | 14,1 kHz | 17,8 kHz | 20 kHz | RMS 1–20 kHz gegen FEM | gegen Messmittel |
+|---|---|---|---|---|---|---|
+| COMSOL-FEM | +0,79 | +1,04 | +0,52 | −0,25 | — | 0,32 dB |
+| **Capsim 3D** | +0,93 | +1,14 | +0,41 | −0,51 | **0,10 dB** | **0,31 dB** |
+| Capsim 2D | −0,78 | −1,96 | −3,47 | −4,48 | 1,80 dB | 1,51 dB |
+| B&K-Messungen (Mittel) | +0,74 | +0,57 | −0,26 | −1,20 | | |
+| Zuckerwar 1978 (Fig. 6) | +0,14 | −0,71¹ | −1,11² | −3,06 | | |
+
+¹ 13 kHz, ² 16 kHz. Das 3D-Ergebnis ist gitterkonvergent (grob/fein
+höchstens 0,02 dB auseinander). Bis 12,6 kHz liegt es im Streuband der
+drei Messkurven; darüber liegen FEM und 3D gleichermaßen etwas über der
+Messung. Der äquivalente akustische Widerstand Re(p/Q) ohne
+Strahlungslast (die FEM hat keine) liegt im 3D-Modell 13 % über der
+FEM, im 2D-Modell 61 % (bei 2–5 kHz FEM 1,43·10⁸, 3D 1,63·10⁸, 2D
+2,34·10⁸ Pa·s/m³).
+
+**Folgerung:** Der 3D-Löser ist für den Lochkreis richtig, das 2D-Modell
+überschätzt dort den Filmwiderstand um rund 60 %. Zuckerwars Prüfling
+von 1978 war deutlich stärker gedämpft als heutige 4134; dass das
+2D-Modell ihn trifft, ist das Zusammentreffen beider Abweichungen. Die
+Aufgabe ist damit eine bessere Lochkreis-Darstellung im 2D-Feld, mit
+Gegenprobe 59 als Anker („Offene Punkte" 1).
+
+**Referenzdaten lokal:** Die COMSOL-Daten stehen unter COMSOLs Lizenz
+und liegen nicht im Repo. Gegenprobe 59 liest sie aus `tests/extern/`
+(von git ignoriert) und überspringt sich ohne sie. Erzeugen im
+COMSOL-Anwendungsmodell `bk_4134_microphone` (Acoustics Module,
+Electroacoustic Transducers): unter *Results* die Empfindlichkeit
+(Modell und die drei Messkurven) und „Equivalent Acoustic Resistance"
+über *Add Plot Data to Export* als Text exportieren und als
+`tests/extern/comsol_4134_sens.txt` bzw. `comsol_4134_resis.txt`
+ablegen.
 
 ## Verlustmechanismen (vollständig erfasst)
 

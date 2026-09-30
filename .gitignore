@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+
+# Referenzdaten unter fremder Lizenz (COMSOL-Anwendungsmodell B&K 4134),
+# nur lokal — Gegenprobe 59 überspringt sich ohne sie
+tests/extern/

@@ -292,6 +292,13 @@ def test_gp38_externe_referenz_b_k_4134(stand):
     # Ende; die Regel selbst bleibt damit ein offener Punkt (die
     # naheliegende Alternative „Zellfläche = Lochabstand²" wurde geprüft
     # und ist SCHLECHTER: RMS(log) 0.33 gegen 0.19).
+    # NACHTRAG (Gegenproben 58, 59): der 2D-Treffer am 4134 ist kein Beleg
+    # für das 2D-Modell. Auf B&Ks Originalgeometrie überschätzt es den
+    # Filmwiderstand gegen die thermoviskose FEM um rund 60 %, und
+    # Zuckerwars Prüfling war stärker gedämpft als heutige 4134 — beides
+    # gleicht sich hier aus. Die Probe bleibt als Referenz gegen die
+    # Messung stehen; eine bessere Lochkreis-Darstellung wird sie
+    # verschieben.
     if _HAS_SCIPY:
         bk38 = _BK38
         res38 = {}
@@ -395,7 +402,9 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
     #    3D-Modell unterdämpft wie mit Tab. I: der kleinere Spalt dämpft
     #    mehr, der weiter innen liegende Lochkreis weniger.
     # Folgerung: dem 3D-Film fehlt keine allgemeine Physik; die Abweichung
-    # ist 4134-spezifisch (Geometrie der realen Kapsel oder ihrer Messung).
+    # ist 4134-spezifisch. Gegenprobe 59 (COMSOL-FEM derselben
+    # B&K-Geometrie) bestätigt das: 3D trifft die FEM auf 0.1 dB, und
+    # Zuckerwars Prüfling war stärker gedämpft als heutige 4134.
     if not _HAS_SCIPY:
         return
 
@@ -497,3 +506,119 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
           f"(COMSOL) {raH:.2f} dB / {rpH:.1f}°, Ringnut {rpN:.1f}° Phase; "
           f"B&K-Originalgeometrie {raB:.2f} dB / {rpB:.1f}° — "
           f"4134-spezifisch, keine allgemeine Filmphysik  OK")
+
+
+# B&K-4134-Originalgeometrie, wie im COMSOL-Anwendungsmodell (Geometrie
+# „courtesy of Brüel and Kjær", aus dem mphtxt-Export abgelesen; s. README,
+# „Dämpfung am Lochkreis"). 200 V wie im Modell, Rückseite geschlossen.
+_BK4134_COMSOL = dict(
+    membrane_material={"rho": 8900.0, "E": 221e9, "nu": 0.31},
+    membrane_resonance_hz=None, membrane_diameter=9.0e-3,
+    membrane_thickness=5.0e-6, membrane_tension=3160.0, air_gap=18.6e-6,
+    backplate_diameter=7.2e-3, backplate_thickness=1.029e-3,
+    bias_voltage=200.0, architecture="single", n_through_holes=6,
+    through_hole_diameter=1.0e-3, through_hole_pcd=3.4e-3, n_blind_holes=0,
+    ring_vent_width=0.86e-3, ring_vent_length=0.30e-3,
+    rear_network_enabled=True, delay_length=0.0,
+    cavity_length=131e-9 / (np.pi * 3.6e-3**2), n_cavity_holes=0,
+    fabric_front_rayl=0.0, fabric_rear_rayl=0.0, include_diffraction=False)
+_EXTERN = __import__("pathlib").Path(__file__).with_name("extern")
+
+
+@pytest.mark.feld3d
+def test_gp59_comsol_referenz_b_k_4134(stand):
+    """Gegenprobe 59: COMSOL-Referenz B&K 4134 (Originalgeometrie)."""
+    # Die entscheidende Probe zu Gegenprobe 58: dieselbe Geometrie, einmal
+    # mit der vollen thermoviskosen FEM (COMSOL-Anwendungsmodell
+    # bk_4134_microphone, Navier–Stokes und Wärmeleitung im ganzen
+    # Luftraum, Membran, Elektrostatik mit Randfeld) und einmal mit Capsim.
+    # Dazu die drei B&K-Messkurven desselben Modells (Mittel, untere,
+    # obere; heutige 4134, 200 V).
+    # a) Das 3D-Modell trifft die FEM über 1–20 kHz auf 0.1 dB RMS — dem
+    #    Reynolds-Film mit diskreten Löchern fehlt KEINE Physik. Das
+    #    2D-Modell liegt deutlich darunter (überdämpft): seine
+    #    Lochkreis-Darstellung überschätzt den Filmwiderstand.
+    # b) Gegen die Messungen liegt 3D bis 12.6 kHz im Streuband; darüber
+    #    liegen FEM und 3D gleichermaßen etwas über der Messung.
+    # c) Äquivalenter akustischer Widerstand Re(p_in/Q_Membran), ohne
+    #    Strahlungslast (die FEM hat keine): 3D liegt nahe der FEM, 2D weit
+    #    darüber.
+    # Folgerung für Gegenprobe 38/58: Zuckerwars Prüfling von 1978 war
+    # deutlich stärker gedämpft als heutige 4134 (20 kHz: −3.1 gegen
+    # −1.2 dB); dass das 2D-Modell ihn trifft, ist das Zusammentreffen
+    # dieser Abweichung mit der Überschätzung am Lochkreis.
+    # Die COMSOL-Daten stehen unter COMSOLs Lizenz und liegen nicht im
+    # Repo: Export aus dem Anwendungsmodell (Empfindlichkeit, „Equivalent
+    # Acoustic Resistance") nach tests/extern/ (README).
+    if not _HAS_SCIPY:
+        return
+    d_s = _EXTERN / "comsol_4134_sens.txt"
+    d_r = _EXTERN / "comsol_4134_resis.txt"
+    if not (d_s.is_file() and d_r.is_file()):
+        pytest.skip("COMSOL-Referenzdaten fehlen (tests/extern/, s. README)")
+
+    def _lies(p):
+        return np.array([z.split() for z in p.read_text().splitlines()
+                         if z.strip() and not z.startswith("%")], float)
+    sens = _lies(d_s).reshape(4, -1, 2)
+    f = sens[0, :, 0]
+    fem, mittel, unten, oben = sens[:, :, 1]
+    res = _lies(d_r)
+    assert np.allclose(res[:, 0], f), "Frequenzraster beider Dateien"
+    sel = f >= 1000.0
+    fs = f[sel]
+    om = 2.0 * np.pi * fs
+    f_norm = np.array([f[np.argmin(np.abs(f - 250.0))]])  # wie COMSOL: 251 Hz
+    pegel, re_z = {}, {}
+    for sm in ("2d", "3d"):
+        c = MicrophoneCapsule(squeeze_model=sm, **_BK4134_COMSOL)
+        H = c.transfer_function(fs)
+        pegel[sm] = 20.0 * np.log10(np.abs(H / c.transfer_function(f_norm)[0]))
+        V = (c._solve_3d(om, weight="volume")[0] if sm == "3d"
+             else H / c._theta)
+        re_z[sm] = np.real(1.0 / (1j * om * V)
+                           - c._radiation_impedance_membrane(om))
+    rms = {sm: float(np.sqrt(np.mean((pegel[sm] - fem[sel]) ** 2)))
+           for sm in pegel}
+    rms_m = {sm: float(np.sqrt(np.mean((pegel[sm] - mittel[sel]) ** 2)))
+             for sm in pegel}
+    # a) FEM derselben Geometrie
+    assert rms["3d"] < rms["2d"], \
+        (f"3D muss die FEM besser treffen als 2D ({rms['3d']:.2f} gegen "
+         f"{rms['2d']:.2f} dB RMS)")
+    assert np.all(pegel["2d"][fs >= 10e3] < fem[sel][fs >= 10e3]), \
+        "2D muss gegen die FEM überdämpft sein (Überschätzung am Lochkreis)"
+    stand.sperrklinke("rms_3d_gegen_fem", rms["3d"], "dB",
+                      "3D gegen COMSOL-FEM, 1–20 kHz", toleranz=0.05)
+    stand.wert("rms_2d_gegen_fem", rms["2d"], "dB",
+               "2D gegen COMSOL-FEM, 1–20 kHz")
+    # b) Messungen: 3D bis 12.6 kHz im Streuband der drei Kurven
+    band = fs <= 12.6e3
+    lo = np.minimum(unten, oben)[sel]
+    hi = np.maximum(unten, oben)[sel]
+    lo = np.minimum(lo, mittel[sel])
+    hi = np.maximum(hi, mittel[sel])
+    ausser = pegel["3d"][band] - np.clip(pegel["3d"][band], lo[band] - 0.02,
+                                          hi[band] + 0.02)
+    assert np.all(ausser == 0.0), \
+        (f"3D muss bis 12.6 kHz im Streuband der B&K-Messungen liegen "
+         f"(außerhalb um {np.round(ausser, 2)} dB)")
+    stand.wert("rms_3d_gegen_messung", rms_m["3d"], "dB",
+               "3D gegen B&K-Messmittel, 1–20 kHz")
+    stand.wert("rms_2d_gegen_messung", rms_m["2d"], "dB",
+               "2D gegen B&K-Messmittel, 1–20 kHz")
+    # c) Widerstand
+    q3 = float(np.mean(re_z["3d"] / res[sel, 1]))
+    q2 = float(np.mean(re_z["2d"] / res[sel, 1]))
+    assert abs(np.log(q3)) < abs(np.log(q2)), \
+        f"3D-Widerstand muss näher an der FEM liegen ({q3:.2f} gegen {q2:.2f})"
+    stand.wert("widerstand_3d_zu_fem", q3, "", "Re Z 3D / FEM, Mittel 1–20 kHz")
+    stand.wert("widerstand_2d_zu_fem", q2, "", "Re Z 2D / FEM, Mittel 1–20 kHz")
+    i20 = int(np.argmax(fs))
+    print(f"COMSOL-Referenz B&K 4134 (Originalgeometrie, 200 V): 3D "
+          f"{rms['3d']:.2f} dB RMS gegen die FEM, 2D {rms['2d']:.2f} dB "
+          f"(überdämpft); 20 kHz: FEM {fem[sel][i20]:+.2f}, 3D "
+          f"{pegel['3d'][i20]:+.2f}, 2D {pegel['2d'][i20]:+.2f}, Messmittel "
+          f"{mittel[sel][i20]:+.2f} dB; 3D bis 12.6 kHz im Streuband der "
+          f"Messungen ({rms_m['3d']:.2f} dB RMS gegen das Mittel); Re Z "
+          f"3D/FEM {q3:.2f}, 2D/FEM {q2:.2f}  OK")
