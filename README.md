@@ -308,7 +308,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 78 Werte aus 26 Gegenproben, davon 8 Sperrklinken.
+Die Basis umfasst 79 Werte aus 26 Gegenproben, davon 8 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -356,9 +356,12 @@ Schreiben.
      und gegen die volle thermoviskose FEM fehlt dem 3D-Film kaum
      Dämpfung (Überhöhung +0,23 dB, `gp32.ueberhoehung_3d_minus_fem`).
      Die Abweichung ist damit 4134-spezifisch, keine allgemeine
-     Filmphysik. Offen ist, welche Eigenschaft der realen 4134 sie
-     trägt; dafür fehlen Quellen zur tatsächlichen Geometrie (s.
-     Abschnitt „Dämpfung am Lochkreis").
+     Filmphysik. Der Aktuator scheidet nach B&K aus; der Spalt, mit dem
+     COMSOL auf B&Ks Originalgeometrie rechnet (19 statt 20,77 µm),
+     erklärt etwa die Hälfte (`gp58.rms_4134_spalt_19um_db`). Der Rest
+     liegt vermutlich am Randweg (Zuckerwars Schlitz-Randbedingung, s.
+     Abschnitt „Dämpfung am Lochkreis"); dafür fehlt die reale
+     Geometrie von Plattenrand und Schlitz.
 
 2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 478 Hz, 3D
    495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,13,
@@ -1763,15 +1766,28 @@ Dünnschicht-Physik (viskose Trägheit, polytrope Kompressibilität mit
 thermischer Relaxation). Nur abgeschätzt, nicht eigens gerechnet:
 Gasverdünnung wirkt in die falsche Richtung (Knudsen-Zahl 0,003,
 Schlupf senkt die Dämpfung); Eintrittsverluste an Löchern und Schlitz
-sind bei Mündungsradien vom 25-Fachen des Spalts klein; eine
-Luftschicht vor dem Aktuator lieferte 8·10⁷ Pa·s/m³ erst bei etwa
-47 µm Abstand (randbelüftet, 3μ/(2πd³)), und seine Massenlast wirkt
-mit falschem Vorzeichen (Gegenprobe 52).
+sind bei Mündungsradien vom 25-Fachen des Spalts klein.
 
-**Geometrie-Deutungen verworfen:** ein kleinerer Spalt (18 µm statt
-20,77 µm, R ∝ h⁻³) trifft die Amplitude, verfehlt aber die Phase
-oberhalb 13 kHz (6,4° RMS); eine geschlossene Ringnut statt des
-Schlitzes ebenso (10,2°); die Lesart des Lochkreises als Durchmesser
+**Der Aktuator scheidet aus** (belegt): nach B&Ks Microphone Handbook
+(BE 1447, Abschn. 2.7) steht die perforierte Aktuatorplatte 0,4–0,8 mm
+vor der Membran, und Aktuator- und Druckfrequenzgang unterscheiden sich
+um 0,1 bis etwa 1 dB; für ½″-Kapseln sind keine Korrekturen nötig. Eine
+Luftschicht lieferte 8·10⁷ Pa·s/m³ erst bei etwa 47 µm Abstand
+(randbelüftet, 3μ/(2πd³)), und die Massenlast wirkt mit falschem
+Vorzeichen (Gegenprobe 52).
+
+**Der Spalt erklärt die Hälfte.** Das COMSOL-Anwendungsmodell der 4134
+rechnet mit B&Ks Originalgeometrie und einem Spalt von „around 19 µm"
+(Zuckerwars Tabelle I: 20,77 µm; B&K fertigt typisch 20 µm ± 0,5 µm) und
+trifft damit gemessene Kurven. Mit 19 µm halbiert sich die
+Amplitudenabweichung des 3D-Modells (1,67 → 0,77 dB RMS), und das
+Phasendefizit bis 5 kHz verschwindet weitgehend; zur Resonanz hin
+bleibt es (6,3° RMS gegen 1,3° mit Serienwiderstand). Der Rest muss
+aus der übrigen Geometrie kommen, die COMSOL von B&K hat und Tabelle I
+nicht wiedergibt.
+
+**Geometrie-Deutungen verworfen:** eine geschlossene Ringnut statt des
+Schlitzes (10,2° Phase); die Lesart des Lochkreises als Durchmesser
 (1,19 dB / 4,9°). Nebenbefund: die Dämpfung hängt stark an der Lage
 des Lochkreises; bei etwa 1,5 mm Radius ist sie am kleinsten, weil sich
 Loch- und Randentlüftung dort die Wege teilen.
@@ -1783,15 +1799,37 @@ ihrer Messung, die Zuckerwars Tabelle I nicht wiedergibt. Für die
 2D-Lochkreis-Darstellung heißt das: näher an 3D würde den 4146 und die
 FEM besser treffen, den 4134 schlechter.
 
-**Quellen für den nächsten Schritt** (Volltexte in dieser Umgebung
-nicht erreichbar, die Netzwerkregel sperrt die Verlagsserver):
-Homentcovschi & Miles, JASA 130, 3698 (2011) — Stokes-Lösung des
-Luftraums der 4134 mit Schlitz und Löchern, gegen Messwerte;
-das COMSOL-Anwendungsmodell der B&K 4134 (Geometrie von B&K,
-thermoviskos, gegen Messung); Honzík et al., JASA 134, 3573 (2013) —
-Membran, Randkavität und Spalt mit Stufe; Zuckerwars Tabelle I selbst
-(was „slit" dort genau bezeichnet). Entscheidend ist die reale
-Geometrie von Plattenrand und Schlitz der 4134.
+**Zuckerwars Schlitz.** In Zuckerwars Theorie (ausführlich im
+NASA-Bericht zum Hochtemperatur-Wandler, NTRS 19770013461, Kap. II und
+Anhang A) ist der Randschlitz eine Öffnung *in* der Gegenelektrode, über
+deren Mündung — wie über jedem Loch — eine gleichförmige
+Ausströmgeschwindigkeit angesetzt wird (Petritskayas Randbedingung);
+der Film läuft über die Mündung weiter. Er beschränkt das selbst auf
+Öffnungen mit kleiner radialer Ausdehnung; sein Prototyp hatte einen
+schmalen Schlitz (95 µm breit, 0,66 mm tief). Der 4134-Schlitz aus
+Tabelle I füllt dagegen den ganzen Ring zwischen Plattenrand und
+Einspannung (0,838 mm breit, 19 % des Radius). Für eine so breite
+Mündung dürfte die Randbedingung Strömung durch den Film über der
+Mündung erzwingen, also mehr Widerstand ergeben als eine offene
+Ringmündung mit gleichförmigem Druck, wie Capsim sie rechnet (Überlegung,
+nicht nachgerechnet). Dass Zuckerwars Tabellenwert R die
+Messung trifft, spricht deshalb eher für einen engeren Randweg in der
+realen 4134 als für fehlende Filmphysik — passend zum gedrosselten
+Schlitz, der am 4134 passt; der 4146 müsste dann anders gebaut sein.
+Ebenfalls dort: die Kolbenform der Membran unterschätzt die Dämpfung
+gegenüber Parabel- und Besselform (vgl. „Offene Punkte" 3).
+
+**Gelesene Quellen:** COMSOL Application Library, „The Brüel & Kjær
+4134 Condenser Microphone" (Modelldokumentation 6.4); B&K Microphone
+Handbook Vol. 1 (BE 1447); B&K Technical Review 1959-1; Zuckerwar,
+NASA-Bericht NTRS 19770013461; Honzík et al., JASA 134, 3573 (2013)
+(Randkavität ohne Löcher, für die 4134 nur mittelbar).
+**Noch nicht gelesen:** Homentcovschi & Miles, JASA 130, 3698 (2011) —
+Stokes-Lösung des 4134-Luftraums mit Schlitz und Löchern, die Draufsicht
+der Gegenelektrode ist dort abgebildet (Europe PMC und PMC nur hinter
+einer Browser-Prüfung, das PDF auf ws.binghamton.edu). Entscheidend
+bleibt die reale Geometrie von Plattenrand und Schlitz der 4134; B&Ks
+Geometrie steckt im COMSOL-Modell (`bk_4134_microphone.mphbin`).
 
 Die Gegenprobe prüft die Richtungen gegen Zuckerwars Messungen:
 Phasendefizit unter der Resonanz, Verbesserung des 4134 durch

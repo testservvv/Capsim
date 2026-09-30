@@ -367,8 +367,15 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
     #    jede zusätzliche Dämpfung die Übereinstimmung — der unveränderte
     #    3D-Löser trifft ihn besser als 2D (Gegenprobe 38).
     # c) Die naheliegenden Geometrie-Deutungen passen schon am 4134
-    #    schlechter als der Serienwiderstand: ein kleinerer Spalt (18 µm,
-    #    R ∝ h⁻³) und eine geschlossene Ringnut statt des Schlitzes.
+    #    schlechter als der Serienwiderstand: der Spalt, mit dem das
+    #    COMSOL-Anwendungsmodell der 4134 auf B&Ks Originalgeometrie rechnet
+    #    („around 19 µm" statt 20.77 µm in Zuckerwars Tab. I; R ∝ h⁻³),
+    #    halbiert die Amplitudenabweichung, lässt aber das Phasendefizit an
+    #    der Resonanz stehen; eine geschlossene Ringnut statt des Schlitzes
+    #    trifft die Phase noch schlechter.
+    #    Der Aktuator scheidet nach B&K aus (Microphone Handbook BE 1447:
+    #    perforierte Platte 0.4–0.8 mm vor der Membran; für 1/2"-Kapseln
+    #    sind keine Korrekturen Aktuator -> Druck nötig).
     # d) Gegen die volle thermoviskose FEM (Gegenprobe 32, Navier–Stokes
     #    statt Reynolds, vier Löcher auf einem Kreis) liegt die 3D-
     #    Überhöhung nur 0.2–0.3 dB über der FEM (Stand-Wert dort).
@@ -429,19 +436,24 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
                "3D + 1000 Rayl gegen Fig. 7, Amplitude")
 
     # c) Geometrie-Deutungen am 4134: Phase schlechter als mit R
-    _, _, _, raH, rpH = _fig("4134", air_gap=18e-6)
+    _, _, _, raH, rpH = _fig("4134", air_gap=19e-6)
     _, _, _, raN, rpN = _fig("4134", ring_vent_width=0.0,
                              ring_vent_length=None,
                              backplate_diameter=2 * 4.445e-3,
                              clearance_ring_diameter=2 * 4.026e-3,
                              clearance_ring_width=0.838e-3,
                              clearance_ring_depth=0.305e-3)
+    assert raH < ra34, \
+        (f"4134: der kleinere COMSOL-Spalt muss die Amplitude besser "
+         f"treffen ({ra34:.2f} -> {raH:.2f} dB)")
     assert rpH > rpR and rpN > rpR, \
-        (f"4134: Spalt 18 µm ({rpH:.2f}°) und geschlossene Ringnut "
+        (f"4134: Spalt 19 µm ({rpH:.2f}°) und geschlossene Ringnut "
          f"({rpN:.2f}°) müssen die Phase schlechter treffen als der "
          f"Serienwiderstand ({rpR:.2f}°)")
-    stand.wert("rms_4134_spalt_18um_grad", rpH, "°",
-               "3D, Spalt 18 µm, gegen Fig. 6, Phase")
+    stand.wert("rms_4134_spalt_19um_db", raH, "dB",
+               "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Amplitude")
+    stand.wert("rms_4134_spalt_19um_grad", rpH, "°",
+               "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Phase")
     stand.wert("rms_4134_ringnut_grad", rpN, "°",
                "3D, geschlossene Ringnut, gegen Fig. 6, Phase")
     print(f"Dämpfung am Lochkreis: 4134 3D {ra34:.2f} dB / {rp34:.1f}° RMS "
@@ -449,6 +461,6 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
           f"{100 * anteil58:.0f} % der gemessenen (fehlender Widerstand); "
           f"+8.1e7 Pa·s/m³ seriell {raR:.2f} dB / {rpR:.1f}°, Schlitz 15 µm "
           f"{raS:.2f} dB / {rpS:.1f}° — am 4146 beides schlechter "
-          f"({ra46:.2f} -> {ra46R:.2f} / {ra46S:.2f} dB); Spalt 18 µm "
-          f"{rpH:.1f}°, Ringnut {rpN:.1f}° Phase — 4134-spezifisch, keine "
-          f"allgemeine Filmphysik  OK")
+          f"({ra46:.2f} -> {ra46R:.2f} / {ra46S:.2f} dB); Spalt 19 µm "
+          f"(COMSOL) {raH:.2f} dB / {rpH:.1f}°, Ringnut {rpN:.1f}° Phase — "
+          f"4134-spezifisch, keine allgemeine Filmphysik  OK")

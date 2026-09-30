@@ -485,77 +485,84 @@
   "art": "stand"
  },
  "gp58.phase_3d_anteil_4134": {
-  "wert": 0.7084150354134742,
+  "wert": 0.7084150354180545,
   "einheit": "",
   "text": "3D-Nacheilung / gemessene, Mittel 2–10 kHz",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4134_db": {
-  "wert": 1.667805139120559,
+  "wert": 1.6678051391207958,
   "einheit": "dB",
   "text": "3D gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4134_grad": {
-  "wert": 7.588890566660628,
+  "wert": 7.588890566619017,
   "einheit": "°",
   "text": "3D gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4146_db": {
-  "wert": 0.7464057049552194,
+  "wert": 0.7464057049597026,
   "einheit": "dB",
   "text": "3D gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4146_grad": {
-  "wert": 8.654856612680323,
+  "wert": 8.65485661269509,
   "einheit": "°",
   "text": "3D gegen Fig. 7, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_mit_serien_r_db": {
-  "wert": 0.13444492966701757,
+  "wert": 0.13444492966700555,
   "einheit": "dB",
   "text": "3D + 5000 Rayl gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_mit_serien_r_grad": {
-  "wert": 1.2839082851850405,
+  "wert": 1.2839082852029247,
   "einheit": "°",
   "text": "3D + 5000 Rayl gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_ringnut_grad": {
-  "wert": 10.241775332640628,
+  "wert": 10.241775193780633,
   "einheit": "°",
   "text": "3D, geschlossene Ringnut, gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_schlitz_15um_db": {
-  "wert": 0.2805558704071318,
+  "wert": 0.2805558704073249,
   "einheit": "dB",
   "text": "3D, Randschlitz 15 µm, gegen Fig. 6",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
- "gp58.rms_4134_spalt_18um_grad": {
-  "wert": 6.441715546636925,
+ "gp58.rms_4134_spalt_19um_db": {
+  "wert": 0.7741008978369044,
+  "einheit": "dB",
+  "text": "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Amplitude",
+  "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
+  "art": "stand"
+ },
+ "gp58.rms_4134_spalt_19um_grad": {
+  "wert": 6.348060479542718,
   "einheit": "°",
-  "text": "3D, Spalt 18 µm, gegen Fig. 6, Phase",
+  "text": "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4146_mit_serien_r_db": {
-  "wert": 1.3816216863760125,
+  "wert": 1.381621686382792,
   "einheit": "dB",
   "text": "3D + 1000 Rayl gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
