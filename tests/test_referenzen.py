@@ -384,6 +384,16 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
     # d) Gegen die volle thermoviskose FEM (Gegenprobe 32, Navier–Stokes
     #    statt Reynolds, vier Löcher auf einem Kreis) liegt die 3D-
     #    Überhöhung nur 0.2–0.3 dB über der FEM (Stand-Wert dort).
+    # e) B&Ks ORIGINALGEOMETRIE (COMSOL-Anwendungsmodell, Geometrie
+    #    „courtesy of Brüel and Kjær", aus der mphtxt-Datei abgelesen):
+    #    Spalt 18.6 µm, sechs Löcher r = 0.5 mm auf dem Kreis r = 1.70 mm
+    #    (Tab. I: 2.03 mm), Platte r = 3.6 mm, am Rand 0.3 mm dick mit
+    #    kegeliger Unterseite (1.03 mm an der Lochmitte), Membran r =
+    #    4.5 mm; der Ring zwischen Plattenrand und Einspannung ist
+    #    0.9 mm breit offen zur kegelförmigen Rückkammer (131 mm³) — es
+    #    gibt KEINEN gedrosselten Randweg. Mit dieser Geometrie bleibt das
+    #    3D-Modell unterdämpft wie mit Tab. I: der kleinere Spalt dämpft
+    #    mehr, der weiter innen liegende Lochkreis weniger.
     # Folgerung: dem 3D-Film fehlt keine allgemeine Physik; die Abweichung
     # ist 4134-spezifisch (Geometrie der realen Kapsel oder ihrer Messung).
     if not _HAS_SCIPY:
@@ -461,11 +471,29 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
                "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Phase")
     stand.wert("rms_4134_ringnut_grad", rpN, "°",
                "3D, geschlossene Ringnut, gegen Fig. 6, Phase")
+
+    # e) B&K-Originalgeometrie: das 3D-Modell bleibt im Hochton über der
+    #    Messung (Richtung), die Beträge sind Stand-Werte
+    a_bp58 = 3.6e-3
+    bk58 = dict(membrane_diameter=9.0e-3, air_gap=18.6e-6,
+                backplate_diameter=2 * a_bp58, backplate_thickness=1.029e-3,
+                through_hole_diameter=1.0e-3, through_hole_pcd=2 * 1.70e-3,
+                ring_vent_width=0.86e-3, ring_vent_length=0.30e-3,
+                cavity_length=131e-9 / (np.pi * a_bp58**2))
+    fB, daB, dpB, raB, rpB = _fig("4134", **bk58)
+    assert np.all(daB[fB >= 13000.0] > 0.0), \
+        (f"4134 mit B&K-Geometrie: das 3D-Modell muss im Hochton über der "
+         f"Messung bleiben ({np.round(daB[fB >= 13000.0], 2)} dB)")
+    stand.wert("rms_4134_bk_geometrie_db", raB, "dB",
+               "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6")
+    stand.wert("rms_4134_bk_geometrie_grad", rpB, "°",
+               "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6, Phase")
     print(f"Dämpfung am Lochkreis: 4134 3D {ra34:.2f} dB / {rp34:.1f}° RMS "
           f"gegen Fig. 6, Nacheilung unter der Resonanz nur "
           f"{100 * anteil58:.0f} % der gemessenen (fehlender Widerstand); "
           f"+8.1e7 Pa·s/m³ seriell {raR:.2f} dB / {rpR:.1f}°, Schlitz 15 µm "
           f"{raS:.2f} dB / {rpS:.1f}° — am 4146 beides schlechter "
           f"({ra46:.2f} -> {ra46R:.2f} / {ra46S:.2f} dB); Spalt 19 µm "
-          f"(COMSOL) {raH:.2f} dB / {rpH:.1f}°, Ringnut {rpN:.1f}° Phase — "
+          f"(COMSOL) {raH:.2f} dB / {rpH:.1f}°, Ringnut {rpN:.1f}° Phase; "
+          f"B&K-Originalgeometrie {raB:.2f} dB / {rpB:.1f}° — "
           f"4134-spezifisch, keine allgemeine Filmphysik  OK")

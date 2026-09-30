@@ -308,7 +308,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 79 Werte aus 26 Gegenproben, davon 8 Sperrklinken.
+Die Basis umfasst 81 Werte aus 26 Gegenproben, davon 8 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -358,13 +358,17 @@ Schreiben.
      Die Abweichung ist damit 4134-spezifisch, keine allgemeine
      Filmphysik. Der Aktuator scheidet nach B&K aus; der Spalt, mit dem
      COMSOL auf B&Ks Originalgeometrie rechnet (19 statt 20,77 µm),
-     erklärt etwa die Hälfte (`gp58.rms_4134_spalt_19um_db`). Der Rest
-     liegt vermutlich am Randweg (Zuckerwars Schlitz-Randbedingung, s.
-     Abschnitt „Dämpfung am Lochkreis"); dafür fehlt die reale
-     Geometrie von Plattenrand und Schlitz. Die Stokes-Rechnung von
+     erklärt für sich etwa die Hälfte (`gp58.rms_4134_spalt_19um_db`);
+     zusammen mit dem übrigen Originalmaß (Lochkreis weiter innen)
+     bleibt die Abweichung aber bestehen. Die Stokes-Rechnung von
      Homentcovschi & Miles (2011) mit derselben Geometrie ist nach
      eigener Aussage überdämpft; die Messung liegt zwischen ihr und dem
-     3D-Modell.
+     3D-Modell. **Nachtrag:** B&Ks Originalgeometrie (COMSOL) hat einen
+     weit offenen Randweg und ändert am Befund nichts (1,73 dB RMS,
+     `gp58.rms_4134_bk_geometrie_db`); offen bleibt, ob der 3D-Film
+     für diese Geometrie Dämpfung verliert, die eine volle
+     thermoviskose Rechnung hat — das klärt ein Vergleich mit dem
+     gerechneten COMSOL-Ergebnis derselben Geometrie.
 
 2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 478 Hz, 3D
    495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,13,
@@ -1816,11 +1820,30 @@ Mündung dürfte die Randbedingung Strömung durch den Film über der
 Mündung erzwingen, also mehr Widerstand ergeben als eine offene
 Ringmündung mit gleichförmigem Druck, wie Capsim sie rechnet (Überlegung,
 nicht nachgerechnet). Dass Zuckerwars Tabellenwert R die
-Messung trifft, spricht deshalb eher für einen engeren Randweg in der
-realen 4134 als für fehlende Filmphysik — passend zum gedrosselten
-Schlitz, der am 4134 passt; der 4146 müsste dann anders gebaut sein.
-Ebenfalls dort: die Kolbenform der Membran unterschätzt die Dämpfung
-gegenüber Parabel- und Besselform (vgl. „Offene Punkte" 3).
+Messung trifft, ließ einen engeren Randweg in der realen 4134 vermuten.
+**B&Ks Originalgeometrie widerlegt das** (s. u.). Ebenfalls in Zuckerwars
+Bericht: die Kolbenform der Membran unterschätzt die Dämpfung gegenüber
+Parabel- und Besselform (vgl. „Offene Punkte" 3).
+
+**B&Ks Originalgeometrie.** Das COMSOL-Anwendungsmodell rechnet mit der
+Geometrie von B&K; aus ihr (als Text exportiert, 1/12-Sektor) abgelesen:
+Spalt 18,6 µm; sechs Löcher mit r = 0,5 mm auf dem Kreis r = 1,70 mm
+(Tabelle I: 2,03 mm); Platte r = 3,6 mm, am Rand 0,3 mm dick, Unterseite
+kegelig (an der Lochmitte 1,03 mm); Membran r = 4,5 mm; der Ring zwischen
+Plattenrand und Einspannung ist 0,9 mm breit **offen** zur Rückkammer,
+deren Außenwand ein Kegel von (4,5 mm; 0) nach (3,75 mm; −2,95 mm) ist
+(131 mm³, mit Löchern 136 mm³; Tabelle I: 126 mm³); dazu die
+Druckausgleichs-Öffnung (11 µm breit, 1,5 mm lang, für das Hörband
+bedeutungslos). Zuckerwars „slit" (0,838 × 0,3 mm) ist also dieser
+offene Ring mit der 0,3-mm-Plattenkante — einen gedrosselten Randweg
+gibt es nicht. Mit dieser Geometrie bleibt das 3D-Modell gegen Fig. 6
+gleich unterdämpft (1,73 dB / 5,8° RMS, +3,5 dB bei 20 kHz;
+`gp58.rms_4134_bk_geometrie_db`): der kleinere Spalt dämpft mehr (allein
+0,58 dB), der weiter innen liegende Lochkreis weniger — die Dämpfung ist
+bei r ≈ 1,5 mm am kleinsten. Mit 200 V Vorspannung (wie im COMSOL-
+Modell; Membran in der Mitte 0,68 µm durchgebogen) liegt 3D bei 1,29 dB /
+3,7°, das 2D-Modell wird überdämpft (0,83 dB). Das 2D-Modell trifft die
+Messung mit beiden Geometrien bei 28 V (0,30 dB).
 
 **Homentcovschi & Miles (JASA 130, 3698, 2011)** lösen den Luftraum der
 4134 — Spalt, sechs Löcher, Randschlitz (0,3 mm lang, in ihrer Fig. 1

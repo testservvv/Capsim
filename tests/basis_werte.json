@@ -519,6 +519,20 @@
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
+ "gp58.rms_4134_bk_geometrie_db": {
+  "wert": 1.7310030808518597,
+  "einheit": "dB",
+  "text": "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6",
+  "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
+  "art": "stand"
+ },
+ "gp58.rms_4134_bk_geometrie_grad": {
+  "wert": 5.80117996333475,
+  "einheit": "°",
+  "text": "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6, Phase",
+  "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
+  "art": "stand"
+ },
  "gp58.rms_4134_mit_serien_r_db": {
   "wert": 0.13444492966700555,
   "einheit": "dB",
