@@ -361,7 +361,10 @@ Schreiben.
      erklärt etwa die Hälfte (`gp58.rms_4134_spalt_19um_db`). Der Rest
      liegt vermutlich am Randweg (Zuckerwars Schlitz-Randbedingung, s.
      Abschnitt „Dämpfung am Lochkreis"); dafür fehlt die reale
-     Geometrie von Plattenrand und Schlitz.
+     Geometrie von Plattenrand und Schlitz. Die Stokes-Rechnung von
+     Homentcovschi & Miles (2011) mit derselben Geometrie ist nach
+     eigener Aussage überdämpft; die Messung liegt zwischen ihr und dem
+     3D-Modell.
 
 2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 478 Hz, 3D
    495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,13,
@@ -1819,17 +1822,31 @@ Schlitz, der am 4134 passt; der 4146 müsste dann anders gebaut sein.
 Ebenfalls dort: die Kolbenform der Membran unterschätzt die Dämpfung
 gegenüber Parabel- und Besselform (vgl. „Offene Punkte" 3).
 
-**Gelesene Quellen:** COMSOL Application Library, „The Brüel & Kjær
-4134 Condenser Microphone" (Modelldokumentation 6.4); B&K Microphone
-Handbook Vol. 1 (BE 1447); B&K Technical Review 1959-1; Zuckerwar,
-NASA-Bericht NTRS 19770013461; Honzík et al., JASA 134, 3573 (2013)
-(Randkavität ohne Löcher, für die 4134 nur mittelbar).
-**Noch nicht gelesen:** Homentcovschi & Miles, JASA 130, 3698 (2011) —
-Stokes-Lösung des 4134-Luftraums mit Schlitz und Löchern, die Draufsicht
-der Gegenelektrode ist dort abgebildet (Europe PMC und PMC nur hinter
-einer Browser-Prüfung, das PDF auf ws.binghamton.edu). Entscheidend
-bleibt die reale Geometrie von Plattenrand und Schlitz der 4134; B&Ks
-Geometrie steckt im COMSOL-Modell (`bk_4134_microphone.mphbin`).
+**Homentcovschi & Miles (JASA 130, 3698, 2011)** lösen den Luftraum der
+4134 — Spalt, sechs Löcher, Randschlitz (0,3 mm lang, in ihrer Fig. 1
+als schräger Ringkanal vom Plattenrand in die Rückkammer), Rückkammer —
+mit den linearisierten Stokes-Gleichungen, isotherm (c_T = 290 m/s),
+mit Zuckerwars Geometrie und μ = 1,89·10⁻⁵. Sie schreiben selbst, ihr
+Ergebnis sei gegen die Messung überdämpft, ohne Begründung. Aus ihrer
+Fig. 3 abgelesen: Amplitude −2,3 dB bei 10 kHz, −7,5 dB bei 15 kHz,
+unter −20 dB bei 19,5 kHz (Messung +0,6 / 0 / etwa −1 bis −3 dB). Die
+Phase dagegen liegt bis 10 kHz fast auf dem 3D-Modell von Capsim (28°
+gegen 26° bei 10 kHz; Messung 32–38°) — beide Rechnungen eilen dort
+weniger nach als die Messung. Amplitude und Phase ihrer Kurve passen
+nicht zu *einem* gedämpften Resonator; ihre Amplitude taugt deshalb
+nicht als Referenz, ihre Phase stützt den Phasenbefund oben. Damit
+treffen zwei unabhängige Rechnungen der Zuckerwar-Geometrie die Messung
+nicht, in entgegengesetzter Richtung der Amplitude — der
+Beschreibung des Randwegs kommt das größte Gewicht zu.
+
+**Gelesene Quellen:** Homentcovschi & Miles, JASA 130, 3698 (2011);
+COMSOL Application Library, „The Brüel & Kjær 4134 Condenser Microphone"
+(Modelldokumentation 6.4); B&K Microphone Handbook Vol. 1 (BE 1447);
+B&K Technical Review 1959-1; Zuckerwar, NASA-Bericht NTRS 19770013461;
+Honzík et al., JASA 134, 3573 (2013) (Randkavität ohne Löcher, für die
+4134 nur mittelbar). Entscheidend bleibt die reale Geometrie von
+Plattenrand und Schlitz der 4134; B&Ks Geometrie steckt im COMSOL-Modell
+(`bk_4134_microphone.mphbin`, nur mit COMSOL zu öffnen).
 
 Die Gegenprobe prüft die Richtungen gegen Zuckerwars Messungen:
 Phasendefizit unter der Resonanz, Verbesserung des 4134 durch

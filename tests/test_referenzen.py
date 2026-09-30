@@ -376,6 +376,11 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
     #    Der Aktuator scheidet nach B&K aus (Microphone Handbook BE 1447:
     #    perforierte Platte 0.4–0.8 mm vor der Membran; für 1/2"-Kapseln
     #    sind keine Korrekturen Aktuator -> Druck nötig).
+    #    Homentcovschi & Miles (JASA 130, 3698, 2011) rechnen dieselbe
+    #    Geometrie mit den Stokes-Gleichungen: ihre Phase liegt bis 10 kHz
+    #    fast auf diesem 3D-Modell (28° gegen 26°, gemessen 32–38°), ihre
+    #    Amplitude ist nach eigener Aussage überdämpft (−7.5 dB bei
+    #    15 kHz) — die Messung liegt zwischen beiden Rechnungen.
     # d) Gegen die volle thermoviskose FEM (Gegenprobe 32, Navier–Stokes
     #    statt Reynolds, vier Löcher auf einem Kreis) liegt die 3D-
     #    Überhöhung nur 0.2–0.3 dB über der FEM (Stand-Wert dort).
