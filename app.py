@@ -455,14 +455,14 @@ def _coerce(key, val):
         return val
     if key == "fabric_rear_pos" and val in FAB_POS_LABELS:
         return val
-    raise ValueError(f"ungültiger Wert für '{key}': {val!r}")
+    raise ValueError(tr("err_value", key=key, val=repr(val)))
 
 
 def _projekt_params(data):
     """Projekt-JSON (dict) -> (vollständiger Parametersatz, Anzahl der
     übernommenen Projektwerte). ValueError bei defekter Datei."""
     if data.get("format") != "capsim-project":
-        raise ValueError("kein Capsim-Projektformat")
+        raise ValueError(tr("err_format"))
     params_in = data.get("params", {})
     # Erst alles validieren (staged), dann atomar anwenden — eine
     # defekte Datei lässt den aktuellen Zustand unangetastet.
@@ -867,7 +867,7 @@ def compute_results(cache_key, capsule, progress=None):
         d1 = capsule.directivity(frequencies_hz=(float(fd),))
         di["angles_deg"] = d1["angles_deg"]
         di["patterns"].update(d1["patterns"])
-        _tick(1, f"Richtdiagramm {fd:.0f} Hz")
+        _tick(1, tr("prog_di", f=fd))
     sens_1k = float(abs(capsule.transfer_function(np.array([1000.0]))[0]))
     delay = capsule.delay_diagnostics()
     # Eigenrauschen (thermisch-akustisch, FDT/Nyquist) — nur 1D/2D; der

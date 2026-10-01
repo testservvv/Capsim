@@ -507,11 +507,12 @@ Messungen der realen Kapsel.
 
 - Die GUI (`app.py`) hat seit Gegenprobe 63 einen Test: jedes
   Beispielprojekt läuft durch die echte App, liegt in den Feldbereichen
-  und ergibt die Kurve des Modells. Es fehlen noch eine Probe, dass
-  jeder Übersetzungsschlüssel Englisch und Deutsch hat, ein Lauf in
-  deutscher Sprache und ein Test des Uploaders selbst (der AppTest kann
-  ihn nicht bedienen; die Probe schreibt den Session-State wie
-  `_load_project()`).
+  und ergibt die Kurve des Modells; seit Gegenprobe 66 in beiden
+  Sprachen, mit vollständigen Übersetzungstabellen. Es fehlt ein Test
+  des Uploaders selbst (der AppTest kann ihn nicht bedienen; die Probe
+  schreibt den Session-State wie `_load_project()`). Fehlermeldungen
+  des Modells selbst (`ValueError` beim Bau einer Kapsel) sind nur
+  deutsch und erscheinen so auch in der englischen Oberfläche.
 - Kein automatischer Testlauf bei jedem Push (kein GitHub-Workflow).
 - Laufzeit: die BEM-Proben 41, 43, 44, 26 und 21 brauchen etwa 117 der
   316 s Rechenzeit; Gegenprobe 41 allein (54 s) ist die Untergrenze des
@@ -2410,6 +2411,23 @@ des Projekts): die 2D-Abweichung gegen die FEM in Gegenprobe 59
 Hochtonüberschuss des 2D-Modells verdeckte; das 3D-Modell trifft beide
 Referenzen ohne sie besser. Die Aktuatorlast selbst ist offen („Offene
 Punkte“ 9).
+
+### Sprachen der Oberfläche (Gegenprobe 66)
+
+`tests/test_app_projekte.py`:
+- a) Jeder Eintrag in `TR` und `LABEL_TR` hat Englisch und Deutsch, mit
+  denselben Platzhaltern, und lässt sich in beiden füllen. Jeder
+  `tr()`-Aufruf in `app.py` nennt einen vorhandenen Schlüssel (aus dem
+  Quelltext gelesen), und kein Schlüssel ist unbenutzt. Gefunden hat das
+  den unbenutzten Schlüssel `prog_di`: der Fortschrittstext beim
+  Richtdiagramm war fest „Richtdiagramm … Hz“, auch auf Englisch. Ebenso
+  waren die Meldungen des Projekt-Laders („ungültiger Wert …“, „kein
+  Capsim-Projektformat“) fest deutsch; alle drei laufen jetzt über `tr()`.
+- b) Voreinstellung und alle Beispielprojekte laufen auf Englisch und
+  auf Deutsch durch die App (16 Läufe): kein Fehler, und kein sichtbarer
+  Text — Überschriften, Meldungen, Feldbeschriftungen und Hilfen,
+  angezeigte Optionen, Diagrammtitel und Spurnamen — ist ein fester Text
+  der anderen Sprache.
 
 ## Verlustmechanismen (vollständig erfasst)
 

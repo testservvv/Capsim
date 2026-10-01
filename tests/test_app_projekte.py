@@ -1,4 +1,5 @@
-"""Gegenprobe 63: Eingabebereiche der GUI und Beispielprojekte (app.py)."""
+"""Gegenproben 63, 66: Eingabebereiche, Beispielprojekte und Sprachen der
+GUI (app.py)."""
 import glob
 import json
 import logging
@@ -211,3 +212,169 @@ def test_gp63c_klemmen_statt_nullsetzen(app):
           f"Lauf keine. Vorher (Randspalt 0): 10 kHz "
           f"{rel[0.0][2]:+.1f} dB statt {rel[860.0][2]:+.1f} dB re 100 Hz "
           f"OK")
+
+
+def _texte(at):
+    """Alle sichtbaren Texte eines App-Laufs: Überschriften, Meldungen,
+    Beschriftungen und Hilfen der Felder, angezeigte Optionen (bei Radio-
+    und Auswahlfeldern NICHT der Wert — der ist kanonisch, angezeigt wird
+    die Übersetzung) und die Titel und Spurnamen der Diagramme."""
+    out = set()
+    for typ in ("markdown", "caption", "title", "subheader", "header",
+                "warning", "info", "success", "error", "metric", "expander",
+                "number_input", "toggle", "checkbox", "radio", "selectbox",
+                "multiselect", "slider", "button", "tab", "code", "text"):
+        try:
+            els = at.get(typ)
+        except Exception:
+            continue
+        auswahl = typ in ("radio", "selectbox", "multiselect")
+        for e in els:
+            for attr in (("label", "help") if auswahl
+                         else ("value", "label", "help")):
+                v = getattr(e, attr, None)
+                if isinstance(v, str) and v:
+                    out.add(v.strip())
+            if auswahl:
+                out.update(str(o).strip() for o in e.options)
+
+    def sammle(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k in ("text", "name") and isinstance(v, str):
+                    out.add(v.strip())
+                else:
+                    sammle(v)
+        elif isinstance(x, list):
+            for v in x:
+                sammle(v)
+    for ch in at.get("plotly_chart"):
+        spec = json.loads(ch.proto.spec)
+        sammle(spec.get("layout", {}))
+        sammle([{"name": t.get("name")} for t in spec.get("data", [])])
+    return out
+
+
+def test_gp66_uebersetzungen(app):
+    """Gegenprobe 66: Übersetzungstabellen vollständig und benutzt."""
+    # a) Jeder Eintrag in TR und LABEL_TR hat genau Englisch und Deutsch,
+    #    beide nicht leer, mit denselben Platzhaltern (sonst scheitert
+    #    tr(...).format in nur EINER Sprache), und beide lassen sich mit
+    #    denselben Werten füllen.
+    # b) Jeder tr()-Aufruf in app.py nennt einen vorhandenen Schlüssel
+    #    (aus dem Quelltext, auch beide Zweige von "a if x else b"), es
+    #    gibt keine dynamisch gebildeten Schlüssel, und kein Schlüssel ist
+    #    unbenutzt. Gegenprobe: der unbenutzte Schlüssel prog_di war die
+    #    Spur zum fest deutschen Fortschrittstext „Richtdiagramm … Hz“,
+    #    den auch die englische Oberfläche zeigte.
+    import ast
+    import string
+    import translations as T
+    fmt = string.Formatter()
+
+    def felder(txt):
+        return {f for _, f, _, _ in fmt.parse(txt) if f is not None}
+
+    fehler = []
+    for name, tab in (("TR", T.TR), ("LABEL_TR", T.LABEL_TR)):
+        for k, v in tab.items():
+            if not isinstance(v, dict) or set(v) != {"en", "de"}:
+                fehler.append(f"{name}[{k}]: Sprachen {v!r:.60}")
+                continue
+            if not all(isinstance(x, str) and x.strip() for x in v.values()):
+                fehler.append(f"{name}[{k}]: leer")
+                continue
+            if felder(v["en"]) != felder(v["de"]):
+                fehler.append(f"{name}[{k}]: Platzhalter "
+                              f"{felder(v['en'])} / {felder(v['de'])}")
+                continue
+            werte = {f: 1.5 for f in felder(v["en"])}
+            for lang in ("en", "de"):
+                try:
+                    v[lang].format(**werte)
+                except Exception as exc:
+                    fehler.append(f"{name}[{k}].{lang}: {exc}")
+    assert not fehler, fehler
+    src = open(os.path.join(_WURZEL, "app.py"), encoding="utf-8").read()
+    baum = ast.parse(src)
+
+    def konst(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.IfExp):
+            a_, b_ = konst(node.body), konst(node.orelse)
+            return a_ + b_ if a_ is not None and b_ is not None else None
+        return None
+
+    benutzt, dynamisch = set(), []
+    for node in ast.walk(baum):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "tr" and node.args):
+            k = konst(node.args[0])
+            if k is None:
+                dynamisch.append(ast.get_source_segment(src, node))
+            else:
+                benutzt.update(k)
+    assert not dynamisch, f"dynamische tr-Schlüssel: {dynamisch}"
+    fehlt = sorted(benutzt - set(T.TR))
+    assert not fehlt, f"tr() mit unbekanntem Schlüssel: {fehlt}"
+    tot = sorted(set(T.TR) - benutzt)
+    assert not tot, f"unbenutzte Übersetzungen (vergessene Stelle?): {tot}"
+    print(f"Übersetzungen: {len(T.TR)} Texte + {len(T.LABEL_TR)} Auswahl-"
+          f"werte, alle zweisprachig mit gleichen Platzhaltern; "
+          f"{len(benutzt)} Schlüssel in app.py, keiner fehlt, keiner "
+          f"unbenutzt  OK")
+
+
+@pytest.mark.slow
+def test_gp66b_oberflaeche_in_beiden_sprachen(app):
+    """Gegenprobe 66 b: die Oberfläche spricht durchgehend EINE Sprache."""
+    # Jedes Beispielprojekt und die Voreinstellung laufen auf Englisch und
+    # auf Deutsch durch die App: kein Fehler, und kein sichtbarer Text ist
+    # ein fester Text der jeweils anderen Sprache (verglichen werden alle
+    # Einträge ohne Platzhalter, deren Sprachen sich unterscheiden, als
+    # ganzer Text).
+    import translations as T
+    fremd = {"de": set(), "en": set()}
+    for tab in (T.TR, T.LABEL_TR):
+        for v in tab.values():
+            if "{" in v["en"] or v["en"].strip() == v["de"].strip():
+                continue
+            fremd["de"].add(v["en"].strip())
+            fremd["en"].add(v["de"].strip())
+    A = app
+    laeufe = 0
+    for lang in ("de", "en"):
+        for pfad in [None] + _BEISPIELE:
+            if pfad is None:
+                p = dict(A.DEFAULTS)
+            else:
+                _, p = _projekt(A, pfad)
+            p["n_points"] = _NPTS
+            from streamlit.testing.v1 import AppTest
+            at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                                   default_timeout=600)
+            at.session_state["ui_lang"] = lang
+            for key, val in p.items():
+                if key in A._RING_PREFIX:
+                    pre = A._RING_PREFIX[key]
+                    for i, (cnt, pcd) in enumerate(val):
+                        at.session_state[f"p_{pre}_ring_n_{i}"] = cnt
+                        at.session_state[f"p_{pre}_ring_pcd_{i}"] = pcd
+                    at.session_state[f"{pre}_ring_count"] = len(val)
+                else:
+                    at.session_state["p_" + key] = val
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                at.run()
+            name = os.path.basename(pfad) if pfad else "Voreinstellung"
+            assert not at.exception, \
+                f"{lang}, {name}: {[e.value for e in at.exception]}"
+            leck = sorted(t for t in _texte(at) if t in fremd[lang])
+            assert not leck, f"{lang}, {name}: fremdsprachig {leck}"
+            titel = T.TR["app_title"][lang]
+            assert titel in _texte(at), f"{lang}, {name}: Titel fehlt"
+            laeufe += 1
+    print(f"Oberfläche in beiden Sprachen: {laeufe} App-Läufe "
+          f"(Voreinstellung und {len(_BEISPIELE)} Beispiele, EN und DE) "
+          f"ohne Fehler und ohne Text der anderen Sprache  OK")

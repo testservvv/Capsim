@@ -61,6 +61,14 @@ TR = {
         "en": "Project loaded — {n} parameters applied.",
         "de": "Projekt geladen — {n} Parameter übernommen.",
     },
+    "err_format": {
+        "en": "not a Capsim project file",
+        "de": "kein Capsim-Projektformat",
+    },
+    "err_value": {
+        "en": "invalid value for '{key}': {val}",
+        "de": "ungültiger Wert für '{key}': {val}",
+    },
     "load_fail": {
         "en": "Could not load project: {exc}",
         "de": "Projekt konnte nicht geladen werden: {exc}",
