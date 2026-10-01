@@ -1139,7 +1139,7 @@ with st.sidebar:
 
         # Durchgehender Randspalt (B&K) — nicht bei der K67-Bauform
         if st.session_state["p_architecture"] != K67_LABEL:
-            st.number_input(tr("lbl_ring_vent"), 0.0, 500.0, step=5.0,
+            st.number_input(tr("lbl_ring_vent"), 0.0, 2000.0, step=5.0,
                             key="p_ring_vent_um",
                             help=tr("help_ring_vent"))
             st.number_input(tr("lbl_ring_vent_len"), 0.0, 20.0, step=0.1,

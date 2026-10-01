@@ -2291,6 +2291,34 @@ Nieren-Phasenschiebers. Eine Rückplatte ohne Löcher verschließt die
 Kapsel (Druckempfänger). Beide Elemente sitzen im Abschnitt
 „Rückseite & Laufzeitglied".
 
+`examples/bk4134_comsol_geometrie.json` und
+`examples/bk4134_zuckerwar_1978.json` — das **B&K 4134**
+(½-Zoll-Druckmikrofon), genau so, wie es die Gegenproben rechnen. Es
+sind zwei Dateien, weil die Referenzen zwei verschiedene Kapseln
+beschreiben:
+
+- *COMSOL-Geometrie* (`_BK4134_COMSOL`, Gegenproben 58 e, 59, 61): die
+  Originalgeometrie aus dem COMSOL-Anwendungsmodell (Spalt 18,6 µm,
+  Platte 1,029 mm, Lochkreis 3,4 mm, offener Ring 0,86 × 0,30 mm zur
+  Rückkammer, 200 V). Gegen die FEM: 2D 0,28 dB, 3D 0,10 dB RMS über
+  1–20 kHz; gegen B&Ks Messmittel 3D 0,32 dB RMS.
+- *Zuckerwar 1978, Tab. I* (`_BK38["4134"]`, Gegenproben 38, 52, 54,
+  58, 62): der Prüfling seiner Messung (Spalt 20,77 µm, Platte
+  0,843 mm, Lochkreis 4,064 mm, Randschlitz 0,838 × 0,3048 mm, 28 V).
+  Gegen Fig. 6: 2D 2,1 dB / 6,9° RMS — der Prüfling von 1978 war
+  stärker gedämpft (s. Gegenproben 58, 59).
+
+Beide geben die **Vakuumresonanz** vor (22 664,9 bzw. 22 953,7 Hz)
+statt der Spannung: die Literaturspannung ist membranäquivalent aus
+der gemessenen Resonanz bestimmt, die Randschicht der Biegesteifigkeit
+steckt also schon darin (Gegenprobe 62). Gerechnet wird der
+**Druckfrequenzgang ohne Beugung** wie in FEM und Messung; für den
+Freifeldgang die Beugung einschalten (Körper 13,2 mm). Werkstoff ist
+das GUI-Nickel (COMSOL: 8900 kg/m³, 221 GPa; Unterschied < 0,01 dB).
+Gegen die Testmodelle weichen die geladenen Dateien höchstens
+0,007 dB ab. Für die 0,84–0,86 mm breiten Randspalte reicht das
+GUI-Feld „Randspalt" jetzt bis 2000 µm (vorher 500 µm).
+
 Im Nierenmodus ist nur die Frontmembran polarisiert; die Leerlauf-
 Empfindlichkeit der Kapsel liegt im niedrigen mV/Pa-Bereich. Datenblatt-
 Empfindlichkeiten gelten am Verstärkerausgang (Gain nicht modelliert),
