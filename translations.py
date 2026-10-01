@@ -65,6 +65,20 @@ TR = {
         "en": "Could not load project: {exc}",
         "de": "Projekt konnte nicht geladen werden: {exc}",
     },
+    "clamp_item": {
+        "en": "{lbl}: {alt:g} → {neu:g} (range {lo:g} to {hi:g})",
+        "de": "{lbl}: {alt:g} → {neu:g} (Bereich {lo:g} bis {hi:g})",
+    },
+    "warn_clamp": {
+        "en": "**Value outside its input range — clamped to the nearest "
+              "limit and computed with it:** {items}. The capsule computed "
+              "here therefore differs from the loaded project or the "
+              "previous input.",
+        "de": "**Wert außerhalb seines Eingabebereichs — auf die nächste "
+              "Grenze geklemmt und damit gerechnet:** {items}. Die "
+              "gerechnete Kapsel weicht deshalb vom geladenen Projekt bzw. "
+              "von der vorherigen Eingabe ab.",
+    },
     "btn_reset": {
         "en": "🗑️ Set all values to zero",
         "de": "🗑️ Alle Werte auf null setzen",

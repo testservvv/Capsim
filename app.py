@@ -269,6 +269,92 @@ MAX_RINGS = 8
 # wurden zu Senkungen der Durchgangslöcher).
 _FEHLT_IM_PROJEKT = {"th_stepped": False}
 
+# Eingabebereiche der Zahlenfelder — EINE Quelle für Widgets und Tests.
+# Streamlit (1.64) setzt einen Session-Wert außerhalb [min, max] beim
+# Aufbau des Zahlenfelds STILL auf das Minimum, ohne Fehler. Das
+# B&K-4134-Beispiel (Randspalt 860 µm) lief bei einem Feldmaximum von
+# 500 µm so mit geschlossenem Randspalt, und sein Frequenzgang fiel ab
+# ~700 Hz statt flach bis 10 kHz zu laufen. _zahl() klemmt deshalb vorher
+# auf die NÄCHSTE Grenze und meldet es; Gegenprobe 63 prüft alle
+# Beispielprojekte gegen diese Tabelle.
+_BEREICH = {
+    "f_res_hz": (100.0, 50000.0),
+    "mem_diameter_mm": (3.0, 60.0),
+    "mem_thickness_um": (0.5, 100.0),
+    "mem_tension_npm": (1.0, 5000.0),
+    "mem_modes": (1, 5),
+    "air_gap_um": (5.0, 500.0),
+    "bp_diameter_mm": (2.0, 60.0),
+    "bp_thickness_mm": (0.2, 20.0),
+    "bias_v": (0.5, 400.0),
+    "center_gap_um": (0.0, 500.0),
+    "ring_n": (0, 2000),
+    "d_through_mm": (0.05, 5.0),
+    "d_blind_mm": (0.05, 5.0),
+    "clr_dia_mm": (0.0, 60.0),
+    "clr_width_mm": (0.0, 10.0),
+    "clr_depth_mm": (0.0, 5.0),
+    "ring_vent_um": (0.0, 2000.0),
+    "ring_vent_len_mm": (0.0, 20.0),
+    "clamp_ring_mm": (0.0, 10.0),
+    "clamp_width_mm": (0.0, 10.0),
+    "spacer_um": (0.0, 1000.0),
+    "rearplate_mm": (0.0, 20.0),
+    "n_rearplate": (0, 2000),
+    "d_rearplate_mm": (0.05, 5.0),
+    "delay_mm": (0.0, 100.0),
+    "cavity_length_mm": (0.0, 100.0),
+    "cavity_wall_mm": (0.0, 10.0),
+    "n_cavity": (0, 5000),
+    "d_cavity_mm": (0.0, 5.0),
+    "fabric_front_rayl": (0.0, 100000.0),
+    "fabric_rear_rayl": (0.0, 100000.0),
+    "body_length_mm": (4.5, 200.0),
+    "bem_body_dia_mm": (0.0, 200.0),
+    "bem_body_gap_mm": (3.0, 100.0),
+    "bem_body_len_mm": (10.0, 300.0),
+    "half_rot_deg": (0.0, 180.0),
+    "n_points": (100, 1500),
+}
+
+
+def _bereich(name, wert):
+    """(min, max) des Zahlenfelds ``name``. Abhängige Grenzen lesen die
+    übrigen Werte über ``wert(schlüssel)`` (Session oder Projekt)."""
+    if name == "center_post_mm":          # Stift höchstens Membranradius
+        return 0.0, 0.5 * wert("mem_diameter_mm")
+    if name == "ring_pcd_mm":             # Lochkreis auf der Backplate
+        return 0.0, wert("bp_diameter_mm")
+    if name == "blind_depth_mm":          # Sackloch nicht durchgebohrt
+        return 0.05, max(0.1, wert("bp_thickness_mm") - 0.1)
+    if name == "cavity_axial_mm":         # Bohrung innerhalb des Zylinders
+        return 0.0, wert("cavity_length_mm")
+    if name == "body_diameter_mm":        # Körper umschließt die Kapsel
+        return (max(wert("mem_diameter_mm"), wert("bp_diameter_mm")),
+                100.0)
+    return _BEREICH[name]
+
+
+def _bereichsverletzungen(p):
+    """Alle Werte eines Parametersatzes (kanonische Projektschlüssel)
+    außerhalb ihres Feldbereichs: Liste (Feld, Wert, min, max). Jeder
+    Zahlenschlüssel braucht einen Bereich (sonst KeyError)."""
+    aus = []
+
+    def pruefe(feld, name, val):
+        lo, hi = _bereich(name, p.__getitem__)
+        if not lo <= val <= hi:
+            aus.append((feld, val, lo, hi))
+
+    for key, val in p.items():
+        if key in _RING_PREFIX:
+            for i, (cnt, pcd) in enumerate(val):
+                pruefe(f"{key}[{i}].n", "ring_n", cnt)
+                pruefe(f"{key}[{i}].pcd", "ring_pcd_mm", pcd)
+        elif key in _FLOAT_KEYS or key in _INT_KEYS:
+            pruefe(key, key, val)
+    return aus
+
 
 def _set_ring_state(prefix, rings):
     """Ringliste [[Anzahl, Lochkreis-Ø mm], ...] in die Widget-Session-Keys
@@ -369,40 +455,46 @@ def _coerce(key, val):
     raise ValueError(f"ungültiger Wert für '{key}': {val!r}")
 
 
+def _projekt_params(data):
+    """Projekt-JSON (dict) -> (vollständiger Parametersatz, Anzahl der
+    übernommenen Projektwerte). ValueError bei defekter Datei."""
+    if data.get("format") != "capsim-project":
+        raise ValueError("kein Capsim-Projektformat")
+    params_in = data.get("params", {})
+    # Erst alles validieren (staged), dann atomar anwenden — eine
+    # defekte Datei lässt den aktuellen Zustand unangetastet.
+    staged = {key: _coerce(key, val) for key, val in params_in.items()
+              if key in DEFAULTS}
+    # Altes Projektformat (Version 1, EIN Lochkreis je Lochtyp):
+    # n_through/th_pcd_mm bzw. n_blind/bh_pcd_mm -> eine Ringzeile.
+    if "th_rings" not in staged and "n_through" in params_in:
+        staged["th_rings"] = [[int(params_in["n_through"]),
+                               float(params_in.get("th_pcd_mm", 0.0))]]
+    if "bh_rings" not in staged and "n_blind" in params_in:
+        staged["bh_rings"] = [[int(params_in["n_blind"]),
+                               float(params_in.get("bh_pcd_mm", 0.0))]]
+    # Ein Projekt beschreibt die KOMPLETTE Kapsel: im Projekt nicht
+    # enthaltene Parameter fallen auf die Voreinstellung zurück
+    # (ältere Projekte kennen z. B. Spacer/Rückplatte noch nicht).
+    return ({key: staged.get(key, _FEHLT_IM_PROJEKT.get(key, default))
+             for key, default in DEFAULTS.items()}, len(staged))
+
+
 def _load_project():
     """on_change-Callback des Uploaders: läuft vor dem Widget-Aufbau,
-    darf daher st.session_state der Parameter-Widgets setzen."""
+    darf daher st.session_state der Parameter-Widgets setzen. Werte
+    außerhalb ihres Feldbereichs klemmt und meldet danach _zahl()."""
     up = st.session_state.get("project_upload")
     if up is None:
         return
     try:
-        data = json.load(up)
-        if data.get("format") != "capsim-project":
-            raise ValueError("kein Capsim-Projektformat")
-        params_in = data.get("params", {})
-        # Erst alles validieren (staged), dann atomar anwenden — eine
-        # defekte Datei lässt den aktuellen Zustand unangetastet.
-        staged = {key: _coerce(key, val) for key, val in params_in.items()
-                  if key in DEFAULTS}
-        # Altes Projektformat (Version 1, EIN Lochkreis je Lochtyp):
-        # n_through/th_pcd_mm bzw. n_blind/bh_pcd_mm -> eine Ringzeile.
-        if "th_rings" not in staged and "n_through" in params_in:
-            staged["th_rings"] = [[int(params_in["n_through"]),
-                                   float(params_in.get("th_pcd_mm", 0.0))]]
-        if "bh_rings" not in staged and "n_blind" in params_in:
-            staged["bh_rings"] = [[int(params_in["n_blind"]),
-                                   float(params_in.get("bh_pcd_mm", 0.0))]]
-        # Ein Projekt beschreibt die KOMPLETTE Kapsel: im Projekt nicht
-        # enthaltene Parameter fallen auf die Voreinstellung zurück
-        # (ältere Projekte kennen z. B. Spacer/Rückplatte noch nicht).
-        for key, default in DEFAULTS.items():
-            val = staged.get(key, _FEHLT_IM_PROJEKT.get(key, default))
+        params, n = _projekt_params(json.load(up))
+        for key, val in params.items():
             if key in _RING_PREFIX:
                 _set_ring_state(_RING_PREFIX[key], val)
             else:
                 st.session_state["p_" + key] = val
-        st.session_state["_load_msg"] = (
-            "success", tr("load_ok", n=len(staged)))
+        st.session_state["_load_msg"] = ("success", tr("load_ok", n=n))
     except Exception as exc:  # defekte Datei darf die App nicht stoppen
         st.session_state["_load_msg"] = (
             "error", tr("load_fail", exc=exc))
@@ -475,29 +567,57 @@ def _remove_ring(prefix):
     st.session_state[f"{prefix}_ring_count"] = n - 1
 
 
-def _ring_rows(prefix, bp_diameter_mm):
+# Meldungen der Bereichsklemmung dieses Laufs (Modul-Global: jeder Rerun
+# führt das Skript neu aus und beginnt mit einer leeren Liste).
+_KLEMM_MELDUNGEN = []
+
+
+def _ss_wert(name):
+    return st.session_state["p_" + name]
+
+
+def _klemme(key, lo, hi, titel):
+    """Session-Wert ``key`` vor dem Widget-Aufbau auf [lo, hi] klemmen
+    (nächste Grenze, nicht Streamlits stilles Minimum) und melden."""
+    val = st.session_state[key]
+    neu = min(max(val, lo), hi)
+    if neu != val:
+        st.session_state[key] = type(val)(neu)
+        _KLEMM_MELDUNGEN.append(tr("clamp_item", lbl=titel, alt=val,
+                                   neu=neu, lo=lo, hi=hi))
+
+
+def _zahl(name, label, ort=None, key=None, titel=None, **kw):
+    """Zahlenfeld mit dem Bereich aus _bereich(); ein Wert außerhalb wird
+    vorher geklemmt und im Hauptbereich gemeldet (s. _BEREICH)."""
+    key = key or "p_" + name
+    lo, hi = _bereich(name, _ss_wert)
+    _klemme(key, lo, hi, titel or label)
+    return (ort or st).number_input(label, lo, hi, key=key, **kw)
+
+
+def _ring_rows(prefix):
     """Dynamische Lochkreis-Zeilen eines Lochtyps (Anzahl + Lochkreis-Ø)
     mit ➕/➖-Buttons; gibt die Gesamt-Lochzahl zurück."""
     n_rings = st.session_state[f"{prefix}_ring_count"]
     h1, h2 = st.columns(2)
     h1.caption(tr("cap_ring_n"))
     h2.caption(tr("cap_ring_pcd"))
+    art = tr("md_through" if prefix == "th" else "md_blind")
     total = 0
     for i in range(n_rings):
-        pcd_key = f"p_{prefix}_ring_pcd_{i}"
-        # Schrumpft die Backplate, wird der gespeicherte Lochkreis still
-        # auf den neuen Maximalwert geklammert (wie Blindlochtiefe).
-        st.session_state[pcd_key] = min(st.session_state[pcd_key],
-                                        bp_diameter_mm)
         c1, c2 = st.columns(2)
         # Beschriftung nur für Screenreader (kompakte Tabellenoptik;
-        # die sichtbare Kopfzeile liefern die Captions darüber).
-        c1.number_input(tr("lbl_ring_n", i=i + 1), 0, 2000, step=1,
-                        key=f"p_{prefix}_ring_n_{i}",
-                        label_visibility="collapsed")
-        c2.number_input(tr("lbl_ring_pcd", i=i + 1), 0.0,
-                        bp_diameter_mm, step=0.5, key=pcd_key,
-                        label_visibility="collapsed")
+        # die sichtbare Kopfzeile liefern die Captions darüber). Schrumpft
+        # die Backplate, klemmt _zahl den Lochkreis auf ihren Durchmesser.
+        _zahl("ring_n", tr("lbl_ring_n", i=i + 1), ort=c1,
+              key=f"p_{prefix}_ring_n_{i}",
+              titel=f"{art} · {tr('lbl_ring_n', i=i + 1)}",
+              step=1, label_visibility="collapsed")
+        _zahl("ring_pcd_mm", tr("lbl_ring_pcd", i=i + 1), ort=c2,
+              key=f"p_{prefix}_ring_pcd_{i}",
+              titel=f"{art} · {tr('lbl_ring_pcd', i=i + 1)}",
+              step=0.5, label_visibility="collapsed")
         total += st.session_state[f"p_{prefix}_ring_n_{i}"]
     b1, b2 = st.columns(2)
     b1.button(tr("btn_ring_add"), key=f"btn_add_{prefix}",
@@ -1070,91 +1190,74 @@ with st.sidebar:
                      format_func=_label_formatter(), key="p_material")
         st.checkbox(tr("lbl_use_fres"), key="p_use_f_res",
                     help=tr("help_use_fres"))
-        st.number_input(tr("lbl_fres"), 100.0, 50000.0, step=100.0,
-                        format="%.0f", key="p_f_res_hz",
-                        disabled=not st.session_state["p_use_f_res"])
-        st.number_input(tr("lbl_mem_dia"), 3.0, 60.0, step=0.5,
-                        key="p_mem_diameter_mm")
-        st.number_input(tr("lbl_mem_thick"), 0.5, 100.0, step=0.5,
-                        key="p_mem_thickness_um")
-        st.number_input(tr("lbl_mem_tension"), 1.0, 5000.0, step=10.0,
-                        key="p_mem_tension_npm")
-        st.number_input(tr("lbl_center_post"), 0.0,
-                        0.5 * st.session_state["p_mem_diameter_mm"],
-                        step=0.1, format="%.2f", key="p_center_post_mm",
-                        help=tr("help_center_post"))
-        st.number_input(tr("lbl_mem_modes"), 1, 5, step=1,
-                        key="p_mem_modes", help=tr("help_mem_modes"))
+        _zahl("f_res_hz", tr("lbl_fres"), step=100.0, format="%.0f",
+              disabled=not st.session_state["p_use_f_res"])
+        _zahl("mem_diameter_mm", tr("lbl_mem_dia"), step=0.5,
+              titel=f"{tr('exp_membrane')} · {tr('lbl_mem_dia')}")
+        _zahl("mem_thickness_um", tr("lbl_mem_thick"), step=0.5,
+              titel=f"{tr('exp_membrane')} · {tr('lbl_mem_thick')}")
+        _zahl("mem_tension_npm", tr("lbl_mem_tension"), step=10.0)
+        _zahl("center_post_mm", tr("lbl_center_post"), step=0.1,
+              format="%.2f", help=tr("help_center_post"))
+        _zahl("mem_modes", tr("lbl_mem_modes"), step=1,
+              help=tr("help_mem_modes"))
         st.checkbox(tr("lbl_modal_source"), key="p_modal_source",
                     help=tr("help_modal_source"))
 
     # ---------------- Backplate ----------------------------------------
     with st.expander(tr("exp_backplate"), expanded=True):
-        st.number_input(tr("lbl_air_gap"), 5.0, 500.0, step=1.0,
-                        key="p_air_gap_um")
-        st.number_input(tr("lbl_bp_dia"), 2.0, 60.0, step=0.5,
-                        key="p_bp_diameter_mm", help=tr("help_bp_dia"))
-        st.number_input(tr("lbl_bp_thick"), 0.2, 20.0, step=0.1,
-                        key="p_bp_thickness_mm")
-        st.number_input(tr("lbl_bias"), 0.5, 400.0, step=1.0,
-                        key="p_bias_v", help=tr("help_bias"))
+        _zahl("air_gap_um", tr("lbl_air_gap"), step=1.0)
+        _zahl("bp_diameter_mm", tr("lbl_bp_dia"), step=0.5,
+              help=tr("help_bp_dia"),
+              titel=f"{tr('exp_backplate')} · {tr('lbl_bp_dia')}")
+        _zahl("bp_thickness_mm", tr("lbl_bp_thick"), step=0.1,
+              titel=f"{tr('exp_backplate')} · {tr('lbl_bp_thick')}")
+        _zahl("bias_v", tr("lbl_bias"), step=1.0, help=tr("help_bias"))
         st.radio(tr("lbl_arch"), list(ARCH_LABELS),
                  format_func=_label_formatter(), key="p_architecture",
                  help=tr("help_arch"))
-        st.number_input(tr("lbl_center_gap"), 0.0, 500.0, step=5.0,
-                        key="p_center_gap_um",
-                        disabled=st.session_state["p_architecture"]
-                        != K67_LABEL,
-                        help=tr("help_center_gap"))
+        _zahl("center_gap_um", tr("lbl_center_gap"), step=5.0,
+              disabled=st.session_state["p_architecture"] != K67_LABEL,
+              help=tr("help_center_gap"))
 
         st.markdown(tr("hd_holes"))
         st.caption(tr("cap_holes"))
-        _bp_d = st.session_state["p_bp_diameter_mm"]
 
         st.markdown(tr("md_through"), help=tr("help_through"))
-        _ring_rows("th", _bp_d)
-        st.number_input(tr("lbl_th_dia"), 0.05, 5.0, step=0.05,
-                        key="p_d_through_mm", help=tr("help_hole_dia"))
+        _ring_rows("th")
+        _zahl("d_through_mm", tr("lbl_th_dia"), step=0.05,
+              help=tr("help_hole_dia"))
         st.toggle(tr("lbl_stepped"), key="p_th_stepped",
                   help=tr("help_stepped"))
 
         st.markdown(tr("md_blind"), help=tr("help_blind"))
-        _ring_rows("bh", _bp_d)
-        st.number_input(tr("lbl_bh_dia"), 0.05, 5.0, step=0.05,
-                        key="p_d_blind_mm", help=tr("help_hole_dia"))
-        _bd_max = max(0.1, st.session_state["p_bp_thickness_mm"] - 0.1)
-        st.session_state["p_blind_depth_mm"] = min(
-            st.session_state["p_blind_depth_mm"], _bd_max)
-        st.number_input(tr("lbl_bh_depth"), 0.05, _bd_max, step=0.05,
-                        key="p_blind_depth_mm")
+        _ring_rows("bh")
+        _zahl("d_blind_mm", tr("lbl_bh_dia"), step=0.05,
+              help=tr("help_hole_dia"))
+        _zahl("blind_depth_mm", tr("lbl_bh_depth"), step=0.05)
 
         st.markdown(tr("hd_clr"), help=tr("help_clr"))
-        st.number_input(tr("lbl_clr_dia"), 0.0, 60.0, step=0.5,
-                        key="p_clr_dia_mm", help=tr("help_clr_dia"))
-        st.number_input(tr("lbl_clr_w"), 0.0, 10.0, step=0.1,
-                        key="p_clr_width_mm", help=tr("help_clr_w"))
-        st.number_input(tr("lbl_clr_d"), 0.0, 5.0, step=0.01,
-                        format="%.3f", key="p_clr_depth_mm",
-                        help=tr("help_clr_d"))
+        _zahl("clr_dia_mm", tr("lbl_clr_dia"), step=0.5,
+              help=tr("help_clr_dia"))
+        _zahl("clr_width_mm", tr("lbl_clr_w"), step=0.1,
+              help=tr("help_clr_w"))
+        _zahl("clr_depth_mm", tr("lbl_clr_d"), step=0.01, format="%.3f",
+              help=tr("help_clr_d"))
 
         # Durchgehender Randspalt (B&K) — nicht bei der K67-Bauform
         if st.session_state["p_architecture"] != K67_LABEL:
-            st.number_input(tr("lbl_ring_vent"), 0.0, 2000.0, step=5.0,
-                            key="p_ring_vent_um",
-                            help=tr("help_ring_vent"))
-            st.number_input(tr("lbl_ring_vent_len"), 0.0, 20.0, step=0.1,
-                            format="%.2f", key="p_ring_vent_len_mm",
-                            help=tr("help_ring_vent_len"))
+            _zahl("ring_vent_um", tr("lbl_ring_vent"), step=5.0,
+                  help=tr("help_ring_vent"))
+            _zahl("ring_vent_len_mm", tr("lbl_ring_vent_len"), step=0.1,
+                  format="%.2f", help=tr("help_ring_vent_len"))
 
         # Klemmringe vor den Membranen — nur bei K67-Bauform relevant
         if st.session_state["p_architecture"] == K67_LABEL:
             st.markdown(tr("hd_clamp"), help=tr("help_clamp"))
-            st.number_input(tr("lbl_clamp_t"), 0.0, 10.0,
-                            step=0.5, key="p_clamp_ring_mm",
-                            help=tr("help_clamp_t"))
-            st.number_input(tr("lbl_clamp_w"), 0.0, 10.0, step=0.5,
-                            key="p_clamp_width_mm",
-                            help=tr("help_clamp_w"))
+            _zahl("clamp_ring_mm", tr("lbl_clamp_t"), step=0.5,
+                  help=tr("help_clamp_t"))
+            _zahl("clamp_width_mm", tr("lbl_clamp_w"), step=0.5,
+                  help=tr("help_clamp_w"))
 
     # ---------------- Rückseite / Laufzeitglied -------------------------
     _is_k67 = st.session_state["p_architecture"] == K67_LABEL
@@ -1165,52 +1268,42 @@ with st.sidebar:
                   disabled=_is_k67, help=tr("help_rear_on"))
         _rear_on = st.session_state["p_rear_enabled"] and not _is_k67
         st.markdown(tr("hd_spacer"), help=tr("help_spacer_hd"))
-        st.number_input(tr("lbl_spacer"), 0.0, 1000.0, step=5.0,
-                        key="p_spacer_um", disabled=not _rear_on,
-                        help=tr("help_spacer"))
-        st.number_input(tr("lbl_rp_t"), 0.0, 20.0, step=0.1,
-                        key="p_rearplate_mm", disabled=not _rear_on,
-                        help=tr("help_rp_t"))
+        _zahl("spacer_um", tr("lbl_spacer"), step=5.0,
+              disabled=not _rear_on, help=tr("help_spacer"))
+        _zahl("rearplate_mm", tr("lbl_rp_t"), step=0.1,
+              disabled=not _rear_on, help=tr("help_rp_t"))
         _rp_on = _rear_on and st.session_state["p_rearplate_mm"] > 0.0
-        st.number_input(tr("lbl_rp_n"), 0, 2000, step=1,
-                        key="p_n_rearplate", disabled=not _rp_on,
-                        help=tr("help_rp_n"))
-        st.number_input(tr("lbl_rp_d"), 0.05, 5.0, step=0.05,
-                        key="p_d_rearplate_mm", disabled=not _rp_on)
+        _zahl("n_rearplate", tr("lbl_rp_n"), step=1, disabled=not _rp_on,
+              help=tr("help_rp_n"))
+        _zahl("d_rearplate_mm", tr("lbl_rp_d"), step=0.05,
+              disabled=not _rp_on)
 
         st.markdown(tr("hd_delay"))
-        st.number_input(tr("lbl_delay"), 0.0, 100.0, step=0.5,
-                        key="p_delay_mm", disabled=not _rear_on,
-                        help=tr("help_delay"))
-        st.number_input(tr("lbl_cav_len"), 0.0, 100.0, step=0.5,
-                        key="p_cavity_length_mm", disabled=not _rear_on)
-        st.number_input(tr("lbl_cav_wall"), 0.0, 10.0, step=0.1,
-                        key="p_cavity_wall_mm", disabled=not _rear_on)
+        _zahl("delay_mm", tr("lbl_delay"), step=0.5, disabled=not _rear_on,
+              help=tr("help_delay"))
+        _zahl("cavity_length_mm", tr("lbl_cav_len"), step=0.5,
+              disabled=not _rear_on)
+        _zahl("cavity_wall_mm", tr("lbl_cav_wall"), step=0.1,
+              disabled=not _rear_on)
         st.radio(tr("lbl_hole_pos"), list(POS_LABELS),
                  format_func=_label_formatter(),
                  key="p_hole_position", disabled=not _rear_on)
-        st.number_input(tr("lbl_cav_n"), 0, 5000, step=1,
-                        key="p_n_cavity", disabled=not _rear_on,
-                        help=tr("help_cav_n"))
-        st.number_input(tr("lbl_cav_d"), 0.0, 5.0, step=0.05,
-                        key="p_d_cavity_mm", disabled=not _rear_on,
-                        help=tr("help_cav_d"))
-        _ax_max = st.session_state["p_cavity_length_mm"]
-        st.session_state["p_cavity_axial_mm"] = min(
-            st.session_state["p_cavity_axial_mm"], _ax_max)
-        st.number_input(tr("lbl_cav_ax"), 0.0,
-                        max(_ax_max, 0.5), step=0.5, key="p_cavity_axial_mm",
-                        disabled=(not _rear_on)
-                        or st.session_state["p_hole_position"] != "Umfang"
-                        or _ax_max <= 0.0,
-                        help=tr("help_cav_ax"))
+        _zahl("n_cavity", tr("lbl_cav_n"), step=1, disabled=not _rear_on,
+              help=tr("help_cav_n"))
+        _zahl("d_cavity_mm", tr("lbl_cav_d"), step=0.05,
+              disabled=not _rear_on, help=tr("help_cav_d"))
+        # Bohrungsposition höchstens Zylinderlänge (Ober-Grenze 0 bei
+        # fehlendem Zylinder: Streamlit erlaubt min == max)
+        _zahl("cavity_axial_mm", tr("lbl_cav_ax"), step=0.5,
+              disabled=(not _rear_on)
+              or st.session_state["p_hole_position"] != "Umfang"
+              or st.session_state["p_cavity_length_mm"] <= 0.0,
+              help=tr("help_cav_ax"))
 
     # ---------------- Akustisches Gewebe --------------------------------
     with st.expander(tr("exp_fabric"), expanded=True):
-        st.number_input(tr("lbl_fab_front"), 0.0, 100000.0, step=5.0,
-                        key="p_fabric_front_rayl")
-        st.number_input(tr("lbl_fab_rear"), 0.0, 100000.0,
-                        step=5.0, key="p_fabric_rear_rayl")
+        _zahl("fabric_front_rayl", tr("lbl_fab_front"), step=5.0)
+        _zahl("fabric_rear_rayl", tr("lbl_fab_rear"), step=5.0)
         st.radio(tr("lbl_fab_pos"), list(FAB_POS_LABELS),
                  format_func=_label_formatter(), key="p_fabric_rear_pos",
                  disabled=_is_k67, help=tr("help_fab_pos"))
@@ -1221,14 +1314,9 @@ with st.sidebar:
     with st.expander(tr("exp_body"), expanded=False):
         st.toggle(tr("lbl_diffr"), key="p_diffraction_on",
                   help=tr("help_diffr"))
-        _bd_min = max(st.session_state["p_mem_diameter_mm"],
-                      st.session_state["p_bp_diameter_mm"])
-        st.session_state["p_body_diameter_mm"] = max(
-            st.session_state["p_body_diameter_mm"], _bd_min)
-        st.number_input(tr("lbl_body_dia"), _bd_min, 100.0, step=0.5,
-                        key="p_body_diameter_mm",
-                        disabled=not st.session_state["p_diffraction_on"],
-                        help=tr("help_body_dia"))
+        _zahl("body_diameter_mm", tr("lbl_body_dia"), step=0.5,
+              disabled=not st.session_state["p_diffraction_on"],
+              help=tr("help_body_dia"))
         _k67 = st.session_state["p_architecture"] == K67_LABEL
         # Sphäroid ist ein reines Front-Rück-Transfermodell und bleibt der
         # Doppelmembran vorbehalten; BEM liefert bei Ein-Membran-Bauformen
@@ -1243,19 +1331,15 @@ with st.sidebar:
                      help=tr("help_ax_body"))
         if AX_LABELS.get(st.session_state["p_axial_body"]) == "bem":
             if not _k67:
-                st.number_input(tr("lbl_body_len"), 4.5, 200.0, step=0.5,
-                                key="p_body_length_mm",
-                                help=tr("help_body_len"))
-            st.number_input(tr("lbl_bem_dia"), 0.0, 200.0, step=1.0,
-                            key="p_bem_body_dia_mm",
-                            help=tr("help_bem_dia"))
+                _zahl("body_length_mm", tr("lbl_body_len"), step=0.5,
+                      help=tr("help_body_len"))
+            _zahl("bem_body_dia_mm", tr("lbl_bem_dia"), step=1.0,
+                  help=tr("help_bem_dia"))
             if st.session_state["p_bem_body_dia_mm"] > 0.0:
-                st.number_input(tr("lbl_bem_gap"), 3.0,
-                                100.0, step=1.0, key="p_bem_body_gap_mm",
-                                help=tr("help_bem_gap"))
-                st.number_input(tr("lbl_bem_len"), 10.0, 300.0,
-                                step=5.0, key="p_bem_body_len_mm",
-                                help=tr("help_bem_len"))
+                _zahl("bem_body_gap_mm", tr("lbl_bem_gap"), step=1.0,
+                      help=tr("help_bem_gap"))
+                _zahl("bem_body_len_mm", tr("lbl_bem_len"), step=5.0,
+                      help=tr("help_bem_len"))
             st.caption(tr("cap_bem") if _k67 else tr("cap_bem_front"))
 
     # ---------------- Spaltfilm-Modell -----------------------------------
@@ -1275,13 +1359,16 @@ with st.sidebar:
             st.toggle(tr("lbl_rot_auto"), key="p_half_rot_auto",
                       help=tr("help_rot_auto"))
             if not st.session_state["p_half_rot_auto"]:
-                st.number_input(tr("lbl_rot_deg"), 0.0, 180.0, step=0.5,
-                                key="p_half_rot_deg", help=tr("help_rot_deg"))
+                _zahl("half_rot_deg", tr("lbl_rot_deg"), step=0.5,
+                      help=tr("help_rot_deg"))
             st.caption(tr("cap_3d"))
 
     # ---------------- Simulation ---------------------------------------
     with st.expander(tr("exp_sim"), expanded=False):
-        st.slider(tr("lbl_npts"), 100, 1500, step=50, key="p_n_points")
+        # Schieberegler lassen Werte außerhalb ungeprüft durch: klemmen
+        _npts = _bereich("n_points", _ss_wert)
+        _klemme("p_n_points", *_npts, tr("lbl_npts"))
+        st.slider(tr("lbl_npts"), *_npts, step=50, key="p_n_points")
         st.toggle(tr("lbl_norm"), key="p_normalize_1khz")
         st.multiselect(tr("lbl_dirf"), DIRECTIVITY_OPTIONS,
                        key="p_dir_freqs", max_selections=10)
@@ -1327,6 +1414,11 @@ summary_text = get_summary(_cache_key, capsule, _lang())
 # ---------------------------------------------------------------------------
 st.title(tr("app_title"))
 st.caption(tr("app_caption"))
+
+# Werte außerhalb ihres Feldbereichs (geladenes Projekt, abhängige
+# Grenze): geklemmt und gerechnet, aber nie stillschweigend (s. _BEREICH).
+if _KLEMM_MELDUNGEN:
+    st.warning(tr("warn_clamp", items="; ".join(_KLEMM_MELDUNGEN)))
 
 # BEM mit offenem Rückeinlass: gerechnet, aber mit Modellgrenze — der
 # Bohrungskranz sitzt als idealer Ring bei seiner Einbautiefe auf einer

@@ -224,8 +224,8 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Nur das Physikmodell (ohne GUI) testen, also die Gegenproben in
-`tests/` laufen lassen:
+Die Gegenproben in `tests/` laufen lassen (das Physikmodell;
+Gegenprobe 63 startet zusätzlich die App ohne Browser):
 
 ```bash
 pip install -r requirements-dev.txt
@@ -475,12 +475,13 @@ Messungen der realen Kapsel.
 
 ### Werkzeug
 
-- GUI (`app.py`) und Übersetzungen haben keine Tests: weder eine Probe,
-  dass jeder Schlüssel Englisch und Deutsch hat, noch einen Starttest
-  der App in beiden Sprachen mit den Beispielprojekten. Ein Test, der
-  die Beispielprojekte lädt und ihre Kennwerte meldet, hätte den
-  Lader-Fehler gefunden, durch den das Debenham-Beispiel
-  Stufenbohrungen erbte (behoben, s. Beispielprojekte).
+- Die GUI (`app.py`) hat seit Gegenprobe 63 einen Test: jedes
+  Beispielprojekt läuft durch die echte App, liegt in den Feldbereichen
+  und ergibt die Kurve des Modells. Es fehlen noch eine Probe, dass
+  jeder Übersetzungsschlüssel Englisch und Deutsch hat, ein Lauf in
+  deutscher Sprache und ein Test des Uploaders selbst (der AppTest kann
+  ihn nicht bedienen; die Probe schreibt den Session-State wie
+  `_load_project()`).
 - Kein automatischer Testlauf bei jedem Push (kein GitHub-Workflow).
 - Laufzeit: die BEM-Proben 41, 43, 44, 26 und 21 brauchen etwa 117 der
   316 s Rechenzeit; Gegenprobe 41 allein (54 s) ist die Untergrenze des
@@ -2208,6 +2209,49 @@ Beträgen (2D − 3D bei 16 Löchern 0,10 → 0,06 dB). Bei vorgegebener
 Spannung hebt sich die Resonanz um ≈ λ und der Tiefton sinkt um ≈ 4λ
 (B&K −0,15 dB, `gp62.bk_tiefton_db`).
 
+### Eingabebereiche der GUI (Gegenprobe 63)
+
+**Befund.** In der App fiel der Frequenzgang beider B&K-4134-Beispiele
+ab etwa 700 Hz (COMSOL-Geometrie: −0,3 dB bei 1 kHz, −7,6 dB bei
+10 kHz), obwohl das Modell aus denselben Dateien flach bis 10 kHz
+rechnet. Ursache war nicht die Physik: das GUI-Feld „Randspalt“ ging
+bis 500 µm, die Dateien haben 860 bzw. 838 µm. Streamlit (1.64) setzt
+einen Session-Wert außerhalb [min, max] beim Aufbau des Zahlenfelds
+**still auf das Minimum**, ohne Fehler. Der Randspalt war damit
+geschlossen, die Luft unter dem Membranrand musste durch den 18,6-µm-
+Spalt zu den sechs Löchern, und die Membran war überdämpft. Der Lader
+meldete trotzdem „58 Parameter übernommen“. Im Browser (Chromium, Upload
+der Datei) ist das mit dem App-Stand vor `b795a8a` genau nachgestellt.
+Schieberegler verhalten sich anders: sie lassen Werte außerhalb
+ungeprüft durch.
+
+**Korrektur.** Die Feldgrenzen stehen an EINER Stelle (`_BEREICH`,
+abhängige Grenzen in `_bereich()`: Mittenstift ≤ Membranradius,
+Lochkreis ≤ Backplate, Sacklochtiefe < Plattendicke, Bohrungsposition
+≤ Zylinderlänge, Körper ≥ Kapsel). Jedes Zahlenfeld entsteht über
+`_zahl()`, das einen Wert außerhalb vorher auf die **nächste** Grenze
+klemmt und im Hauptbereich meldet („Wert außerhalb seines
+Eingabebereichs … 2500 → 2000“). Das gilt auch für die bisher still
+geklemmten abhängigen Felder und die Zahl der Frequenzpunkte. Der
+Lader ist als `_projekt_params()` herausgelöst, damit der Test genau
+ihn benutzt.
+
+**Gegenprobe 63** (`tests/test_app_projekte.py`):
+
+- a) Jede Projektdatei unter `examples/`, die Voreinstellung und der
+  Null-Zustand liegen in den Feldbereichen; kein Projektschlüssel wird
+  vom Lader verworfen; jeder Zahlenschlüssel hat einen Bereich. Mit dem
+  alten Maximum 500 µm meldet die Prüfung genau den Randspalt.
+- b) Jedes Beispiel läuft durch die echte App (Streamlit-AppTest): kein
+  Fehler, keine Klemmung, jeder Wert unverändert im Session-State, und
+  die gezeichnete Kurve ist der Frequenzgang des Modells aus derselben
+  Datei (Abweichung unter 10⁻¹¹ dB).
+- c) Randspalt 2500 µm, Lochkreis 9 mm auf 7,2-mm-Backplate und
+  Sacklochtiefe 5 mm werden zu 2000 µm, 7,2 mm und 0,929 mm, mit einer
+  Meldung, die im nächsten Lauf entfällt. Vorher-Befund: mit Randspalt 0
+  liegt 10 kHz bei −7,6 statt +1,1 dB (re 100 Hz) — das ist der
+  gemeldete Abfall.
+
 ## Verlustmechanismen (vollständig erfasst)
 
 Neben Zwikker–Kosten-Rohrreibung und Škvor-Spaltfilm rechnet das
@@ -2317,7 +2361,9 @@ Freifeldgang die Beugung einschalten (Körper 13,2 mm). Werkstoff ist
 das GUI-Nickel (COMSOL: 8900 kg/m³, 221 GPa; Unterschied < 0,01 dB).
 Gegen die Testmodelle weichen die geladenen Dateien höchstens
 0,007 dB ab. Für die 0,84–0,86 mm breiten Randspalte reicht das
-GUI-Feld „Randspalt" jetzt bis 2000 µm (vorher 500 µm).
+GUI-Feld „Randspalt" bis 2000 µm. Bis `b795a8a` endete es bei 500 µm,
+und Streamlit setzte den Randspalt beim Laden still auf 0 — der
+Frequenzgang fiel dann ab ~700 Hz (s. Gegenprobe 63).
 
 Im Nierenmodus ist nur die Frontmembran polarisiert; die Leerlauf-
 Empfindlichkeit der Kapsel liegt im niedrigen mV/Pa-Bereich. Datenblatt-
