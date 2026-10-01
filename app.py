@@ -1476,21 +1476,21 @@ if (capsule.include_diffraction and capsule.axial_body_model == "sphere"
     st.warning(tr("warn_sphere_flat"))
 
 # Homogenisierungsgrenze der 1D/2D-Modelle: gerechnet wird trotzdem, aber
-# oberhalb f_hom ist das Ergebnis nicht mehr gegen den 3D-Löser
-# abgesichert (s. Gegenprobe 48). Die Lochkreis-Grenze (Gegenproben 53,
-# 60) ist eine vorsichtige Schätzung und steht deshalb nur als
-# zugeklappter Hinweis am Seitenende.
-_hinweis_ring = None
+# oberhalb f_hom bzw. f_ring ist das Ergebnis nicht mehr gegen den
+# 3D-Löser abgesichert (Gegenproben 48, 53, 60). Beide Grenzen sind
+# vorsichtige Schätzungen und stehen deshalb nur als zugeklappter
+# Hinweis am Seitenende.
+_hinweis_hom = None
 if capsule.squeeze_model in ("1d", "2d"):
     _hom = capsule.homogenization_limit()
     if _hom["f_limit"] < capsule._F_BAND_TOP and _hom["cause"] == "ring":
-        _hinweis_ring = tr("warn_ring_repr",
-                           model=capsule.squeeze_model.upper(),
-                           f=_hom["f_ring"] / 1e3, db=capsule._RING_REPR_DB)
+        _hinweis_hom = tr("warn_ring_repr",
+                          model=capsule.squeeze_model.upper(),
+                          f=_hom["f_ring"] / 1e3, db=capsule._RING_REPR_DB)
     elif _hom["f_hom"] < capsule._F_BAND_TOP:
-        st.warning(tr("warn_sparse_holes",
-                      model=capsule.squeeze_model.upper(),
-                      f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3))
+        _hinweis_hom = tr("warn_sparse_holes",
+                          model=capsule.squeeze_model.upper(),
+                          f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3)
 
 # Feines 3D-Gitter an der Obergrenze: die kleinste Mündung ist dann
 # schlechter aufgelöst als die Regel verlangt (s. Gegenprobe 50).
@@ -1655,7 +1655,8 @@ exp2.download_button(tr("btn_csv_di"), _to_csv(df_di),
 
 st.caption(tr("footer"))
 
-# Lochkreis-Grenze des 1D/2D-Modells: zugeklappt, ganz unten
-if _hinweis_ring is not None:
+# Homogenisierungsgrenze des 1D/2D-Modells (Lochbild bzw. Lochkreise):
+# zugeklappt, ganz unten
+if _hinweis_hom is not None:
     with st.expander(tr("exp_hint"), expanded=False):
-        st.markdown(_hinweis_ring)
+        st.markdown(_hinweis_hom)

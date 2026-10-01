@@ -444,8 +444,9 @@ Schreiben.
   29).
 - **Homogenisierung der Löcher:** gilt bis f_hom bzw. bis zur
   Lochkreis-Grenze f_ring (Gegenproben 48, 53); darüber warnen Modell
-  und GUI (die Lochkreis-Grenze als vorsichtige Schätzung nur als
-  zugeklappter „Hinweis“ am Seitenende). Weiche Großmembran-Kapseln liegen fast immer im
+  und GUI (beide Grenzen sind vorsichtige Schätzungen und stehen nur als
+  zugeklappter „Hinweis“ am Seitenende). Weiche Großmembran-Kapseln
+  liegen fast immer im
   Warnbereich. Bei der K67 liegen 2D und 3D auf Achse bis 3,2 dB
   (8 kHz) auseinander, mit einem Tieftonversatz von 1,4 dB, den f_hom
   nicht erklärt (`gp22e.empf_3d_zu_2d`, Zwischenspalt-Geometrie).
