@@ -636,7 +636,7 @@
   "art": "stand"
  },
  "gp59.rms_3d_gegen_fem": {
-  "wert": 0.06598273025160842,
+  "wert": 0.11182264333093785,
   "einheit": "dB",
   "text": "3D gegen COMSOL-FEM, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",

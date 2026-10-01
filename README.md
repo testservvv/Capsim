@@ -296,7 +296,11 @@ eigene Näherung — bewusst gelockert zum Stand-Wert (Gegenprobe 60).
 Neu festgelegt wurde mit Gegenprobe 65 die 2D-Amplitude gegen
 Zuckerwars 4146 (0,63 → 0,87 dB): der alte Wert enthielt die
 Strahlungslast im Druckgang, die den Hochtonüberschuss des 2D-Modells
-verdeckte. Wird ein solcher Wert schlechter als
+verdeckte. Ebenso mit Gegenprobe 67 der Abstand des 3D-Modells zur
+COMSOL-FEM der 4134 (0,066 → 0,112 dB): die Spalt-Mündung hebt den
+Filmwiderstand, den 3D am Lochkreis schon überschätzt, während 3D
+gegen das B&K-Messmittel besser wird (0,36 → 0,21 dB). Wird ein
+solcher Wert schlechter als
 die Basis (über eine kleine Toleranz hinaus), scheitert der Test; wird
 er besser, meldet es der Bericht.
 
@@ -349,8 +353,8 @@ Schreiben.
      3D/FEM 1,18 (vorher 1,12). Die Spalt-Mündung erhöht den
      Filmwiderstand um rund 5 %, und den überschätzt 3D am Lochkreis
      schon (Gegenprobe 52: 3D/2D 1,04). Gegen das B&K-Messmittel liegt
-     3D dagegen besser: 0,21 statt 0,36 dB. Die Sperrklinke ist nicht
-     neu festgelegt (Basis 0,066 dB, Toleranz 0,05 dB).
+     3D dagegen besser: 0,21 statt 0,36 dB. Die Sperrklinke ist mit
+     Gegenprobe 67 bewusst neu festgelegt (0,066 → 0,112 dB).
    - **Zuckerwars 4134 von 1978** war stärker gedämpft als heutige 4134
      (20 kHz: −3,1 gegen −1,2 dB); 2D und 3D liegen gleichermaßen
      darüber (2,0 bzw. 1,6 dB RMS, `gp38.rms_2d_4134_db`; vor
@@ -2517,6 +2521,8 @@ FEM 0,95 → 0,42 bzw. 0,72 → 0,23 dB. Gegen Messungen: B&K-Messmittel
 4146 2D 0,87 → 0,70 dB. Schlechter: 4146 3D (0,73 → 0,90 dB), 3D gegen
 die COMSOL-FEM der 4134 (0,07 → 0,11 dB) und im Kerbenband der FEM-Kapsel
 das Dublett und die streifende Anregung (s. „Offene Punkte" 1, 2, 4).
+Die Sperrklinke 3D gegen die COMSOL-FEM ist dafür bewusst neu
+festgelegt (0,066 → 0,112 dB).
 
 **Prüfaufbau.** Gegenprobe 32 und 34 rechneten bis hier mit dem
 Klassen-Standard `delay_length = 3e-3`, also mit einem Laufzeitglied,
