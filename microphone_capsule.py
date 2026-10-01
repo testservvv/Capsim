@@ -150,6 +150,70 @@ def _ring_compliance_factor(rho):
     return 1.0 - rho**4 + (1.0 - rho**2) ** 2 / np.log(rho)
 
 
+def _platten_verduennung(z, D, T, rho_s, a, ri=0.0):
+    """Biegeanteil einer Membranmode mit Vorspannung (Folienverlust,
+    Gegenprobe 61).
+
+    Die Folie ist eine eingespannte Platte unter Zug:
+
+        D·∇⁴w − T·∇²w = ρ_s·ω²·w,   w = w' = 0 am Rand (und am Pfosten).
+
+    Axialsymmetrisch ist w = A·J0(αr) + B·Y0(αr) + C·I0(βr) + D'·K0(βr)
+    mit α² = (−T + s)/(2D), β² = (T + s)/(2D), s² = T² + 4D·ρ_s·ω²; ohne
+    Pfosten entfallen Y0 und K0. Die Eigenwertgleichung (Determinante der
+    Randbedingungen, I und K exponentiell skaliert) wird für die Mode in
+    der Nähe der reinen Membranfrequenz ω_T = (z/a)·√(T/ρ_s) gelöst.
+
+    Rückgabe (q, f): q = ∂ln ω²/∂ln D ist der Anteil der Biegeenergie an
+    der Formänderungsenergie (Rayleigh), f = ω/ω_T. Für λ = √(D/(T a²))
+    ≪ 1 gilt ohne Pfosten q ≈ λ + z²λ² (Randschicht der Breite λ·a an
+    der Einspannung plus Krümmung im Innern) und f ≈ 1 + λ. None, wenn
+    keine Nullstelle gefunden wird.
+    """
+    from scipy.optimize import brentq
+    from scipy.special import ive, jv, kve, yv
+
+    def det(x, Dx):
+        om2 = x * (z / a) ** 2 * T / rho_s
+        s = np.sqrt(T * T + 4.0 * Dx * rho_s * om2)
+        al = np.sqrt((s - T) / (2.0 * Dx))
+        be = np.sqrt((s + T) / (2.0 * Dx))
+        if ri <= 0.0:
+            return (jv(0, al * a) * be * ive(1, be * a) / ive(0, be * a)
+                    + al * jv(1, al * a))
+        M = np.empty((4, 4))
+        for k, r in enumerate((ri, a)):
+            ei = np.exp(be * (r - a))
+            ek = np.exp(-be * (r - ri))
+            M[2 * k] = (jv(0, al * r), yv(0, al * r),
+                        ive(0, be * r) * ei, kve(0, be * r) * ek)
+            M[2 * k + 1] = (-al * jv(1, al * r), -al * yv(1, al * r),
+                            be * ive(1, be * r) * ei,
+                            -be * kve(1, be * r) * ek)
+        M /= np.max(np.abs(M), axis=0)
+        return float(np.linalg.det(M))
+
+    lam = np.sqrt(D / (T * a * a))
+
+    def wurzel(Dx):
+        hi = (1.0 + 4.0 * lam + 4.0 * (z * lam) ** 2 + 1e-3) ** 2
+        xs = np.linspace(1.0 - 1e-3, hi, 400)
+        vs = [det(x, Dx) for x in xs]
+        for k in range(len(xs) - 1):
+            if np.isfinite(vs[k]) and np.isfinite(vs[k + 1]) \
+                    and vs[k] * vs[k + 1] < 0.0:
+                return brentq(det, xs[k], xs[k + 1], args=(Dx,),
+                              xtol=1e-15, rtol=1e-15)
+        return None
+
+    eps = 1e-2
+    x0, xp, xm = wurzel(D), wurzel(D * (1 + eps)), wurzel(D * (1 - eps))
+    if x0 is None or xp is None or xm is None:
+        return None
+    q = (np.log(xp) - np.log(xm)) / (np.log(1 + eps) - np.log(1 - eps))
+    return float(q), float(np.sqrt(x0))
+
+
 def _abgestuft(lo, hi, spans, h_f, h_max, wachs=0.3):
     """Knoten auf [lo, hi]: Weite h_f in den Spannen ``spans``, nach außen
     wachsend (h ≈ h_f + wachs·Abstand), höchstens h_max; lo und hi exakt."""
@@ -479,7 +543,9 @@ class MicrophoneCapsule:
     Membran
         membrane_material : str oder dict
             Materialname aus :attr:`MATERIALS` (z. B. ``"PET"``, ``"nickel"``)
-            oder eigenes dict ``{"rho": ..., "E": ..., "nu": ...}``.
+            oder eigenes dict ``{"rho": ..., "E": ..., "nu": ...}``, wahl-
+            weise mit dem Verlustfaktor ``"eta"`` des Werkstoffs (sonst
+            :attr:`_ETA_DEFAULT`, s. Folienverlust, Gegenprobe 61).
         membrane_resonance_hz : float oder None
             Resonanzfrequenz der Membran [Hz]. Ist sie angegeben, wird die
             akustische Nachgiebigkeit der Membran so gewählt, dass genau
@@ -729,20 +795,30 @@ class MicrophoneCapsule:
     """
 
     # Membranmaterialien: Dichte rho [kg/m^3], E-Modul E [Pa],
-    # Poissonzahl nu [-] (für die Biegesteifigkeit).
+    # Poissonzahl nu [-] (für die Biegesteifigkeit), Verlustfaktor eta [-]
+    # des Werkstoffs (komplexer E-Modul E·(1 + j·eta), Folienverlust,
+    # Gegenprobe 61). eta sind Größenordnungen bei Raumtemperatur und
+    # kleiner Amplitude: PET glasig zwischen β-Relaxation und Glas-
+    # übergang 0,01…0,06; Metalle 1e-4…1e-3 (Blanter et al., Internal
+    # Friction in Metallic Materials, Springer 2007; Nickel überwiegend
+    # magnetomechanisch). Durch die Vorspannung verdünnt wirken davon nur
+    # 0,1…0,7 % (s. _folienverlust); der Frequenzgang hängt deshalb nicht
+    # an der genauen Zahl (Gegenprobe 61: ×10 ändert < 0,01 dB).
     MATERIALS = {
-        "pet":       {"rho": 1390.0, "E": 4.9e9,   "nu": 0.37},  # PET/Mylar
-        "mylar":     {"rho": 1390.0, "E": 4.9e9,   "nu": 0.37},
-        "nickel":    {"rho": 8908.0, "E": 200.0e9, "nu": 0.31},
-        "titan":     {"rho": 4506.0, "E": 116.0e9, "nu": 0.32},
-        "aluminium": {"rho": 2700.0, "E": 70.0e9,  "nu": 0.35},
-        "gold":      {"rho": 19320.0, "E": 79.0e9, "nu": 0.42},
+        "pet":       {"rho": 1390.0, "E": 4.9e9,   "nu": 0.37,
+                      "eta": 0.02},                          # PET/Mylar
+        "mylar":     {"rho": 1390.0, "E": 4.9e9,   "nu": 0.37, "eta": 0.02},
+        "nickel":    {"rho": 8908.0, "E": 200.0e9, "nu": 0.31, "eta": 1e-3},
+        "titan":     {"rho": 4506.0, "E": 116.0e9, "nu": 0.32, "eta": 1e-3},
+        "aluminium": {"rho": 2700.0, "E": 70.0e9,  "nu": 0.35, "eta": 1e-4},
+        "gold":      {"rho": 19320.0, "E": 79.0e9, "nu": 0.42, "eta": 1e-3},
     }
 
-    # Interne Materialgüte der Membran (Verlustfaktor der Folie selbst;
-    # die dominante Dämpfung kommt aus dem Luftspalt, dieser Wert stellt
-    # nur numerische Gutartigkeit ohne Spaltdämpfung sicher).
-    _Q_MEMBRANE_INTERNAL = 100.0
+    # FOLIENVERLUST (Gegenprobe 61): Verlustfaktor eines eigenen
+    # Materials ohne Angabe — der Polymerwert, also eher zu hoch.
+    # Bis Gegenprobe 60 stand hier eine Materialgüte Q = 100 als
+    # „numerischer Boden", in 2D und 3D verschieden umgesetzt.
+    _ETA_DEFAULT = 0.02
 
     # 3D-Löser: Kurzschlussleitwert der Lochmündungen relativ zum größten
     # Film-Flächenleitwert (Äquipotential-Mündung, s. _build_3d_geometry).
@@ -955,6 +1031,10 @@ class MicrophoneCapsule:
         self.mat_rho = float(mat["rho"])
         self.mat_E = float(mat["E"])
         self.mat_nu = float(mat.get("nu", 0.35))
+        self.mat_eta = float(mat.get("eta", self._ETA_DEFAULT))
+        if self.mat_eta < 0.0:
+            raise ValueError("Verlustfaktor eta der Folie darf nicht "
+                             "negativ sein.")
         self.membrane_material = membrane_material
 
         self.f_res_user = membrane_resonance_hz
@@ -1710,20 +1790,18 @@ class MicrophoneCapsule:
         # statische Auslenkung auf dem Elektrodengitter der Integrale
         self._es_w = np.interp(self._es_u, st["u"], w_st)
 
-        # NUMERISCHER BODEN der Membrandämpfung (s. _Q_MEMBRANE_INTERNAL).
-        # Die DOMINANTE Dämpfung der Membran-Grundmode kommt aus dem Spalt-
-        # film: die Piston-Bewegung der Membran drückt die Spaltluft lateral
-        # zu den Löchern (Škvor-Widerstand R_A_gap). Dieser Widerstand sitzt
-        # AUSSCHLIESSLICH im Spalt-Zweitor (_backplate_gap_abcd bzw. das
-        # 2D-Feld) — Gegenprobe 31 hat die frühere zusätzliche Reihenschaltung
-        # in _membrane_impedance als Doppelzählung entfernt. Der Wert hier ist
-        # nur der Materialverlust der Folie und trägt praktisch allein dann,
-        # wenn KEIN Spaltfilm existiert (geschlossene Backplate, n_th = 0
-        # und kein Randspalt -> R_A_gap_front = None); über Q = 20…1e5
-        # ändert er die Resonanzüberhöhung um ≤ 0.07 dB.
-        self.R_A_mem = (
-            np.sqrt(self.M_A_mem / self.C_A_eff) / self._Q_MEMBRANE_INTERNAL
-        )
+        # FOLIENVERLUST (Gegenprobe 61). Die DOMINANTE Dämpfung der Membran
+        # kommt aus dem Spaltfilm (Spalt-Zweitor bzw. 2D-Feld; Gegenprobe 31
+        # hat die frühere Doppelzählung in der Membranimpedanz entfernt).
+        # Hier bleibt der Materialverlust der Folie, s. _folienverlust:
+        # wirksamer Verlustfaktor η_m je Mode, hysteretisch auf der
+        # MECHANISCHEN Steifigkeit (die elektrostatische Erweichung ist
+        # verlustfrei). Bis Gegenprobe 60 stand hier R = √(M/C)/Q mit
+        # Q = 100 als numerischer Boden, im 3D-Löser dagegen ein mit ω
+        # wachsender Massenverlust — beides ohne physikalische Grundlage.
+        self._D_plate = D_plate
+        self._folie_eta = self._folienverlust()
+        self.eta_membrane = float(self._folie_eta[0])
 
         # ------------------------------------------------------------------
         # WANDLERKOEFFIZIENT UND RUHEKAPAZITÄT AM ARBEITSPUNKT
@@ -3176,9 +3254,9 @@ class MicrophoneCapsule:
         Z_int = (self._modal_internal_Z(omega, h_film)
                  if h_film is not None else [0.0] * len(branches))
         Y = 1.0 / Z1
-        for (M_m, C_m), Zi in zip(branches, Z_int):
-            Y = Y + 1.0 / (R + Zi + 1j * omega * M_m
-                           + 1.0 / (1j * omega * C_m))
+        for m, ((M_m, C_m), Zi) in enumerate(zip(branches, Z_int), start=1):
+            Y = Y + 1.0 / (self._folie_R(omega, C_m, m) + Zi
+                           + 1j * omega * M_m + 1.0 / (1j * omega * C_m))
         return self._modal_split_factor() / Y
 
     def _membrane_impedance(self, omega):
@@ -3188,8 +3266,8 @@ class MicrophoneCapsule:
         Bewegung der Membran erfährt (Škvor R_A_gap_front am polarisierten
         Frontspalt, frequenzkorrigiert Φ(ω) — bei tiefen Frequenzen reiner
         Widerstand, zu hohen hin mit lateraler Filmträgheit). So bedämpft
-        der Spaltfilm die Grundmode DIREKT. Ohne Spaltfilm (geschlossene
-        Backplate) bleibt nur der numerische Boden R_A_mem.
+        der Spaltfilm die Grundmode DIREKT. Dazu kommt nur der Folien-
+        verlust (hysteretisch, s. :meth:`_folienverlust`).
 
         Mit ``membrane_modes > 1`` treten die höheren (0,m)-Bessel-Moden
         PARALLEL hinzu (s. :meth:`_higher_mode_branches`); für
@@ -3225,7 +3303,7 @@ class MicrophoneCapsule:
         Der Membranfluss sah damit 2·R_gap statt R_gap. Physikalisch ist
         es EIN Weg — die Piston-Bewegung drückt die Spaltluft lateral zu
         den Senken —, also einmal zu zählen. Hier bleibt nur die
-        Eigendämpfung der Folie (Materialgüte _Q_MEMBRANE_INTERNAL).
+        Eigendämpfung der Folie (Folienverlust, Gegenprobe 61).
 
         BELEG am DRUCKEMPFÄNGER (der einzige unverfälschte Leitfall:
         Gradientenbauformen hängen an einer Auslöschung und reagieren auf
@@ -3250,8 +3328,68 @@ class MicrophoneCapsule:
 
         ``h_film``/``R_A_gap`` bleiben in der Signatur, damit die
         Aufrufstellen unverändert lesbar sind.
+
+        FOLIENVERLUST (Gegenprobe 61): hysteretisch auf der mechanischen
+        Steifigkeit, R(ω) = η_1/(ω·C_A_mem) (s. :meth:`_folienverlust`).
         """
-        return self.R_A_mem
+        return self._folie_R(omega, self.C_A_mem, 0)
+
+    def _folie_R(self, omega, C, m):
+        """Akustischer Widerstand des Folienverlusts der Mode m mit der
+        mechanischen Nachgiebigkeit C: η_m/(ω·C) — eine Steifigkeit
+        K·(1 + j·η_m) in der Impedanz K/(jω)."""
+        omega = np.maximum(np.asarray(omega, dtype=float), 1e-30)
+        return self._folie_eta[m] / (omega * C)
+
+    def _folienverlust(self):
+        """Wirksame Verlustfaktoren η_m der Membranmoden (Gegenprobe 61).
+
+        PHYSIK. Die Folie verliert Energie über den komplexen E-Modul
+        E·(1 + j·η) ihres Werkstoffs (s. MATERIALS). Bei einer VORGESPANNTEN
+        Folie ist das aber nur ein kleiner Teil der Modenenergie: die Arbeit
+        gegen die statische Vorspannung T ist in erster Ordnung verlustfrei,
+        denn die Dehnung, die die Auslenkung dabei erzeugt (w'²/2), ist
+        quadratisch und die Vorspannung selbst statisch; verlustbehaftet
+        ist allein die Biegeenergie (Dissipationsverdünnung; Fedorov et al.,
+        Phys. Rev. B 99, 054107, 2019, Gl. 7 und 12). Damit gilt je Mode
+
+            η_m = η · U_Biegung/U_gesamt = η · ∂ln ω_m²/∂ln D,
+
+        ausgewertet an der exakten Eigenwertgleichung der eingespannten
+        Platte unter Zug (s. _platten_verduennung). Die Biegeenergie sitzt
+        vor allem in der Randschicht der Breite λ·a = √(D/T) an der
+        Einspannung; ohne Pfosten ist η_m ≈ η·(λ + z_m²·λ²), λ = √(D/(T a²)),
+        für reale Folien 0,1…0,7 % von η (PET 6 µm, 45 N/m: Güte rund
+        13 000; B&K-Nickel: rund 150 000). Mit Pfosten kommt dessen Rand
+        dazu.
+
+        FORM. Hysteretisch, also frequenzunabhängig auf der Steifigkeit:
+        2D-Kette R = η_m/(ω·C_m), 3D-Feld T·(1 + j·η_1) — in beiden
+        Modellen dieselbe Zahl und dieselbe Frequenzabhängigkeit. Das 3D-
+        Feld hat keinen Biegeoperator; alle seine Formen tragen deshalb den
+        Verlustfaktor der Grundmode (höhere Moden real etwas mehr, s. η_m).
+
+        Spannung T und Flächenmasse wie im 3D-Feld (_membrane_tension_3d).
+        Ohne Lösung der Eigenwertgleichung (sollte nicht vorkommen) die
+        Randschicht-Näherung λ + z²λ².
+        """
+        md = self._ring_modes()
+        z = np.asarray(md["z"], dtype=float)
+        T = self._membrane_tension_3d()
+        a = self.a_mem
+        D = self._D_plate
+        lam = np.sqrt(D / (T * a * a))
+        q = np.empty(z.size)
+        for m, zm in enumerate(z):
+            res = None
+            if _HAS_SCIPY:
+                try:
+                    res = _platten_verduennung(zm, D, T, self.sigma_mem, a,
+                                               self.r_post)
+                except (ValueError, ArithmeticError):
+                    res = None
+            q[m] = res[0] if res is not None else lam + (zm * lam) ** 2
+        return self.mat_eta * q
 
     def _membrane_impedance_passive(self, omega):
         """Serienimpedanz der PASSIVEN Rückmembran (K67-Bauform, Niere).
@@ -3391,9 +3529,10 @@ class MicrophoneCapsule:
         Y = [1.0 / (R + 1j * omega * self.M_A_mem
                     + 1.0 / (1j * omega * self.C_A_eff))]
         Z_int = self._modal_internal_Z(omega, self.h_gap_front)
-        for (M_m, C_m), Zi in zip(self._higher_mode_branches(), Z_int):
-            Y.append(1.0 / (R + Zi + 1j * omega * M_m
-                            + 1.0 / (1j * omega * C_m)))
+        for m, ((M_m, C_m), Zi) in enumerate(
+                zip(self._higher_mode_branches(), Z_int), start=1):
+            Y.append(1.0 / (self._folie_R(omega, C_m, m) + Zi
+                            + 1j * omega * M_m + 1.0 / (1j * omega * C_m)))
         Y = np.array(Y)[:, :, None]                 # (nm, Nomega, 1)
         return np.sum(Y * rel, axis=0) / np.sum(Y, axis=0)
 
@@ -5206,9 +5345,13 @@ class MicrophoneCapsule:
         off_wf = n_films * NF
         off_wr = n_films * NF + NM                   # nur n_mem = 2
         off_n = n_films * NF + n_mem * NM            # Sammelknoten
-        _lap(off_wf, T_mem)
+        # Folienverlust (Gegenprobe 61): hysteretisch auf der Spannung,
+        # T·(1 + j·η_1) — derselbe Verlustfaktor wie in der 2D-Kette und
+        # frequenzunabhängig, gehört also in den statischen Anteil
+        T_c = T_mem * (1.0 + 1j * self.eta_membrane)
+        _lap(off_wf, T_c)
         if n_mem == 2:
-            _lap(off_wr, T_mem)
+            _lap(off_wr, T_c)
         for i in range(Nr):        # Erweichung: polarisierte (Front-)Membran
             for j in range(Np_):
                 k1_ = off_wf + i * Np_ + j
@@ -5418,7 +5561,8 @@ class MicrophoneCapsule:
             Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, drm=drm, dphi=dphi,
             r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM, q0=q0,
             arch=arch, n_films=n_films, n_mem=n_mem, n_nodes=n_nodes,
-            sigma=sigma, T_mem=T_mem, kappa=kappa,
+            sigma=sigma, T_mem=T_mem, eta_mem=self.eta_membrane,
+            kappa=kappa,
             th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
             th_f=th_f, th_cf=th_cf, th_r=th_r, th_cr=th_cr, G_s=G_s,
             relief=relief, stub_cell=stub_cell, cells_rm=cells_rm,
@@ -5956,9 +6100,9 @@ class MicrophoneCapsule:
                         rows += [off + cells]
                         cols += [off + cells]
                         vals += [yv]
-            # Membran-Massenterme (Verlust wie 2D: kleiner interner Q)
-            mterm = (-om ** 2 * g["sigma"]
-                     * (1.0 - 1j / self._Q_MEMBRANE_INTERNAL))
+            # Membran-Massenterme (verlustfrei; der Folienverlust sitzt
+            # hysteretisch in der Spannung, s. _lap, Gegenprobe 61)
+            mterm = -om ** 2 * g["sigma"]
             midx = np.arange(NM)
             for m_i in range(n_mem):
                 woff = off_w + m_i * NM

@@ -1205,3 +1205,155 @@ def test_gp55_massenfaktor_8_z12_g_der():
               f"(Rayleigh {lim55[(0.0, 'Rayleigh')]:.4f}), Ring ρ = 0.1 "
               f"{lim55[(0.1, '8/(z1²g)')]:.4f} "
               f"({lim55[(0.1, 'Rayleigh')]:.4f})  OK")
+
+
+@pytest.mark.feld3d
+def test_gp61_folienverlust(stand):
+    """Gegenprobe 61: Folienverlust — hysteretisch, durch die Vorspannung
+    verdünnt, in 2D und 3D gleich."""
+    # Bis Gegenprobe 60 stand hier eine Materialgüte Q = 100 als
+    # „numerischer Boden", in der 2D-Kette als fester Widerstand
+    # R = √(M/C)/Q (an der Resonanz definiert), im 3D-Feld als Masse
+    # σ·(1 − j/Q) (mit ω wachsend) — zwei verschiedene Gesetze und keines
+    # physikalisch begründet. Bei erzwungener Form (f_res = 300 kHz)
+    # verfälschte das den Vergleich der Filmwiderstände um bis zu 8 %
+    # (Gegenprobe 60).
+    # PHYSIK: die Folie verliert über den komplexen E-Modul E·(1 + j·η)
+    # ihres Werkstoffs. Bei Vorspannung ist die Arbeit gegen T in erster
+    # Ordnung verlustfrei (die Dehnung aus der Auslenkung ist quadratisch,
+    # die Vorspannung statisch); verlustbehaftet ist nur die Biegeenergie
+    # (Dissipationsverdünnung, Fedorov et al., PRB 99, 054107, 2019). Der
+    # wirksame Verlustfaktor der Mode ist η_m = η·∂ln ω_m²/∂ln D an der
+    # exakten Eigenwertgleichung der eingespannten Platte unter Zug,
+    # hysteretisch (frequenzunabhängig) auf der Steifigkeit.
+    # a) Die Eigenwertgleichung gegen die Randschicht-Asymptotik
+    #    q = λ + z²λ² (Kreis) bzw. λ·[C1(z)² + 4/(π²z²ρ)]/I2 + z²λ²
+    #    (Ring mit Pfosten): Abweichung O(λ), mit λ fallend; dazu die
+    #    komplexe Eigenwertrechnung mit D·(1 + jη) — ihr Im(ω²)/Re(ω²) ist
+    #    η·q. Die Grundfrequenz steigt um den Faktor ≈ 1 + λ (Stand-Wert).
+    # b) 2D und 3D tragen denselben Verlust: ein großer Verlustfaktor
+    #    verschiebt die Phase im steifigkeitsbestimmten Tiefton in beiden
+    #    Modellen gleich (auf 3 %). Darüber mischt sich der Filmterm ω·R·C
+    #    ein, und die Phasenverschiebung hängt am Gesamtnetz der Modelle.
+    # c) Wirkung an realen Kapseln: η_eff ist 0.1…0.7 % von η; selbst das
+    #    Zehnfache ändert den Frequenzgang höchstens um 0.05 dB — die
+    #    genaue Werkstoffzahl ist belanglos.
+    if not _HAS_SCIPY:
+        return
+    from scipy.optimize import newton
+    from scipy.special import ive, jn_zeros, jv, yv
+
+    z = jn_zeros(0, 2)
+    D61 = 4.9e9 * (6e-6) ** 3 / (12 * (1 - 0.37**2))        # PET 6 µm
+    rs61, a61 = 1390.0 * 6e-6, 12.7e-3
+    fehler = []
+    for T in (4.0e3, 450.0, 45.0):              # λ ≈ 0.0004 … 0.004
+        lam = np.sqrt(D61 / (T * a61 * a61))
+        for m in (0, 1):
+            q, f = _platten_verduennung(z[m], D61, T, rs61, a61)
+            fehler.append((lam, abs(q / (lam + (z[m] * lam) ** 2) - 1.0)))
+            assert abs(q / (lam + (z[m] * lam) ** 2) - 1.0) < 2.0 * lam, \
+                (f"Kreis λ = {lam:.1e}, Mode {m + 1}: Eigenwertgleichung "
+                 f"gegen Randschicht-Asymptotik ({q:.4e})")
+            assert abs(f - (1.0 + lam)) < 3.0 * (z[m] * lam) ** 2 + lam ** 2, \
+                f"Frequenzfaktor ω/ω_T = {f:.6f} gegen 1 + λ"
+    # Ring (Pfosten 3 mm): Randschicht an BEIDEN Rändern
+    md61 = MicrophoneCapsule._ring_eigen(3e-3 / a61, 1)
+    zr, I2r, rho61 = float(md61["z"][0]), float(md61["I2"][0]), 3e-3 / a61
+    c1 = jv(1, zr) * yv(0, zr * rho61) - yv(1, zr) * jv(0, zr * rho61)
+    for T in (450.0, 45.0):
+        lam = np.sqrt(D61 / (T * a61 * a61))
+        q, _ = _platten_verduennung(zr, D61, T, rs61, a61, ri=3e-3)
+        q_as = (lam * (c1**2 + 4.0 / (np.pi**2 * zr**2 * rho61)) / I2r
+                + (zr * lam) ** 2)
+        assert abs(q / q_as - 1.0) < 3.0 * lam, \
+            f"Ring λ = {lam:.1e}: gegen Randschicht-Asymptotik ({q / q_as:.4f})"
+    # komplexe Eigenwerte: Im(ω²)/Re(ω²) == η·q (Kreis, PET, 45 N/m)
+    T, eta61 = 45.0, 0.02
+
+    def _det(x):
+        om2 = x * (z[0] / a61) ** 2 * T / rs61
+        Dc = D61 * (1 + 1j * eta61)
+        s = np.sqrt(T * T + 4 * Dc * rs61 * om2 + 0j)
+        al, be = np.sqrt((s - T) / (2 * Dc)), np.sqrt((s + T) / (2 * Dc))
+        return (jv(0, al * a61) * be * ive(1, be * a61) / ive(0, be * a61)
+                + al * jv(1, al * a61))
+    x61 = newton(_det, 1.01 + 1e-5j, tol=1e-13, maxiter=200)
+    q61, f61 = _platten_verduennung(z[0], D61, T, rs61, a61)
+    assert abs((x61.imag / x61.real) / (eta61 * q61) - 1.0) < 0.01, \
+        (f"komplexe Eigenwerte: Im/Re = {x61.imag / x61.real:.4e} gegen "
+         f"η·q = {eta61 * q61:.4e}")
+    stand.wert("frequenzfaktor_pet_45", f61, "",
+               "ω/ω_T der Grundmode, PET 6 µm, 45 N/m, a = 12.7 mm")
+
+    # b) 2D und 3D: derselbe Verlust
+    a1 = dict(architecture="single", membrane_resonance_hz=2100.0,
+              membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+              air_gap=38.1e-6, backplate_diameter=23.9e-3,
+              backplate_thickness=3.125e-3, bias_voltage=1.0,
+              n_blind_holes=0, rear_network_enabled=True, delay_length=0.0,
+              cavity_length=8.0e-3, cavity_wall_thickness=1.5e-3,
+              n_cavity_holes=0, fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+              body_diameter=28e-3, n_through_holes=24,
+              through_hole_diameter=0.99e-3)
+
+    def _mat(eta):
+        return {"rho": 1390.0, "E": 4.9e9, "nu": 0.37, "eta": eta}
+    # Prüfhebel: Werkstoff-η so groß, dass η_eff = 0.01 sichtbar wird
+    eta_hebel = 0.01 / MicrophoneCapsule(
+        squeeze_model="2d", membrane_material=_mat(1.0), **a1).eta_membrane
+    fb = np.array([5.0, 10.0, 20.0])     # rein steifigkeitsbestimmt
+    dphi = {}
+    for sm in ("2d", "3d"):
+        h0 = MicrophoneCapsule(squeeze_model=sm, membrane_material=_mat(0.0),
+                               **a1).transfer_function(fb)
+        h1 = MicrophoneCapsule(squeeze_model=sm,
+                               membrane_material=_mat(eta_hebel),
+                               **a1).transfer_function(fb)
+        dphi[sm] = np.angle(h1 / h0)
+    assert np.all(dphi["2d"] < 0.0), "Verlust muss die Phase nacheilen lassen"
+    assert np.max(np.abs(dphi["3d"] / dphi["2d"] - 1.0)) < 0.03, \
+        (f"2D und 3D müssen denselben Folienverlust tragen (Δφ 2D "
+         f"{np.round(dphi['2d'] * 1e3, 3)}, 3D {np.round(dphi['3d'] * 1e3, 3)}"
+         f" mrad)")
+
+    # c) Wirkung an realen Kapseln (K67 mit PET; B&K-artige Nickelfolie)
+    fw = np.geomspace(20.0, 20e3, 200)
+    ni61 = dict(membrane_material={"rho": 8908.0, "E": 200e9, "nu": 0.31},
+                membrane_resonance_hz=None, membrane_diameter=9.0e-3,
+                membrane_thickness=5.0e-6, membrane_tension=3160.0,
+                air_gap=18.6e-6, backplate_diameter=7.2e-3,
+                backplate_thickness=1.029e-3, bias_voltage=200.0,
+                architecture="single", n_through_holes=6,
+                through_hole_diameter=1.0e-3, through_hole_pcd=3.4e-3,
+                n_blind_holes=0, ring_vent_width=0.86e-3,
+                ring_vent_length=0.30e-3, rear_network_enabled=True,
+                cavity_length=131e-9 / (np.pi * 3.6e-3**2), n_cavity_holes=0,
+                fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+                include_diffraction=False, squeeze_model="2d")
+    wirk = {}
+    for nm, kw, base in (
+            ("K67", dict(K67_KWARGS, squeeze_model="2d"),
+             MicrophoneCapsule.MATERIALS["pet"]),
+            ("Nickel", ni61, MicrophoneCapsule.MATERIALS["nickel"])):
+        hh = []
+        for fac in (0.0, 1.0, 10.0):
+            m = dict(base, eta=base["eta"] * fac)
+            cc = MicrophoneCapsule(**{**kw, "membrane_material": m})
+            hh.append(20 * np.log10(np.abs(cc.transfer_function(fw))))
+        wirk[nm] = (float(np.max(np.abs(hh[1] - hh[0]))),
+                    float(np.max(np.abs(hh[2] - hh[1]))))
+        assert wirk[nm][1] < 0.05, \
+            (f"{nm}: zehnfacher Folienverlust darf den Frequenzgang kaum "
+             f"ändern ({wirk[nm][1]:.3f} dB)")
+    k67 = MicrophoneCapsule(**dict(K67_KWARGS, squeeze_model="2d"))
+    stand.wert("guete_folie_k67", 1.0 / k67.eta_membrane, "",
+               "wirksame Güte der Folie, K67 (PET 6 µm)")
+    stand.wert("folie_k67_db", wirk["K67"][0], "dB",
+               "größte Wirkung des Folienverlusts auf den K67-Frequenzgang")
+    print(f"Folienverlust: Eigenwertgleichung gegen Randschicht-Asymptotik "
+          f"(Kreis, Ring) und komplexe Eigenwerte (Im/Re = η·q auf 1 %); "
+          f"ω/ω_T = {f61:.5f} (1 + λ); 2D/3D gleich (Δφ 5 Hz "
+          f"{dphi['2d'][0] * 1e3:.3f} / {dphi['3d'][0] * 1e3:.3f} mrad); "
+          f"K67: Güte {1.0 / k67.eta_membrane:.0f}, Wirkung "
+          f"{wirk['K67'][0]:.1e} dB (×10: {wirk['K67'][1]:.1e} dB)  OK")

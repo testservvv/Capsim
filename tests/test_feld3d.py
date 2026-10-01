@@ -922,10 +922,11 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
     #    ihn (B&K 4134: 1.7-fach) — es löste die radiale Zuströmung zum
     #    Lochring selbst auf und addierte die volle Škvor-Zelle.
     #    NACHTRAG (Gegenprobe 60): mit dem Makroelement rechnet 2D den Film
-    #    am Lochkreis exakt. Der Vergleich schaltet jetzt den Folienverlust
-    #    ab (2D: fester Widerstand ω0·M/Q, 3D: mit ω wachsend — bei
-    #    erzwungener Form und Nickelfolie verfälschte er das Verhältnis um
-    #    ~8 %); sauber liegt 3D/2D bei 1.04 (Gaußband 0.65).
+    #    am Lochkreis exakt. Der Folienverlust war in 2D (fester Widerstand
+    #    ω0·M/Q) und 3D (mit ω wachsend) verschieden angesetzt und
+    #    verfälschte das Verhältnis bei erzwungener Form und Nickelfolie um
+    #    ~8 %; seit Gegenprobe 61 ist er in beiden gleich. Sauber liegt
+    #    3D/2D bei 1.04 (Gaußband 0.65).
     # OFFEN: die B&K-Messung (Zuckerwar 1978, Aktuator) folgte dem alten
     #    2D-Modell (ein Ausgleich, Gegenprobe 59); mit dem Makroelement
     #    liegen 2D und 3D gleichermaßen über ihr (Gegenprobe 38). Der
@@ -956,7 +957,9 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
             """Unabhängiger axialsymmetrischer Löser (nur Randschlitz):
             Volumenverschiebung über der Elektrode je Pa Quelldruck."""
             g = c._g3d
-            T, sig = g["T_mem"], g["sigma"]
+            # Folienverlust hysteretisch auf der Spannung (Gegenprobe 61)
+            T = g["T_mem"] * (1.0 + 1j * g["eta_mem"])
+            sig = g["sigma"]
             a, b = c.a_mem, c.a_bp
             Mb = int(round(M * b / a))
             r = np.concatenate([np.linspace(0.0, b, Mb + 1),
@@ -980,7 +983,7 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
                 ir, ib, ifr = n + nf, n + nf + 1, n + nf + 2
                 S = _lil52((n + nf + 3,) * 2, dtype=complex)
                 rhs = np.zeros(n + nf + 3, dtype=complex)
-                mq = -om ** 2 * sig * (1 - 1j / c._Q_MEMBRANE_INTERNAL)
+                mq = -om ** 2 * sig
                 # Membran (w zur Platte hin): K·w − ω²M·w = A(p_f − p_r)
                 for i in range(n - 1):
                     S[iw + i, iw + i] += mq * A[i]
@@ -1091,23 +1094,17 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
         # c) Filmwiderstand bei erzwungener Form (sehr steife Membran):
         #    tan(Phase) ≈ −ω·R·C im Steifigkeitsbereich
         def _Rratio52(p):
-            # ohne Folienverlust: 2D setzt ihn als festen Widerstand
-            # ω0·M/Q an, 3D wachsend mit ω — bei f_res = 300 kHz und
-            # Nickelfolie wären das im 2D ~8 % des Filmwiderstands
-            # (Gegenprobe 60)
+            # der Folienverlust ist in 2D und 3D gleich (hysteretisch,
+            # Gegenprobe 61) und fällt aus dem Phasenverhältnis heraus;
+            # bis Gegenprobe 60 verfälschte er es bei Nickelfolie um ~8 %
             q = dict(p, membrane_resonance_hz=300e3)
             q.pop("membrane_tension", None)
             ff = np.array([1000.0])
             ph = {}
-            Q0 = MicrophoneCapsule._Q_MEMBRANE_INTERNAL
-            MicrophoneCapsule._Q_MEMBRANE_INTERNAL = 1e12
-            try:
-                for sm in ("2d", "3d"):
-                    cc = MicrophoneCapsule(squeeze_model=sm, **q)
-                    ph[sm] = np.angle(cc.transfer_function(ff)[0]
-                                      / cc.transfer_function([20.0])[0])
-            finally:
-                MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q0
+            for sm in ("2d", "3d"):
+                cc = MicrophoneCapsule(squeeze_model=sm, **q)
+                ph[sm] = np.angle(cc.transfer_function(ff)[0]
+                                  / cc.transfer_function([20.0])[0])
             return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
 
         a24_52 = dict(

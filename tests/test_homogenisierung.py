@@ -571,21 +571,15 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise(stand):
         #     Gegenprobe 52) stimmt er auf 3 % (mit dem Makroelement auf
         #     0.1 %, Gegenprobe 60)
         def _rr53(q):
-            # ohne Folienverlust (s. Gegenprobe 60)
             q = dict(q, membrane_resonance_hz=300e3)
             q.pop("membrane_tension", None)
             ph = {}
-            Q0 = MicrophoneCapsule._Q_MEMBRANE_INTERNAL
-            MicrophoneCapsule._Q_MEMBRANE_INTERNAL = 1e12
-            try:
-                for sm in ("2d", "3d"):
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
-                        cc = MicrophoneCapsule(squeeze_model=sm, **q)
-                    ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
-                                      / cc.transfer_function([20.0])[0])
-            finally:
-                MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q0
+            for sm in ("2d", "3d"):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    cc = MicrophoneCapsule(squeeze_model=sm, **q)
+                ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
+                                  / cc.transfer_function([20.0])[0])
             return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
         rrR53 = _rr53(qR53)
         assert abs(rrR53 - 1.0) < 0.03, \

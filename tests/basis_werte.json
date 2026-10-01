@@ -1,97 +1,97 @@
 {
  "gp02.gegentakt_gewinn": {
-  "wert": 6.720194789094954,
+  "wert": 6.720203133624786,
   "einheit": "dB",
   "text": "Gegentakt-Gewinn Dual gegen Single bei 100 Hz",
   "test": "tests/test_grundlagen.py::test_gp02_dual_backplate_gegentakt",
   "art": "stand"
  },
  "gp04.druckstau_16k": {
-  "wert": 4.37046935447851,
+  "wert": 4.370469354478506,
   "einheit": "dB",
   "text": "frontaler Druckstau bei 16 kHz",
   "test": "tests/test_beugung_bem.py::test_gp04_druckstau_beugung_am_kapselkorper",
   "art": "stand"
  },
  "gp06.praesenzanhebung": {
-  "wert": 5.344348446906405,
+  "wert": 5.353745257181792,
   "einheit": "dB",
   "text": "Präsenzanhebung 5–16 kHz (roh; Korb/Elektronik glätten)",
   "test": "tests/test_bauformen.py::test_gp06_k67_bauform_doppelmembran",
   "art": "stand"
  },
  "gp07.niere_20v": {
-  "wert": -28.132216519460464,
+  "wert": -28.138085620966336,
   "einheit": "dB",
   "text": "K67 180° bei 1 kHz, 20 V",
   "test": "tests/test_membran_elektrostatik.py::test_gp07_elektrostatik_der_doppelmembran",
   "art": "stand"
  },
  "gp07.niere_60v": {
-  "wert": -28.097318157403265,
+  "wert": -28.106142743257298,
   "einheit": "dB",
   "text": "K67 180° bei 1 kHz, 60 V",
   "test": "tests/test_membran_elektrostatik.py::test_gp07_elektrostatik_der_doppelmembran",
   "art": "stand"
  },
  "gp13.nierentiefe_1150": {
-  "wert": -27.75076646825454,
+  "wert": -27.76123556682908,
   "einheit": "dB",
   "text": "K67 180° bei 1 kHz, f_res 1150 Hz",
   "test": "tests/test_grundlagen.py::test_gp13_ruckwarts_durchlauf_port_tausch",
   "art": "stand"
  },
  "gp13.nierentiefe_4000": {
-  "wert": -17.35771458975535,
+  "wert": -17.356635444059656,
   "einheit": "dB",
   "text": "K67 180° bei 1 kHz, f_res 4000 Hz",
   "test": "tests/test_grundlagen.py::test_gp13_ruckwarts_durchlauf_port_tausch",
   "art": "stand"
  },
  "gp17.debenham_3d": {
-  "wert": 2.4990388743310628,
+  "wert": 2.4989893248135235,
   "einheit": "",
   "text": "Debenham 3D mit Rand-Freistich bei 1 kHz",
   "test": "tests/test_bauformen.py::test_gp17_laufzeit_diagnose_delay_diagnostics",
   "art": "stand"
  },
  "gp17.debenham_ohne_freistich": {
-  "wert": 6.254318246845556,
+  "wert": 6.254215186123128,
   "einheit": "",
   "text": "Debenham ohne Freistich bei 250 Hz",
   "test": "tests/test_bauformen.py::test_gp17_laufzeit_diagnose_delay_diagnostics",
   "art": "stand"
  },
  "gp17.debenham_verhaeltnis": {
-  "wert": 5.229518329490351,
+  "wert": 5.229408892016093,
   "einheit": "",
   "text": "Debenham mit Freistich bei 250 Hz",
   "test": "tests/test_bauformen.py::test_gp17_laufzeit_diagnose_delay_diagnostics",
   "art": "stand"
  },
  "gp17.k67_verhaeltnis": {
-  "wert": 1.0463330807658018,
+  "wert": 1.0461013212124843,
   "einheit": "",
   "text": "K67 nominal: interne/externe Laufzeit bei 1 kHz",
   "test": "tests/test_bauformen.py::test_gp17_laufzeit_diagnose_delay_diagnostics",
   "art": "stand"
  },
  "gp17.spacer45_verhaeltnis": {
-  "wert": 1.3171134806058145,
+  "wert": 1.3168910369552396,
   "einheit": "",
   "text": "K67 mit 45-µm-Spacer: interne/externe Laufzeit",
   "test": "tests/test_bauformen.py::test_gp17_laufzeit_diagnose_delay_diagnostics",
   "art": "stand"
  },
  "gp18.f_h_debenham": {
-  "wert": 3067.144760518196,
+  "wert": 3067.441941961036,
   "einheit": "Hz",
   "text": "interne Resonanz Debenham (Freistich)",
   "test": "tests/test_grundlagen.py::test_gp18_angle_responses_helmholtz_frequenz",
   "art": "stand"
  },
  "gp18.f_h_k67": {
-  "wert": 3265.3854872268057,
+  "wert": 3265.611464805043,
   "einheit": "Hz",
   "text": "interne Resonanz K67",
   "test": "tests/test_grundlagen.py::test_gp18_angle_responses_helmholtz_frequenz",
@@ -119,63 +119,63 @@
   "art": "stand"
  },
  "gp22e.ausloeschung_12grad": {
-  "wert": -36.94307006890524,
+  "wert": -37.010673564726254,
   "einheit": "dB",
   "text": "K67 180°, 1 kHz, 3D 12°",
   "test": "tests/test_feld3d.py::test_gp22e_kernlage_gegen_2d",
   "art": "stand"
  },
  "gp22e.ausloeschung_2d": {
-  "wert": -28.097318157403265,
+  "wert": -28.106142743257298,
   "einheit": "dB",
   "text": "K67 180°, 1 kHz, 2D",
   "test": "tests/test_feld3d.py::test_gp22e_kernlage_gegen_2d",
   "art": "stand"
  },
  "gp22e.ausloeschung_9grad": {
-  "wert": -18.57971042098148,
+  "wert": -18.565439190289567,
   "einheit": "dB",
   "text": "K67 180°, 1 kHz, 3D 9°",
   "test": "tests/test_feld3d.py::test_gp22e_kernlage_gegen_2d",
   "art": "stand"
  },
  "gp22e.empf_3d_zu_2d": {
-  "wert": -1.4444083712361666,
+  "wert": -1.4447713226086791,
   "einheit": "dB",
   "text": "K67 1 kHz, 3D verdreht gegen 2D",
   "test": "tests/test_feld3d.py::test_gp22e_kernlage_gegen_2d",
   "art": "stand"
  },
  "gp23c.spannung_1khz": {
-  "wert": 0.9154225044704621,
+  "wert": 0.915425557003389,
   "einheit": "",
   "text": "K103 dicht, |3D/1D| Spannung",
   "test": "tests/test_feld3d.py::test_gp23c_k103_dicht",
   "art": "stand"
  },
  "gp23c.volumen_1khz": {
-  "wert": 0.9670613028907273,
+  "wert": 0.9670626832443582,
   "einheit": "",
   "text": "K103 dicht, |3D/1D| Volumen",
   "test": "tests/test_feld3d.py::test_gp23c_k103_dicht",
   "art": "stand"
  },
  "gp23d.delta_d_r": {
-  "wert": 0.0015795130376376203,
+  "wert": 0.0015794988450947493,
   "einheit": "",
   "text": "K103 offen, max |D_r(3D) − D_r(2D)|",
   "test": "tests/test_feld3d.py::test_gp23d_k103_offen",
   "art": "stand"
  },
  "gp23e.d180": {
-  "wert": -0.6081342129829572,
+  "wert": -0.6081295757054965,
   "einheit": "dB",
   "text": "Niere 180°, 3D − 2D",
   "test": "tests/test_feld3d.py::test_gp23e_niere",
   "art": "stand"
  },
  "gp23e.d90": {
-  "wert": -0.2895317539218465,
+  "wert": -0.28953187755995335,
   "einheit": "dB",
   "text": "Niere 90°, 3D − 2D",
   "test": "tests/test_feld3d.py::test_gp23e_niere",
@@ -189,21 +189,21 @@
   "art": "stand"
  },
  "gp23e.empf_3d_zu_2d": {
-  "wert": 0.9457913551808939,
+  "wert": 0.9457279652319293,
   "einheit": "",
   "text": "Niere 1 kHz, |3D/2D|",
   "test": "tests/test_feld3d.py::test_gp23e_niere",
   "art": "stand"
  },
  "gp24.empf_einlass_gegen_backplate": {
-  "wert": 1.3513614632928017,
+  "wert": 1.3513471433842679,
   "einheit": "",
   "text": "Empfindlichkeit 1 kHz, Einlass/Backplate (2D)",
   "test": "tests/test_bauformen.py::test_gp24_position_des_ruckwartigen_gewebes",
   "art": "stand"
  },
  "gp24.k103_verlaengerung": {
-  "wert": 0.022290390629713552,
+  "wert": 0.022290390629714663,
   "einheit": "",
   "text": "K103: Laufzeitverhältnis Einlass minus Backplate",
   "test": "tests/test_bauformen.py::test_gp24_position_des_ruckwartigen_gewebes",
@@ -217,28 +217,28 @@
   "art": "stand"
  },
  "gp24.verhaeltnis_backplate_3d": {
-  "wert": 0.6203841318147697,
+  "wert": 0.6203830548140898,
   "einheit": "",
   "text": "Gewebe an der Backplate: interne/externe Laufzeit (3D)",
   "test": "tests/test_bauformen.py::test_gp24_position_des_ruckwartigen_gewebes",
   "art": "stand"
  },
  "gp24.verhaeltnis_einlass_2d": {
-  "wert": 2.5068860314601067,
+  "wert": 2.5068860314601085,
   "einheit": "",
   "text": "Gewebe am Einlass: interne/externe Laufzeit (2D)",
   "test": "tests/test_bauformen.py::test_gp24_position_des_ruckwartigen_gewebes",
   "art": "stand"
  },
  "gp24.verhaeltnis_einlass_3d": {
-  "wert": 2.5710984595529056,
+  "wert": 2.5710974330401393,
   "einheit": "",
   "text": "Gewebe am Einlass: interne/externe Laufzeit (3D)",
   "test": "tests/test_bauformen.py::test_gp24_position_des_ruckwartigen_gewebes",
   "art": "stand"
  },
  "gp24.vertiefung_250hz": {
-  "wert": -3.7993786045633353,
+  "wert": -3.799378604563352,
   "einheit": "dB",
   "text": "180° bei 250 Hz, Einlass gegen Backplate (2D)",
   "test": "tests/test_bauformen.py::test_gp24_position_des_ruckwartigen_gewebes",
@@ -266,14 +266,14 @@
   "art": "stand"
  },
  "gp29.abstand_1d_2d": {
-  "wert": 2.8380708810726563,
+  "wert": 2.838087236423295,
   "einheit": "dB",
   "text": "|1D/2D| rein randbelüftet, 200 Hz",
   "test": "tests/test_spaltfilm.py::test_gp29_durchgehender_randspalt_b_k_bauform",
   "art": "stand"
  },
  "gp30.rms_2d_3d_debenham": {
-  "wert": 0.013682201473867932,
+  "wert": 0.013680762736615355,
   "einheit": "dB",
   "text": "RMS 2D gegen 3D, Richtdiagramm 500 Hz, 12 Löcher",
   "test": "tests/test_spaltfilm.py::test_gp30_zellfunktion_des_durchflusses",
@@ -287,7 +287,7 @@
   "art": "stand"
  },
  "gp32.ueberhoehung_3d_minus_fem": {
-  "wert": 0.22647529003642664,
+  "wert": 0.23310083133799075,
   "einheit": "dB",
   "text": "Resonanzüberhöhung 3D minus FEM (+6.74 dB)",
   "test": "tests/test_referenzen.py::test_gp32_externe_referenz_fem_veroffentlicht",
@@ -312,7 +312,7 @@
   "toleranz": 0.01
  },
  "gp34.restluecke_3_moden": {
-  "wert": 6.6012193627659235,
+  "wert": 6.601272526330106,
   "einheit": "dB",
   "text": "RMS gegen COMSOL ab 5 kHz, streifend, 3 Moden",
   "test": "tests/test_membran_elektrostatik.py::test_gp34_modenabhangiger_quelldruck",
@@ -321,21 +321,21 @@
   "toleranz": 0.15
  },
  "gp38.rms_2d_4134_db": {
-  "wert": 2.094027662128298,
+  "wert": 2.1308558744332053,
   "einheit": "dB",
   "text": "2D gegen Fig. 6, Amplitude (Prüfling gedämpfter)",
   "test": "tests/test_referenzen.py::test_gp38_externe_referenz_b_k_4134",
   "art": "stand"
  },
  "gp38.rms_2d_4134_grad": {
-  "wert": 6.875708419675964,
+  "wert": 7.039395417823504,
   "einheit": "°",
   "text": "2D gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp38_externe_referenz_b_k_4134",
   "art": "stand"
  },
  "gp38.rms_2d_4146_db": {
-  "wert": 0.6320976868512729,
+  "wert": 0.640934857602704,
   "einheit": "dB",
   "text": "2D gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp38_externe_referenz_b_k_4134",
@@ -358,7 +358,7 @@
   "art": "stand"
  },
  "gp41.rest_90grad_14k": {
-  "wert": 4.904349118668532,
+  "wert": 4.91986520872229,
   "einheit": "dB",
   "text": "Off-Axis-Rest 90°/14 kHz gegen Fig. 6",
   "test": "tests/test_beugung_bem.py::test_gp41_bem_frontfaktor_der_flachen_stirnflache",
@@ -367,7 +367,7 @@
   "toleranz": 0.15
  },
  "gp41.rest_90grad_rms": {
-  "wert": 3.865161326359626,
+  "wert": 3.8715719380673863,
   "einheit": "dB",
   "text": "90° mit einer Mode gegen Fig. 6 (RMS)",
   "test": "tests/test_beugung_bem.py::test_gp41_bem_frontfaktor_der_flachen_stirnflache",
@@ -376,42 +376,42 @@
   "toleranz": 0.15
  },
  "gp47.volumen_mit_pfosten_100hz": {
-  "wert": 0.9612965369638903,
+  "wert": 0.9612962760022628,
   "einheit": "",
   "text": "|3D/2D| Volumen, 60 V",
   "test": "tests/test_feld3d.py::test_gp47_ringmembran_im_3d_feldloser",
   "art": "stand"
  },
  "gp47.volumen_mit_pfosten_2000hz": {
-  "wert": 0.9704719401097874,
+  "wert": 0.9704806783116875,
   "einheit": "",
   "text": "|3D/2D| Volumen, 60 V",
   "test": "tests/test_feld3d.py::test_gp47_ringmembran_im_3d_feldloser",
   "art": "stand"
  },
  "gp47.volumen_mit_pfosten_500hz": {
-  "wert": 0.962541658090136,
+  "wert": 0.9625426198686821,
   "einheit": "",
   "text": "|3D/2D| Volumen, 60 V",
   "test": "tests/test_feld3d.py::test_gp47_ringmembran_im_3d_feldloser",
   "art": "stand"
  },
  "gp47.volumen_ohne_pfosten_100hz": {
-  "wert": 0.9685482402455018,
+  "wert": 0.9685462617194922,
   "einheit": "",
   "text": "|3D/2D| Volumen, 60 V",
   "test": "tests/test_feld3d.py::test_gp47_ringmembran_im_3d_feldloser",
   "art": "stand"
  },
  "gp47.volumen_ohne_pfosten_2000hz": {
-  "wert": 0.976780397198212,
+  "wert": 0.9767869292143653,
   "einheit": "",
   "text": "|3D/2D| Volumen, 60 V",
   "test": "tests/test_feld3d.py::test_gp47_ringmembran_im_3d_feldloser",
   "art": "stand"
  },
  "gp47.volumen_ohne_pfosten_500hz": {
-  "wert": 0.967461682400755,
+  "wert": 0.9674608703344496,
   "einheit": "",
   "text": "|3D/2D| Volumen, 60 V",
   "test": "tests/test_feld3d.py::test_gp47_ringmembran_im_3d_feldloser",
@@ -432,7 +432,7 @@
   "art": "stand"
  },
  "gp52.aktuatorlast_max": {
-  "wert": 0.5612937717305047,
+  "wert": 0.5659480723519319,
   "einheit": "dB",
   "text": "Anhebung durch Aktuatorlast, 13…20 kHz",
   "test": "tests/test_feld3d.py::test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart",
@@ -441,28 +441,28 @@
   "toleranz": 0.05
  },
  "gp52.formanpassung_20khz": {
-  "wert": 1.6270503757641244,
+  "wert": 1.6247656785616833,
   "einheit": "dB",
   "text": "3D − 2D (Randschlitz), 20 kHz",
   "test": "tests/test_feld3d.py::test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart",
   "art": "stand"
  },
  "gp52.r3d_zu_r2d_lochkreis": {
-  "wert": 1.0440228491114947,
+  "wert": 1.0440228482300273,
   "einheit": "",
   "text": "Filmwiderstand 3D/2D, B&K 4134, erzwungene Form",
   "test": "tests/test_feld3d.py::test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart",
   "art": "stand"
  },
  "gp53.abweichung_weit_20khz": {
-  "wert": 1.11544644811089,
+  "wert": 1.1217881193778,
   "einheit": "dB",
   "text": "2D − 3D, weiter Spalt, 16 Löcher, 20 kHz",
   "test": "tests/test_homogenisierung.py::test_gp53_warnlucke_weiter_spalt_lochkreise",
   "art": "stand"
  },
  "gp53.f_grenze_lochkreis_65um": {
-  "wert": 2225.216173325591,
+  "wert": 2227.52617668179,
   "einheit": "Hz",
   "text": "Darstellungsgrenze, 48 Löcher auf 0.67·a, 65 µm",
   "test": "tests/test_homogenisierung.py::test_gp53_warnlucke_weiter_spalt_lochkreise",
@@ -490,119 +490,119 @@
   "art": "stand"
  },
  "gp53.roh_16_loecher": {
-  "wert": 0.10010548229411179,
+  "wert": 0.1018837256970729,
   "einheit": "dB",
   "text": "2D − 3D, 1\"-Kapsel 65 µm, 1185 Hz",
   "test": "tests/test_homogenisierung.py::test_gp53_warnlucke_weiter_spalt_lochkreise",
   "art": "stand"
  },
  "gp53.roh_96_loecher": {
-  "wert": 1.263139666585009,
+  "wert": 1.2656444709473647,
   "einheit": "dB",
   "text": "2D − 3D, 1\"-Kapsel 65 µm, 1185 Hz",
   "test": "tests/test_homogenisierung.py::test_gp53_warnlucke_weiter_spalt_lochkreise",
   "art": "stand"
  },
  "gp58.phase_3d_anteil_4134": {
-  "wert": 0.7084150354134742,
+  "wert": 0.7067383787748095,
   "einheit": "",
   "text": "3D-Nacheilung / gemessene, Mittel 2–10 kHz",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4134_db": {
-  "wert": 1.667805139120559,
+  "wert": 1.6924423603901968,
   "einheit": "dB",
   "text": "3D gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4134_grad": {
-  "wert": 7.588890566660628,
+  "wert": 7.672005443068332,
   "einheit": "°",
   "text": "3D gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4146_db": {
-  "wert": 0.7464057049552194,
+  "wert": 0.7321968750897813,
   "einheit": "dB",
   "text": "3D gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4146_grad": {
-  "wert": 8.654856612680323,
+  "wert": 8.568791922567026,
   "einheit": "°",
   "text": "3D gegen Fig. 7, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_bk_geometrie_db": {
-  "wert": 1.7310030808517105,
+  "wert": 1.7575463615277913,
   "einheit": "dB",
   "text": "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_bk_geometrie_grad": {
-  "wert": 5.801179963351891,
+  "wert": 5.878606364695155,
   "einheit": "°",
   "text": "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_mit_serien_r_db": {
-  "wert": 0.13444492966701757,
+  "wert": 0.13696141297476436,
   "einheit": "dB",
   "text": "3D + 5000 Rayl gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_mit_serien_r_grad": {
-  "wert": 1.2839082851850405,
+  "wert": 1.274498020463987,
   "einheit": "°",
   "text": "3D + 5000 Rayl gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_ringnut_grad": {
-  "wert": 10.241775332640628,
+  "wert": 10.323599341498454,
   "einheit": "°",
   "text": "3D, geschlossene Ringnut, gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_schlitz_15um_db": {
-  "wert": 0.2805558704071318,
+  "wert": 0.29778345761318364,
   "einheit": "dB",
   "text": "3D, Randschlitz 15 µm, gegen Fig. 6",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_spalt_19um_db": {
-  "wert": 0.7741008978367986,
+  "wert": 0.7944118013619367,
   "einheit": "dB",
   "text": "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_spalt_19um_grad": {
-  "wert": 6.348060479524314,
+  "wert": 6.419999104710285,
   "einheit": "°",
   "text": "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4146_mit_serien_r_db": {
-  "wert": 1.3816216863760125,
+  "wert": 1.3620963539601252,
   "einheit": "dB",
   "text": "3D + 1000 Rayl gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp59.rms_2d_gegen_fem_makro": {
-  "wert": 0.2565371230264774,
+  "wert": 0.28369107207214406,
   "einheit": "dB",
   "text": "2D (Makroelement) gegen COMSOL-FEM, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -611,14 +611,14 @@
   "toleranz": 0.05
  },
  "gp59.rms_2d_gegen_messung": {
-  "wert": 0.5367281479822429,
+  "wert": 0.5665057092878657,
   "einheit": "dB",
   "text": "2D gegen B&K-Messmittel, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
   "art": "stand"
  },
  "gp59.rms_3d_gegen_fem": {
-  "wert": 0.09940965991397901,
+  "wert": 0.09737521584850684,
   "einheit": "dB",
   "text": "3D gegen COMSOL-FEM, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -627,21 +627,21 @@
   "toleranz": 0.05
  },
  "gp59.rms_3d_gegen_messung": {
-  "wert": 0.30588141389933904,
+  "wert": 0.32658387763418995,
   "einheit": "dB",
   "text": "3D gegen B&K-Messmittel, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
   "art": "stand"
  },
  "gp59.widerstand_2d_zu_fem": {
-  "wert": 0.9435803365059287,
+  "wert": 0.9351559951388858,
   "einheit": "",
   "text": "Re Z 2D / FEM, Mittel 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
   "art": "stand"
  },
  "gp59.widerstand_3d_zu_fem": {
-  "wert": 1.1281672196437222,
+  "wert": 1.1254433268478456,
   "einheit": "",
   "text": "Re Z 3D / FEM, Mittel 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -661,25 +661,39 @@
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
   "art": "stand"
  },
- "gp60.r3d_zu_2d_mit_folienverlust": {
-  "wert": 0.9380561124265763,
-  "einheit": "",
-  "text": "dasselbe mit Q = 100 (Artefakt der Methode)",
-  "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
-  "art": "stand"
- },
  "gp60.r3d_zu_exakt_bk": {
-  "wert": 1.0199981863083514,
+  "wert": 1.019998153687782,
   "einheit": "",
   "text": "3D/2D(= exakt), B&K-Geometrie r/a 0.139, erzwungene Form",
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
   "art": "stand"
  },
  "gp60.r3d_zu_exakt_gross": {
-  "wert": 1.0337734526663516,
+  "wert": 1.0337734062956958,
   "einheit": "",
   "text": "3D/2D(= exakt), r/a 0.167",
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
+  "art": "stand"
+ },
+ "gp61.folie_k67_db": {
+  "wert": 0.00021979802112070956,
+  "einheit": "dB",
+  "text": "größte Wirkung des Folienverlusts auf den K67-Frequenzgang",
+  "test": "tests/test_membran_elektrostatik.py::test_gp61_folienverlust",
+  "art": "stand"
+ },
+ "gp61.frequenzfaktor_pet_45": {
+  "wert": 1.0038073166157848,
+  "einheit": "",
+  "text": "ω/ω_T der Grundmode, PET 6 µm, 45 N/m, a = 12.7 mm",
+  "test": "tests/test_membran_elektrostatik.py::test_gp61_folienverlust",
+  "art": "stand"
+ },
+ "gp61.guete_folie_k67": {
+  "wert": 6928.206811405734,
+  "einheit": "",
+  "text": "wirksame Güte der Folie, K67 (PET 6 µm)",
+  "test": "tests/test_membran_elektrostatik.py::test_gp61_folienverlust",
   "art": "stand"
  }
 }

@@ -941,12 +941,13 @@ def test_gp60_lochkreis_als_makroelement(stand):
     #    Lochkreise mit kleinen Löchern auf 1 % (vorher bis 4 %), große
     #    Mündungen (B&K-Originalgeometrie) auf 3 %; dort liegt 3D 1–3 %
     #    ÜBER der exakten Lösung (Stand-Werte).
-    #    VORSICHT bei dieser Methode: der Folienverlust ist im 2D ein
-    #    fester Widerstand ω0·M/Q, im 3D wächst er mit ω. Mit der
-    #    erzwungenen Form (f_res = 300 kHz) bläht das den 2D-Wert bei 1 kHz
-    #    300-fach auf; bei Nickelfolie sind das bis 8 % des Filmwiderstands
-    #    (3D/2D 0.94 statt 1.02, beim 40-µm-Spalt 0.49 statt 1.03). Der
-    #    Vergleich schaltet ihn deshalb ab (wie jetzt auch 52 und 53).
+    #    VORSICHT bei dieser Methode: bis hierher war der Folienverlust im
+    #    2D ein fester Widerstand ω0·M/Q, im 3D mit ω wachsend. Mit der
+    #    erzwungenen Form (f_res = 300 kHz) blähte das den 2D-Wert bei
+    #    1 kHz 300-fach auf; bei Nickelfolie waren das bis 8 % des Film-
+    #    widerstands (3D/2D 0.94 statt 1.02, beim 40-µm-Spalt 0.49 statt
+    #    1.03). Seit Gegenprobe 61 ist er in beiden Modellen derselbe
+    #    hysteretische Verlust und fällt aus dem Phasenverhältnis heraus.
     if not _HAS_SCIPY:
         return
     fa60 = np.array([2.0 * np.pi * 0.01])
@@ -1032,21 +1033,16 @@ def test_gp60_lochkreis_als_makroelement(stand):
             f"Zweitor mit Makroelement muss reziprok sein ({det60}"
 
     # d) gegen 3D bei erzwungener Form
-    def _rr60(q, Q=1e12):
+    def _rr60(q):
         q = dict(q, membrane_resonance_hz=300e3)
         q.pop("membrane_tension", None)
         ph = {}
-        Q0 = MicrophoneCapsule._Q_MEMBRANE_INTERNAL
-        MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q
-        try:
-            for sm in ("2d", "3d"):
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    cc = MicrophoneCapsule(**{**q, "squeeze_model": sm})
-                ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
-                                  / cc.transfer_function([20.0])[0])
-        finally:
-            MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q0
+        for sm in ("2d", "3d"):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                cc = MicrophoneCapsule(**{**q, "squeeze_model": sm})
+            ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
+                              / cc.transfer_function([20.0])[0])
         return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
 
     # ½"-Kapsel der Gegenprobe 53; 48 Löcher auf 0.33·a überlappen zum
@@ -1084,20 +1080,13 @@ def test_gp60_lochkreis_als_makroelement(stand):
     assert abs(r3d60[0.5e-3] - 1.0) < 0.03, \
         (f"B&K-Originalgeometrie: Filmwiderstand 3D/2D bei erzwungener "
          f"Form ({r3d60[0.5e-3]:.3f})")
-    # ... und mit Folienverlust (Q = 100) verfälscht die Methode
-    r_q60 = _rr60(dict(bk60, through_hole_diameter=1.0e-3), Q=100.0)
-    assert r_q60 < r3d60[0.5e-3] - 0.05, \
-        (f"Folienverlust muss das Verhältnis bei Nickelfolie sichtbar "
-         f"senken ({r3d60[0.5e-3]:.3f} -> {r_q60:.3f})")
     stand.wert("r3d_zu_exakt_bk", r3d60[0.5e-3], "",
                "3D/2D(= exakt), B&K-Geometrie r/a 0.139, erzwungene Form")
     stand.wert("r3d_zu_exakt_gross", r3d60[0.6e-3], "",
                "3D/2D(= exakt), r/a 0.167")
-    stand.wert("r3d_zu_2d_mit_folienverlust", r_q60, "",
-               "dasselbe mit Q = 100 (Artefakt der Methode)")
     print(f"Lochkreis als Makroelement: statisch gegen die unabhängige "
           f"Lösung auf {100 * worst60:.2f} % (Gaußband B&K "
           f"{alt60['B&K-Originalgeometrie']:.2f}-fach), Mittelloch auf "
           f"0.1 %, reziprok; gegen 3D bei erzwungener Form auf 1 %, große "
           f"Mündungen: 3D/exakt {r3d60[0.5e-3]:.3f} / {r3d60[0.6e-3]:.3f} "
-          f"(r/a 0.14/0.17; mit Folienverlust scheinbar {r_q60:.3f})  OK")
+          f"(r/a 0.14/0.17)  OK")

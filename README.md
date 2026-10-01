@@ -313,7 +313,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 95 Werte aus 28 Gegenproben, davon 9 Sperrklinken.
+Die Basis umfasst 97 Werte aus 29 Gegenproben, davon 9 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -337,12 +337,6 @@ Schreiben.
      0,06…0,28; das 2D-Makroelement trifft die geschlossene Form auf
      0,05 %). Betroffen ist die 4146 (3D/2D 1,09 bei erzwungener Form).
      Große Mündungen abseits der Achse trifft 3D auf 1–3 %.
-   - **Folienverlust 2D/3D verschieden angesetzt:** 2D fester
-     Widerstand ω₀·M/Q, 3D mit ω wachsend. Im Betrieb klein (B&K 4134
-     bei 1 kHz rund 0,6 % des Filmwiderstands), aber er verfälschte die
-     Phasenmethode bei erzwungener Form um bis zu 8 % (Gegenprobe 60);
-     die Vergleiche schalten ihn jetzt ab. Welcher Ansatz das Material
-     besser beschreibt, ist nicht untersucht.
    - **Zuckerwars 4134 von 1978** war stärker gedämpft als heutige 4134
      (20 kHz: −3,1 gegen −1,2 dB); 2D und 3D liegen gleichermaßen
      darüber (2,1 bzw. 1,7 dB RMS, `gp38.rms_2d_4134_db`). Warum, bleibt
@@ -404,12 +398,26 @@ Schreiben.
    über allen Lochkreisen wird sie tief. Den früheren 2D-Treffer gab ein
    Schalter, der allen Durchgangslöchern die entlastete Engstelle gab,
    sobald eines im Freistich lag. Vermutet sind angefaste Mündungen,
-   die die Zeichnung nicht bemaßt (s. Geometriefragen).
+   die die Zeichnung nicht bemaßt (s. Geometriefragen). Zurückgestellt:
+   im Debenham-Modell selbst sind erst Ungereimtheiten zu klären.
 7. **Freistich bei gleichverteilten Löchern.** Derselbe Schalter
    entlastet bei GLEICHVERTEILTEN Löchern weiter alle Mündungen, sobald
    der Freistich irgendeine Zelle berührt (Lochkreise rechnet das
    Makroelement seit Gegenprobe 60 örtlich). Kein Beispielprojekt ist
    betroffen; richtig wäre der Anteil der Löcher im Freistich.
+8. **Randschicht verschiebt die Membranresonanz (Gegenprobe 61).**
+   Eine eingespannte Folie mit Biegesteifigkeit ist am Rand eine
+   Platte: in einer Randschicht der Breite √(D/T) biegt sie sich in die
+   Einspannung. Das hebt die Grundfrequenz um den Faktor ≈ 1 + λ,
+   λ = √(D/(T a²)) (`gp61.frequenzfaktor_pet_45` 1,0038). Die
+   „exakte Modalfrequenz“ der Kette addiert den Biegeanteil
+   quadratisch (Platten-Eigenwert 10,2158) und erfasst davon nur
+   λ²-Terme: bei vorgegebener Vorspannung liegt die Resonanz deshalb
+   0,4–0,65 % zu tief (B&K 4134 COMSOL-Geometrie: Faktor 1,00036 statt
+   1,00646; Zuckerwar 4146: 1,00012 statt 1,00374). Kapseln mit
+   vorgegebener Resonanz betrifft das nicht. Die Lösung liegt bereit
+   (`_platten_verduennung` liefert ω/ω_T exakt), umgestellt ist noch
+   nicht — es verschiebt die B&K-Kurven.
 
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
@@ -2033,12 +2041,13 @@ Durchbiegung der polarisierten Membran nimmt das Band über den mittleren
 Leitwert mit, nicht als Profil.
 
 **Vorsicht bei der Phasenmethode** (erzwungene Form, Gegenproben 52,
-53, 60): der Materialverlust der Folie ist im 2D ein fester Widerstand
-ω₀·M/Q (an der Resonanz definiert), im 3D wächst er mit ω. Mit
-f_res = 300 kHz bläht das den 2D-Wert bei 1 kHz 300-fach auf; bei
-Nickelfolie sind das bis 8 % des Filmwiderstands (B&K-Geometrie: 3D/2D
-scheinbar 0,94 statt 1,02, mit 40 µm Spalt 0,49 statt 1,03). Die
-Vergleiche schalten ihn deshalb ab. Sauber liegt 3D bei großen
+53, 60): der Materialverlust der Folie war im 2D ein fester Widerstand
+ω₀·M/Q (an der Resonanz definiert), im 3D wuchs er mit ω. Mit
+f_res = 300 kHz blähte das den 2D-Wert bei 1 kHz 300-fach auf; bei
+Nickelfolie waren das bis 8 % des Filmwiderstands (B&K-Geometrie: 3D/2D
+scheinbar 0,94 statt 1,02, mit 40 µm Spalt 0,49 statt 1,03). Seit
+Gegenprobe 61 tragen beide Modelle denselben hysteretischen
+Folienverlust, und er fällt aus dem Phasenverhältnis heraus. Sauber liegt 3D bei großen
 Mündungen 1–3 % über der exakten Lösung (B&K 1,02, r/a = 0,17: 1,03;
 `gp60.r3d_zu_exakt_bk`), die B&K-Fälle der Testbank bei 0,99–1,04
 (Gaußband 0,59–0,72), der FEM-Fall der Gegenprobe 32 bei 1,02 (0,91).
@@ -2046,6 +2055,70 @@ Bei der 4146 sind es 1,09: dort sitzt ein Mittelloch auf der
 Polarachse des 3D-Gitters, und das überschätzt der 3D-Löser um 5–54 %
 (r/a = 0,06…0,28, gegen die geschlossene Form, die das 2D-Makroelement
 auf 0,05 % trifft) — offen („Offene Punkte" 1).
+
+### Folienverlust (Gegenprobe 61)
+
+Bis Gegenprobe 60 stand in der Membran eine Materialgüte Q = 100, als
+„numerischer Boden" gedacht und in beiden Modellen verschieden
+umgesetzt: die 2D-Kette als fester Widerstand R = √(M/C)/Q (an der
+Resonanz definiert), der 3D-Löser als Masse σ·(1 − j/Q) (mit ω
+wachsend). Keines der beiden Gesetze war begründet, und bei erzwungener
+Form verfälschte der Unterschied den Vergleich der Filmwiderstände um
+bis zu 8 % (Gegenprobe 60).
+
+**Physik.** Die Folie verliert über den komplexen E-Modul E·(1 + j·η)
+ihres Werkstoffs. Bei einer vorgespannten Folie ist aber die Arbeit
+gegen die Vorspannung in erster Ordnung verlustfrei: die Dehnung, die
+eine Auslenkung erzeugt (w'²/2), ist quadratisch, die Vorspannung
+statisch. Verlustbehaftet ist nur die Biegeenergie — die
+Dissipationsverdünnung der Nanomechanik (Fedorov et al., Phys. Rev. B
+99, 054107, 2019). Je Mode gilt
+
+    η_m = η · U_Biegung/U_gesamt = η · ∂ln ω_m²/∂ln D,
+
+ausgewertet an der exakten Eigenwertgleichung der eingespannten Platte
+unter Zug (J0/I0-Ansatz, mit Pfosten zusätzlich Y0/K0;
+`_platten_verduennung`). Die Biegeenergie sitzt fast ganz in der
+Randschicht der Breite √(D/T) an der Einspannung; ohne Pfosten ist
+η_m ≈ η·(λ + z_m²·λ²), λ = √(D/(T a²)). Für reale Folien sind das
+0,1–0,7 % des Werkstoffwerts: K67 (PET 6 µm) Güte 6900, B&K 4134
+(Nickel) rund 150 000 mit dem Nickelwert.
+
+**Form, in 2D und 3D gleich.** Hysteretisch, also frequenzunabhängig
+auf der mechanischen Steifigkeit (die elektrostatische Erweichung ist
+verlustfrei): in der 2D-Kette R_m = η_m/(ω·C_m) je Mode, im 3D-Feld die
+Spannung T·(1 + j·η_1). Das 3D-Feld hat keinen Biegeoperator; alle
+seine Formen tragen den Verlustfaktor der Grundmode.
+
+**Werkstoffwerte** (`MATERIALS["eta"]`, Größenordnungen bei
+Raumtemperatur und kleiner Amplitude): PET 0,02 (glasig zwischen
+β-Relaxation und Glasübergang 0,01–0,06), Nickel, Titan, Gold 10⁻³,
+Aluminium 10⁻⁴ (Blanter et al., *Internal Friction in Metallic
+Materials*, Springer 2007). Eigene Material-dicts ohne `eta` erhalten
+den Polymerwert 0,02 — für Metalle eher zu hoch. Die genaue Zahl ist
+belanglos: auch das Zehnfache ändert den Frequenzgang der K67 um
+0,002 dB, einer Nickelkapsel um 0,01 dB.
+
+**Gegenproben:**
+
+- Eigenwertgleichung gegen die Randschicht-Asymptotik (Kreis und Ring
+  mit Pfosten): Abweichung O(λ), mit λ fallend.
+- Komplexe Eigenwerte mit D·(1 + jη): Im(ω²)/Re(ω²) = η·q auf 1 %.
+- 2D und 3D tragen denselben Verlust: ein großer Verlustfaktor
+  verschiebt die Phase im steifigkeitsbestimmten Tiefton gleich (5 Hz:
+  −0,947 gegen −0,946 mrad).
+- Wirkung an realen Kapseln: η_eff ist 0,1–0,7 % von η, ×10 ändert
+  höchstens 0,05 dB.
+
+**Was es verändert hat:** der alte Boden Q = 100 trug an
+Hochton-Resonanzen spürbar zur Dämpfung bei. An der B&K 4134 (Resonanz
+um 20 kHz) liegt 2D jetzt 0,28 statt 0,26 dB RMS neben der COMSOL-FEM,
+3D 0,097 statt 0,099 dB. Bei der K67 ändern sich die Stand-Werte um
+höchstens 0,1 %.
+
+**Nebenbefund:** dieselbe Randschicht hebt die Grundfrequenz um den
+Faktor ≈ 1 + λ, den die „exakte Modalfrequenz" der Kette nicht enthält
+(„Offene Punkte" 8).
 
 ## Verlustmechanismen (vollständig erfasst)
 
@@ -2060,7 +2133,9 @@ Reibung, LF-Grenzfall R/3, Nachgiebigkeit isotherm→adiabatisch mit
 Relaxationsdämpfung, λ/4-Verhalten) und die **laterale Trägheit der
 Spaltluft** im 1D-Modell (Schlitz-Zwikker–Kosten-Korrektur Φ(ω),
 identisch zum Filmleitwert des 2D-Feldmodells). Alle Grenzfälle sind
-im Testlauf verifiziert (Gegenprobe 12).
+im Testlauf verifiziert (Gegenprobe 12). Dazu der **Folienverlust** der
+Membran: hysteretisch, durch die Vorspannung auf die Biegeenergie
+verdünnt, in 2D und 3D gleich (Gegenprobe 61).
 
 Drei Verfeinerungen (Gegenprobe 19, jeweils fit-frei):
 
