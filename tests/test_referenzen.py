@@ -393,6 +393,12 @@ def test_gp38_externe_referenz_b_k_4134(stand):
                      f"({rms_a38:.2f} dB RMS)")
                 assert rms_p38 < lim38[1], \
                     (f"{nm38}: Phase gegen Fig. 7 ({rms_p38:.2f}° RMS)")
+                # Neu festgelegt mit Gegenprobe 65 (0.63 -> 0.87 dB): bis
+                # dahin lag die Freifeld-Strahlungslast auch im Druckgang.
+                # Sie wirkte hier als Ersatz für die Last des Aktuators und
+                # verdeckte den Hochtonüberschuss des 2D-Modells (wie gegen
+                # die FEM, Gegenprobe 59). 3D trifft dieselbe Messung ohne
+                # sie etwas besser (0.744 -> 0.734 dB).
                 stand.sperrklinke("rms_2d_4146_db", rms_a38, "dB",
                                   "2D gegen Fig. 7, Amplitude",
                                   toleranz=0.05)
@@ -624,10 +630,19 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     #    den Filmwiderstand um 60 %. Mit dem Makroelement (Gegenprobe 60)
     #    trifft es die FEM auf 0.26 dB RMS und liegt im Hochton höchstens
     #    0.5 dB darüber; das ist eine Sperrklinke.
+    #    NACHTRAG (Gegenprobe 65): die FEM hat keine Strahlungslast, Capsim
+    #    legte sie bis dahin auch im Druckgang an. Ohne sie trifft 3D die
+    #    FEM besser (0.098 -> 0.066 dB RMS), 2D liegt im Hochton bis
+    #    0.68 dB darüber — die Last hatte diesen Überschuss teilweise
+    #    verdeckt. Die Grenze für 2D ist deshalb 0.7 statt 0.6 dB
+    #    (bewusst gelockert, nicht um den Stand zu halten: der frühere
+    #    Wert enthielt einen Fehler, der in die günstige Richtung wirkte).
     # b) Gegen die Messungen liegt 3D bis 12.6 kHz im Streuband; darüber
     #    liegen FEM und 3D gleichermaßen etwas über der Messung.
     # c) Äquivalenter akustischer Widerstand Re(p_in/Q_Membran), ohne
-    #    Strahlungslast (die FEM hat keine): 2D lag mit dem Gaußband 61 %
+    #    Strahlungslast (die FEM hat keine; seit Gegenprobe 65 auch der
+    #    Druckgang nicht mehr, abgezogen wird die tatsächlich anliegende
+    #    Last _front_radiation): 2D lag mit dem Gaußband 61 %
     #    über der FEM, mit dem Makroelement 6 % darunter; 3D liegt 12 %
     #    darüber (Stand-Werte).
     # Folgerung für Gegenprobe 38/58: Zuckerwars Prüfling von 1978 war
@@ -683,7 +698,7 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
         V = (c._solve_3d(om, weight="volume")[0] if sm == "3d"
              else H / c._theta)
         re_z[sm] = np.real(1.0 / (1j * om * V)
-                           - c._radiation_impedance_membrane(om))
+                           - c._front_radiation(om))
         cm = MicrophoneCapsule(squeeze_model=sm,
                                **_messpruefling(_BK4134_COMSOL))
         pegel_m[sm] = 20.0 * np.log10(np.abs(
@@ -697,8 +712,8 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
         (f"3D muss die FEM besser treffen als 2D ({rms['3d']:.2f} gegen "
          f"{rms['2d']:.2f} dB RMS)")
     d2 = float(np.max(np.abs(pegel["2d"] - fem[sel])))
-    assert d2 < 0.6, \
-        (f"2D muss die FEM mit dem Makroelement über 1–20 kHz auf 0.6 dB "
+    assert d2 < 0.7, \
+        (f"2D muss die FEM mit dem Makroelement über 1–20 kHz auf 0.7 dB "
          f"treffen (größte Abweichung {d2:.2f} dB)")
     stand.sperrklinke("rms_3d_gegen_fem", rms["3d"], "dB",
                       "3D gegen COMSOL-FEM, 1–20 kHz", toleranz=0.05)

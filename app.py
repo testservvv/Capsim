@@ -218,6 +218,9 @@ DEFAULTS = {
     "fabric_rear_pos": "An der Backplate",
     # Gehäuse & Beugung (34 mm = Kapselkopf-Außen-Ø inkl. Klemmring)
     "diffraction_on": True,
+    # Strahlungslast der Membran im Druckgang (ohne Beugung, dichte
+    # Rückseite): Standard aus wie COMSOL/Kuppler/Aktuator (Gegenprobe 65)
+    "rad_load": False,
     "body_diameter_mm": 34.0,
     # Axialer Körper für den Front-Rück-Transfer der Doppelmembran:
     # Kugel (d_ext) = montierte Kapsel (Standard); Sphäroid = frei
@@ -703,6 +706,7 @@ def build_capsule(p):
                          != "dual_diaphragm")
                      else None),
         include_diffraction=p["diffraction_on"],
+        pressure_radiation_load=p.get("rad_load", False),
         axial_body_model=AX_LABELS.get(p.get("axial_body",
                                              "Kugel (d_ext, montiert)"),
                                        "sphere"),
@@ -836,15 +840,14 @@ def compute_results(cache_key, capsule, progress=None):
         "phase_deg": np.rad2deg(np.unwrap(np.angle(H))),
     }
     # Mit Beugung zusätzlich der DRUCKFREQUENZGANG als Vergleichskurve —
-    # das, was COMSOL, Kuppler und Aktuator liefern. Bei dichter Rückseite
-    # ist er exakt H/F mit dem Frontfaktor F der Beugung (Gegenprobe 64 d),
-    # also ohne zweite Rechnung; der Abstand beider Kurven ist die
-    # Freifeldkorrektur. Gleiche Bezugsgröße (H bei 1 kHz) für beide.
+    # das, was COMSOL, Kuppler und Aktuator liefern: ohne Körper und ohne
+    # Strahlungslast (Gegenprobe 65), im 3D-Modell aus derselben
+    # Feldlösung. Der Abstand beider Kurven ist die Freifeldkorrektur.
+    # Gleiche Bezugsgröße (H bei 1 kHz) für beide.
     if (capsule.include_diffraction and not capsule.rear_open
             and capsule.architecture != "dual_diaphragm"):
-        F0 = capsule._source_pressures(2.0 * np.pi * f,
-                                       np.array([0.0]))[0][:, 0]
-        p_db = 20.0 * np.log10(np.maximum(np.abs(H / F0), 1e-30))
+        p_db = 20.0 * np.log10(np.maximum(
+            np.abs(capsule.pressure_response(f)), 1e-30))
         fr["pressure_db"] = p_db
         fr["pressure_db_norm"] = p_db - ref_db
     habs = np.maximum(np.abs(H), 1e-30)
@@ -1343,6 +1346,13 @@ with st.sidebar:
     with st.expander(tr("exp_body"), expanded=False):
         st.toggle(tr("lbl_diffr"), key="p_diffraction_on",
                   help=tr("help_diffr"))
+        # Strahlungslast im Druckgang: nur ohne Beugung wählbar (mit
+        # Beugung liegt sie immer an), nicht bei der K67-Bauform
+        st.toggle(tr("lbl_rad_load"), key="p_rad_load",
+                  disabled=(st.session_state["p_diffraction_on"]
+                            or st.session_state["p_architecture"]
+                            == K67_LABEL),
+                  help=tr("help_rad_load"))
         _zahl("body_diameter_mm", tr("lbl_body_dia"), step=0.5,
               disabled=not st.session_state["p_diffraction_on"],
               help=tr("help_body_dia"))
@@ -1460,7 +1470,7 @@ if capsule.axial_body_model == "bem" and capsule.rear_open \
                         else "warn_bem_circ")))
 
 # Kugel als Körper einer Ein-Membran-Kapsel: der Druckstau der flachen
-# Stirnfläche fehlt bis zu 3.5 dB (B&K 4134 gegen NBS, Gegenprobe 64).
+# Stirnfläche fehlt bis zu 3.8 dB (B&K 4134 gegen NBS, Gegenprobe 64).
 if (capsule.include_diffraction and capsule.axial_body_model == "sphere"
         and capsule.architecture != "dual_diaphragm"):
     st.warning(tr("warn_sphere_flat"))

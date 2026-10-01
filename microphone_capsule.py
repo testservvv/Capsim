@@ -767,6 +767,16 @@ class MicrophoneCapsule:
             und die Freifeldempfindlichkeit steigt frontal um bis zu +6 dB.
             ``False``: einfache ebene-Welle-Phasen (nur zu Vergleichs-
             zwecken; ohne SciPy automatisch dieser Fallback).
+        pressure_radiation_load : bool
+            Strahlungslast der Membran im DRUCKFREQUENZGANG. Ohne Beugung
+            und bei dichter Rückseite rechnet die Kapsel den Druckgang:
+            gleichförmiger Druck AN der Membran (bzw. außen am Gewebe),
+            wie COMSOL-FEM, Kuppler und Aktuator. Dort gibt es keine
+            Abstrahlung ins freie Feld; ``False`` (Standard) lässt die
+            Strahlungsimpedanz deshalb weg. ``True`` legt sie wie bis
+            Gegenprobe 64 dazu (Kolben in unendlicher Schallwand). Mit
+            Beugung, bei offener Rückseite und bei der Doppelmembran-
+            Bauform liegt sie immer an (Gegenprobe 65).
 
     Spaltfilm-Modell
         squeeze_model : str
@@ -1025,6 +1035,7 @@ class MicrophoneCapsule:
         body_diameter=None,
         body_length=None,
         include_diffraction=True,
+        pressure_radiation_load=False,
         axial_body_model="sphere",
         bem_body_diameter=56e-3,
         bem_body_gap=15e-3,
@@ -1339,6 +1350,7 @@ class MicrophoneCapsule:
         if self.body_length is not None and self.body_length <= 0.0:
             raise ValueError("body_length muss > 0 sein (oder None).")
         self.include_diffraction = bool(include_diffraction)
+        self.pressure_radiation_load = bool(pressure_radiation_load)
 
         sm = str(squeeze_model).strip().lower()
         if sm not in ("1d", "2d", "3d"):
@@ -3110,6 +3122,36 @@ class MicrophoneCapsule:
             R = np.where(small, x ** 2 / 8.0, R)
             X = np.where(small, 4.0 * x / (3.0 * np.pi), X)
         return Z0 * (R + 1j * X)
+
+    def _front_rad_on(self):
+        """Liegt die Strahlungslast vor der Membran (Gegenprobe 65)?
+
+        Im FREIFELD ja: mit Beugung, bei offener Rückseite (die Membran-
+        vorderseite strahlt, auch im Modell ohne Körper) und bei der
+        Doppelmembran-Bauform. Im DRUCKFELD nicht: eine dichte Kapsel
+        ohne Beugung rechnet den Druckfrequenzgang, gleichförmiger Druck
+        an der Membran wie in COMSOL-FEM, Kuppler und Aktuator — dort
+        strahlt die Membran nicht ins freie Feld. Bis Gegenprobe 64 lag
+        die Last auch dort an; die COMSOL-FEM traf der 3D-Löser damit auf
+        0.098 statt 0.066 dB RMS. ``pressure_radiation_load`` schaltet
+        sie im Druckfeld wieder zu.
+        """
+        return (self.include_diffraction or self.rear_open
+                or self.architecture == "dual_diaphragm"
+                or self.pressure_radiation_load)
+
+    def _front_radiation(self, omega, druckfeld=False):
+        """Strahlungsimpedanz vor der Membran, oder 0 im Druckfeld.
+
+        ``druckfeld=True`` erzwingt den Druckgang ohne Strahlungslast
+        (s. :meth:`pressure_response`), sofern nicht
+        ``pressure_radiation_load`` gesetzt ist."""
+        omega = np.asarray(omega, dtype=float)
+        an = (self.pressure_radiation_load if druckfeld
+              else self._front_rad_on())
+        if an:
+            return self._radiation_impedance_membrane(omega)
+        return np.zeros(omega.shape, dtype=complex)
 
     def _higher_mode_branches(self):
         """Akustische (M_A, C_A) der HÖHEREN (0,m)-Membranmoden, m >= 2.
@@ -5897,7 +5939,8 @@ class MicrophoneCapsule:
         self._lu_3d_info = ("pivotisiert", _berr(x), lu.L.nnz + lu.U.nnz)
         return x
 
-    def _solve_3d(self, omega, want_rear=False, weight="output"):
+    def _solve_3d(self, omega, want_rear=False, weight="output",
+                  want_node=False):
         """3D-Sandwich-Lösung: Ausgangs-Volumenverschiebung je Einheits-
         Außendruck, U_front = X_f·p_front + X_r·p_rear.
 
@@ -5909,7 +5952,9 @@ class MicrophoneCapsule:
 
         Rückgabe: (X_f, X_r) je Frequenz [m³/Pa]; mit ``want_rear``
         zusätzlich die Rückmembran-Antworten (B_f, B_r) für
-        Reziprozitätsprüfungen. Je Frequenz wird das dünn besetzte
+        Reziprozitätsprüfungen; mit ``want_node`` (nur single/dual)
+        stattdessen (X_f, X_r, P_n, Q_n): Frontknotendruck und Fluss von
+        der Quelle ins Netzwerk bei p_front = 1 (s. pressure_response). Je Frequenz wird das dünn besetzte
         Gesamtsystem (einteilig: 2 Filme + 2 Membranfelder, ~24k
         Unbekannte; K67-Modus mit Zwischenspalt: 3 Filme, ~30k)
         einmal LU-faktorisiert — das 3D-Modell ist damit DEUTLICH
@@ -5936,6 +5981,8 @@ class MicrophoneCapsule:
         Xr = np.empty_like(Xf)
         Bf = np.empty_like(Xf)
         Br = np.empty_like(Xf)
+        Pn = np.full_like(Xf, np.nan)
+        Qn = np.full_like(Xf, np.nan)
 
         def _film_props(h_loc, om):
             a_v = 0.5 * h_loc * np.sqrt(1j * om * RHO0 / MU_AIR)
@@ -6034,6 +6081,8 @@ class MicrophoneCapsule:
                 Xf[fidx], Xr[fidx], Bf[fidx], Br[fidx] = treffer[weight]
                 if treffer["recip"] is not None:
                     self._recip_3d = treffer["recip"]
+                if treffer["knoten"] is not None:
+                    Pn[fidx], Qn[fidx] = treffer["knoten"]
                 continue
             rows = [srows]
             cols = [scols]
@@ -6208,12 +6257,12 @@ class MicrophoneCapsule:
                                  np.array([A_l3 / B_l3])]
                 # Frontknoten-Abschluss: single = Strahlung + Gewebe VOR
                 # der Membran (Grenzfall Z -> 0: p_node = p_front); dual =
-                # dieselbe Kette vor der vorderen Backplate.
-                Z_fr = (self._radiation_impedance_membrane(om_a)[0]
-                        + self.rayl_front / self.S_mem)
-                rows += [np.array([off_n + 0])]
-                cols += [np.array([off_n + 0])]
-                vals += [np.array([1.0 / Z_fr], dtype=complex)]
+                # dieselbe Kette vor der vorderen Backplate. Im Druckfeld
+                # ohne Strahlung (Gegenprobe 65); ist Z_fr dann null, wird
+                # der Knoten unten auf den Quelldruck gesetzt (Dirichlet).
+                # Den Quellleitwert 1/Z_fr setzt erst der Systemaufbau.
+                Z_fr = complex(self._front_radiation(om_a)[0]
+                               + self.rayl_front / self.S_mem)
                 if arch == "single":
                     # Membran-Volumenfluss zieht am Frontknoten
                     midx_n = off_w + np.arange(NM)
@@ -6345,25 +6394,40 @@ class MicrophoneCapsule:
                 rows += [woff + midx]
                 cols += [woff + midx]
                 vals += [mterm * rhs_w]
-            S = coo_matrix(
-                (np.concatenate(vals),
-                 (np.concatenate(rows), np.concatenate(cols))),
-                shape=(N_tot, N_tot)).tocsc()
+            R_ = np.concatenate(rows)
+            C_ = np.concatenate(cols)
+            V_ = np.concatenate(vals)
+            if arch != "dual_diaphragm":
+                # Frontknoten-Zeile OHNE den Quellleitwert: ihr Produkt mit
+                # der Lösung ist der Fluss von der Quelle ins Netzwerk
+                # (Druckgang, Reziprozität). Mit Z_fr = 0 (Druckfeld ohne
+                # Gewebe) gilt am Knoten p = p_front: Zeile ersetzt.
+                i_n = R_ == off_n + 0
+                zeile_n = (C_[i_n], V_[i_n])
+                if Z_fr != 0.0:
+                    d_n = 1.0 / Z_fr
+                else:
+                    R_, C_, V_ = R_[~i_n], C_[~i_n], V_[~i_n]
+                    d_n = 1.0
+                R_ = np.append(R_, off_n + 0)
+                C_ = np.append(C_, off_n + 0)
+                V_ = np.append(V_, complex(d_n))
+            S = coo_matrix((V_, (R_, C_)), shape=(N_tot, N_tot)).tocsc()
             rhs = np.zeros((N_tot, 2), dtype=complex)
             if arch == "dual_diaphragm":
                 rhs[off_n + 0, 0] = 1.0 / Z_ext_f    # p_front am Frontknoten
                 rhs[off_n + 1, 1] = 1.0 / Z_ext_r    # p_rear am Rückknoten
             elif arch == "dual":
-                rhs[off_n + 0, 0] = 1.0 / Z_fr       # p_front am Frontknoten
+                rhs[off_n + 0, 0] = d_n              # p_front am Frontknoten
                 rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
             else:                                    # single
-                rhs[off_n + 0, 0] = 1.0 / Z_fr       # p_front am Frontknoten
+                rhs[off_n + 0, 0] = d_n              # p_front am Frontknoten
                 rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
             x = self._lu_solve_3d(S, rhs)
             wf = x[off_w:off_w + NF, :]              # Elektrodenbereich
             wr = (x[off_w + NM:off_w + NM + NF, :]
                   if arch == "dual_diaphragm" else None)
-            neu = {"recip": None}
+            neu = {"recip": None, "knoten": None}
             for w_name, w_v in w_outs.items():
                 xf_ = np.sum(w_v[:, None] * wf, axis=0)
                 if wr is not None:
@@ -6376,16 +6440,25 @@ class MicrophoneCapsule:
                 # (Flüsse IN das Netzwerk an den Quell-Terminals):
                 # Y21 = q_rück(p_front = 1) = −q_port = −p_knoten/B und
                 # Y12 = q_front(p_rück = 1) = (0 − p_node)/Z_front
-                # müssen übereinstimmen.
+                # müssen übereinstimmen. Der Frontfluss kommt aus der
+                # Knotenzeile ohne Quellleitwert (gilt auch für Z_fr = 0).
                 p_n = x[off_n + 0, :]
                 p_m = x[off_n + 1, :]
+                q_n = zeile_n[1] @ x[zeile_n[0], :]
                 q_rear_pf = -p_m[0] / Bb if abs(Bb) > 0 else 0.0
-                q_front_pr = -p_n[1] / Z_fr
+                q_front_pr = q_n[1]
                 self._recip_3d = (complex(q_rear_pf), complex(q_front_pr))
                 neu["recip"] = self._recip_3d
+                # Knotendruck und Fluss ins Netzwerk bei p_front = 1
+                # (Druckgang aus derselben Lösung, s. pressure_response)
+                neu["knoten"] = (complex(p_n[0]), complex(q_n[0]))
             Xf[fidx], Xr[fidx], Bf[fidx], Br[fidx] = neu[weight]
+            if neu["knoten"] is not None:
+                Pn[fidx], Qn[fidx] = neu["knoten"]
             if speicher is not None:
                 speicher[float(om)] = neu
+        if want_node:
+            return Xf, Xr, Pn, Qn
         if want_rear:
             return Xf, Xr, Bf, Br
         return Xf, Xr
@@ -7187,19 +7260,20 @@ class MicrophoneCapsule:
             mats = mats[::-1]
         return reduce(self._mmul, mats)
 
-    def _assemble_network(self, omega):
+    def _assemble_network(self, omega, druckfeld=False):
         """Baut die Kettenmatrizen des Gesamtnetzwerks für alle omega auf.
 
         Rückgabe:
             T_total : Kettenmatrix vom vorderen Einlass zum rückwärtigen Port
             T_rear  : Kettenmatrix von der Membran-Rückseite zum Port
                       (Zeile [1,:] liefert daraus den Membran-Volumenfluss)
+        ``druckfeld``: s. :meth:`_front_radiation`.
         """
-        T_front, T_mem, T_rear = self._assemble_parts(omega)
+        T_front, T_mem, T_rear = self._assemble_parts(omega, druckfeld)
         T_total = self._mmul(self._mmul(T_front, T_mem), T_rear)
         return T_total, T_rear
 
-    def _assemble_parts(self, omega):
+    def _assemble_parts(self, omega, druckfeld=False):
         """Wie :meth:`_assemble_network`, aber liefert die drei Teilketten
         (T_front, T_mem, T_rear) getrennt — für die Rausch-Port-Impedanz
         am Membranzweig (s. :meth:`_membrane_port_impedance`). Die
@@ -7209,8 +7283,9 @@ class MicrophoneCapsule:
 
         # ---------------- vorderer Zweig: Quelle -> Membran ----------------
         front = [
-            # Strahlungsimpedanz der Membran-/Einlassöffnung
-            self._abcd_series(self._radiation_impedance_membrane(omega), omega),
+            # Strahlungsimpedanz der Membran-/Einlassöffnung — im Druckfeld
+            # null (Gegenprobe 65, s. _front_rad_on)
+            self._abcd_series(self._front_radiation(omega, druckfeld), omega),
             # Gewebe vor der Membran: Z = Rayl-Wert / durchströmte Fläche
             self._abcd_series(self.rayl_front / self.S_mem, omega),
         ]
@@ -7676,6 +7751,42 @@ class MicrophoneCapsule:
         T_total, T_rear = self._assemble_network(omega)
         q_mem = self._membrane_volume_velocity(omega, T_total, T_rear,
                                                p_f[:, 0], p_r[:, 0])
+        return self._output_voltage(omega, q_mem)
+
+    def pressure_response(self, frequencies_hz):
+        """DRUCKFREQUENZGANG e/p [V/Pa] einer dichten Kapsel (Gegenprobe 65).
+
+        Gleichförmiger Druck p außen an der Kapsel — an der Membran bzw.
+        vor dem Frontgewebe —, ohne Körper und ohne Strahlungslast (außer
+        mit ``pressure_radiation_load``). Das ist die Größe der COMSOL-
+        FEM, des Kupplers und des Aktuators; mit Beugung liefert
+        :meth:`transfer_function` den Freifeldgang, der Abstand beider ist
+        die Freifeldkorrektur (Gegenprobe 64). Ohne Beugung ist das
+        Ergebnis :meth:`transfer_function` selbst.
+
+        Im 3D-Modell aus DERSELBEN Feldlösung: dort hängt die Membran an
+        einem Frontknoten, dessen Druck p_n und Netzwerkfluss q_n die
+        Lösung mitliefert. Ausgang je Knotendruck X_f/p_n und Netzwerk-
+        admittanz q_n/p_n sind lastunabhängig; davor liegt im Druckgang
+        nur das Gewebe Z_g:  X_p = (X_f/p_n) / (1 + Z_g·q_n/p_n).
+        Bei offener Rückseite ist ein Druckgang nicht definiert (ValueError).
+        """
+        if self.rear_open:
+            raise ValueError(
+                "Druckfrequenzgang nur bei dichter Rückseite: bei offener "
+                "Rückseite wirkt der Druck auf beide Seiten der Membran.")
+        f = np.atleast_1d(np.asarray(frequencies_hz, dtype=float))
+        omega = 2.0 * np.pi * f
+        if self.squeeze_model == "3d":
+            Xf, _, Pn, Qn = self._solve_3d(omega, want_node=True)
+            Z_g = (self.rayl_front / self.S_mem
+                   + self._front_radiation(omega, druckfeld=True))
+            V_p = (Xf / Pn) / (1.0 + Z_g * Qn / Pn)
+            return self._output_voltage(omega, 1j * omega * V_p)
+        T_total, T_rear = self._assemble_network(omega, druckfeld=True)
+        eins = np.ones(omega.size, dtype=complex)
+        q_mem = self._membrane_volume_velocity(omega, T_total, T_rear,
+                                               eins, 0.0 * eins)
         return self._output_voltage(omega, q_mem)
 
     def frequency_response(self, f_min=10.0, f_max=25000.0, n_points=500,

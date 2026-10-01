@@ -7,7 +7,7 @@
   "art": "stand"
  },
  "gp04.druckstau_16k": {
-  "wert": 4.375780946692172,
+  "wert": 4.394295436691163,
   "einheit": "dB",
   "text": "frontaler Druckstau bei 16 kHz",
   "test": "tests/test_beugung_bem.py::test_gp04_druckstau_beugung_am_kapselkorper",
@@ -84,7 +84,7 @@
   "art": "stand"
  },
  "gp18.f_h_debenham": {
-  "wert": 3011.2911398867554,
+  "wert": 3011.291139885992,
   "einheit": "Hz",
   "text": "interne Resonanz Debenham (Freistich)",
   "test": "tests/test_grundlagen.py::test_gp18_angle_responses_helmholtz_frequenz",
@@ -147,14 +147,14 @@
   "art": "stand"
  },
  "gp23c.spannung_1khz": {
-  "wert": 0.9157240794217005,
+  "wert": 0.9157243872329205,
   "einheit": "",
   "text": "K103 dicht, |3D/1D| Spannung",
   "test": "tests/test_feld3d.py::test_gp23c_k103_dicht",
   "art": "stand"
  },
  "gp23c.volumen_1khz": {
-  "wert": 0.9707822869286529,
+  "wert": 0.9707826132471222,
   "einheit": "",
   "text": "K103 dicht, |3D/1D| Volumen",
   "test": "tests/test_feld3d.py::test_gp23c_k103_dicht",
@@ -280,21 +280,21 @@
   "art": "stand"
  },
  "gp32.f_res_3d_zu_2d": {
-  "wert": 0.996087368874423,
+  "wert": 0.9947108048209063,
   "einheit": "",
   "text": "Resonanzlage 3D/2D (Anteil der diskreten Bohrungen)",
   "test": "tests/test_referenzen.py::test_gp32_externe_referenz_fem_veroffentlicht",
   "art": "stand"
  },
  "gp32.ueberhoehung_3d_minus_fem": {
-  "wert": 0.23310083133799075,
+  "wert": 0.194784285701882,
   "einheit": "dB",
   "text": "Resonanzüberhöhung 3D minus FEM (+6.74 dB)",
   "test": "tests/test_referenzen.py::test_gp32_externe_referenz_fem_veroffentlicht",
   "art": "stand"
  },
  "gp32.verstimmung_2d": {
-  "wert": 0.09646480005363534,
+  "wert": 0.09064478825248679,
   "einheit": "",
   "text": "|f_Res(2D)/550 Hz − 1| gegen die FEM",
   "test": "tests/test_referenzen.py::test_gp32_externe_referenz_fem_veroffentlicht",
@@ -303,7 +303,7 @@
   "toleranz": 0.01
  },
  "gp32.verstimmung_3d": {
-  "wert": 0.09999999999999998,
+  "wert": 0.09545454545454546,
   "einheit": "",
   "text": "|f_Res(3D)/550 Hz − 1| gegen die FEM",
   "test": "tests/test_referenzen.py::test_gp32_externe_referenz_fem_veroffentlicht",
@@ -312,7 +312,7 @@
   "toleranz": 0.01
  },
  "gp34.restluecke_3_moden": {
-  "wert": 6.601272526330106,
+  "wert": 6.64662861243212,
   "einheit": "dB",
   "text": "RMS gegen COMSOL ab 5 kHz, streifend, 3 Moden",
   "test": "tests/test_membran_elektrostatik.py::test_gp34_modenabhangiger_quelldruck",
@@ -321,21 +321,21 @@
   "toleranz": 0.15
  },
  "gp38.rms_2d_4134_db": {
-  "wert": 2.1072473547322836,
+  "wert": 2.1720361478011454,
   "einheit": "dB",
   "text": "2D gegen Fig. 6, Amplitude (Prüfling gedämpfter)",
   "test": "tests/test_referenzen.py::test_gp38_externe_referenz_b_k_4134",
   "art": "stand"
  },
  "gp38.rms_2d_4134_grad": {
-  "wert": 6.925182312216445,
+  "wert": 7.594552507732636,
   "einheit": "°",
   "text": "2D gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp38_externe_referenz_b_k_4134",
   "art": "stand"
  },
  "gp38.rms_2d_4146_db": {
-  "wert": 0.6310523911336172,
+  "wert": 0.8727326947252336,
   "einheit": "dB",
   "text": "2D gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp38_externe_referenz_b_k_4134",
@@ -441,14 +441,14 @@
   "toleranz": 0.05
  },
  "gp52.formanpassung_20khz": {
-  "wert": 1.6008946578747878,
+  "wert": 1.5848818217069383,
   "einheit": "dB",
   "text": "3D − 2D (Randschlitz), 20 kHz",
   "test": "tests/test_feld3d.py::test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart",
   "art": "stand"
  },
  "gp52.r3d_zu_r2d_lochkreis": {
-  "wert": 1.0438821353041174,
+  "wert": 1.0438905810271992,
   "einheit": "",
   "text": "Filmwiderstand 3D/2D, B&K 4134, erzwungene Form",
   "test": "tests/test_feld3d.py::test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart",
@@ -504,105 +504,105 @@
   "art": "stand"
  },
  "gp58.phase_3d_anteil_4134": {
-  "wert": 0.7102940232983851,
+  "wert": 0.7033610157674519,
   "einheit": "",
   "text": "3D-Nacheilung / gemessene, Mittel 2–10 kHz",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4134_db": {
-  "wert": 1.6698056860126047,
+  "wert": 1.712734624503394,
   "einheit": "dB",
   "text": "3D gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4134_grad": {
-  "wert": 7.611446895885895,
+  "wert": 8.492429370897574,
   "einheit": "°",
   "text": "3D gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4146_db": {
-  "wert": 0.7441610609414885,
+  "wert": 0.7344151402549981,
   "einheit": "dB",
   "text": "3D gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4146_grad": {
-  "wert": 8.604777088898588,
+  "wert": 9.12458908798538,
   "einheit": "°",
   "text": "3D gegen Fig. 7, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_bk_geometrie_db": {
-  "wert": 1.7494277599750703,
+  "wert": 1.8082025644414705,
   "einheit": "dB",
   "text": "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_bk_geometrie_grad": {
-  "wert": 5.849676710458224,
+  "wert": 6.537719647718791,
   "einheit": "°",
   "text": "3D, B&K-Originalgeometrie (COMSOL), gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_mit_serien_r_db": {
-  "wert": 0.13673776091453393,
+  "wert": 0.16753452186218537,
   "einheit": "dB",
   "text": "3D + 5000 Rayl gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_mit_serien_r_grad": {
-  "wert": 1.2823458023346426,
+  "wert": 1.5988187462229213,
   "einheit": "°",
   "text": "3D + 5000 Rayl gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_ringnut_grad": {
-  "wert": 10.131752675458923,
+  "wert": 11.04796649029717,
   "einheit": "°",
   "text": "3D, geschlossene Ringnut, gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_schlitz_15um_db": {
-  "wert": 0.32936641562544994,
+  "wert": 0.37205720576945117,
   "einheit": "dB",
   "text": "3D, Randschlitz 15 µm, gegen Fig. 6",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_spalt_19um_db": {
-  "wert": 0.7726344350361228,
+  "wert": 0.8145238864018397,
   "einheit": "dB",
   "text": "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4134_spalt_19um_grad": {
-  "wert": 6.3982629669773186,
+  "wert": 7.294651090537916,
   "einheit": "°",
   "text": "3D, Spalt 19 µm (COMSOL), gegen Fig. 6, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_4146_mit_serien_r_db": {
-  "wert": 1.375559187461471,
+  "wert": 1.2662968041902605,
   "einheit": "dB",
   "text": "3D + 1000 Rayl gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp59.rms_2d_gegen_fem_makro": {
-  "wert": 0.2819089648134677,
+  "wert": 0.3102381458242839,
   "einheit": "dB",
   "text": "2D (Makroelement) gegen COMSOL-FEM, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -611,14 +611,14 @@
   "toleranz": 0.05
  },
  "gp59.rms_2d_gegen_messung": {
-  "wert": 0.5572016866905154,
+  "wert": 0.6065185524347183,
   "einheit": "dB",
   "text": "2D gegen B&K-Messmittel, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
   "art": "stand"
  },
  "gp59.rms_3d_gegen_fem": {
-  "wert": 0.09755813309367428,
+  "wert": 0.06598273025160842,
   "einheit": "dB",
   "text": "3D gegen COMSOL-FEM, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -627,21 +627,21 @@
   "toleranz": 0.05
  },
  "gp59.rms_3d_gegen_messung": {
-  "wert": 0.3180655221545741,
+  "wert": 0.36194215060262364,
   "einheit": "dB",
   "text": "3D gegen B&K-Messmittel, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
   "art": "stand"
  },
  "gp59.widerstand_2d_zu_fem": {
-  "wert": 0.9352205900626253,
+  "wert": 0.9352205900626251,
   "einheit": "",
   "text": "Re Z 2D / FEM, Mittel 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
   "art": "stand"
  },
  "gp59.widerstand_3d_zu_fem": {
-  "wert": 1.1255365249894642,
+  "wert": 1.1245026794257398,
   "einheit": "",
   "text": "Re Z 3D / FEM, Mittel 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -655,21 +655,21 @@
   "art": "stand"
  },
  "gp60.makro_gegen_exakt_max": {
-  "wert": 0.0021702009080186713,
+  "wert": 0.0021702009185888826,
   "einheit": "",
   "text": "größte Abweichung 2D (Makro) gegen exakt, statisch",
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
   "art": "stand"
  },
  "gp60.r3d_zu_exakt_bk": {
-  "wert": 1.019998153687782,
+  "wert": 1.0199995276336287,
   "einheit": "",
   "text": "3D/2D(= exakt), B&K-Geometrie r/a 0.139, erzwungene Form",
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
   "art": "stand"
  },
  "gp60.r3d_zu_exakt_gross": {
-  "wert": 1.0337734062956958,
+  "wert": 1.0337768166684553,
   "einheit": "",
   "text": "3D/2D(= exakt), r/a 0.167",
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
@@ -704,7 +704,7 @@
   "art": "stand"
  },
  "gp62.bk_tiefton_db": {
-  "wert": -0.15199876603658424,
+  "wert": -0.1519987553552511,
   "einheit": "dB",
   "text": "B&K-Nickelfolie, Tiefton mit/ohne Randschicht (Spannung vorgegeben)",
   "test": "tests/test_membran_elektrostatik.py::test_gp62_randschicht_der_folie",
@@ -718,28 +718,28 @@
   "art": "stand"
  },
  "gp64.max_bem_gegen_nbs": {
-  "wert": 0.8084673953883801,
+  "wert": 0.7905950770883985,
   "einheit": "dB",
   "text": "größte Abweichung BEM-Stab gegen NBS, 4–20 kHz",
   "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
   "art": "stand"
  },
  "gp64.max_kugel_gegen_nbs": {
-  "wert": 3.513553496328388,
+  "wert": 3.816303689041092,
   "einheit": "dB",
   "text": "größte Abweichung Kugel gegen NBS",
   "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
   "art": "stand"
  },
  "gp64.reziprok_gegen_j0_20k": {
-  "wert": -0.016753380905170593,
+  "wert": -0.015950001299256195,
   "einheit": "dB",
   "text": "Frontfaktor reziprokes 3D-Gewicht gegen J0, 20 kHz",
   "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
   "art": "stand"
  },
  "gp64.rms_bem_gegen_nbs": {
-  "wert": 0.5791725889845778,
+  "wert": 0.5340768614039495,
   "einheit": "dB",
   "text": "Freifeldkorrektur BEM-Stab gegen NBS, 4–20 kHz",
   "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
@@ -748,10 +748,17 @@
   "toleranz": 0.05
  },
  "gp64.rms_kugel_gegen_nbs": {
-  "wert": 2.167900022565325,
+  "wert": 2.2510569212113114,
   "einheit": "dB",
   "text": "Freifeldkorrektur Kugel gegen NBS, 4–20 kHz",
   "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
+  "art": "stand"
+ },
+ "gp65.last_20khz_2d": {
+  "wert": -0.30275019271523185,
+  "einheit": "dB",
+  "text": "Strahlungslast im Druckgang, B&K 4134, 20 kHz (2D)",
+  "test": "tests/test_beugung_bem.py::test_gp65_strahlungslast_im_druckgang",
   "art": "stand"
  }
 }

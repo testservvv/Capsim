@@ -1052,12 +1052,18 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
                 Tb = _red52(c._mmul, c._rear_chain_mats(om_a))
                 S[ib, ib] += Al / Bl + complex(Tb[1, 0][0]) / complex(Tb[0, 0][0])
                 S[ib, ir] -= 1.0 / Bl
-                Zf = (c._radiation_impedance_membrane(om_a)[0]
+                # Frontknoten: Strahlung (nur im Freifeld, Gegenprobe 65)
+                # + Gewebe; im Druckfeld ohne beides gilt p = p_front
+                Zf = (c._front_radiation(om_a)[0]
                       + c.rayl_front / c.S_mem)
-                S[ifr, ifr] += 1.0 / Zf
-                for k in range(n - 1):
-                    S[ifr, iw + k] += 1j * om * A[k]
-                rhs[ifr] = 1.0 / Zf
+                if Zf != 0.0:
+                    S[ifr, ifr] += 1.0 / Zf
+                    for k in range(n - 1):
+                        S[ifr, iw + k] += 1j * om * A[k]
+                    rhs[ifr] = 1.0 / Zf
+                else:
+                    S[ifr, ifr] = 1.0
+                    rhs[ifr] = 1.0
                 x = _sps52(S.tocsr(), rhs)
                 out.append(np.sum(Ab[:nf] * x[iw:iw + nf]))
             return np.array(out)
@@ -1175,8 +1181,11 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
                 MicrophoneCapsule._radiation_impedance_membrane = (
                     lambda s, o, _L=L52: 1j * np.asarray(o, dtype=float)
                     * RHO0 * _L / s.S_mem + 0j)
+                # die Luftmasse ersetzt die Strahlungslast: dafür muss sie
+                # im Druckgang zugeschaltet sein (Gegenprobe 65)
                 h52d[L52] = MicrophoneCapsule(
-                    squeeze_model="3d", **bk52).transfer_function(f52d)
+                    squeeze_model="3d", pressure_radiation_load=True,
+                    **bk52).transfer_function(f52d)
         finally:
             MicrophoneCapsule._radiation_impedance_membrane = _rad52
         act52 = 20.0 * np.log10(np.abs(h52d[10e-3] / h52d[1e-8]))

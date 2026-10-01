@@ -853,6 +853,33 @@ TR = {
               "ka = 1 bei f ≈ 109/d Hz (d in m) — für "
               "Ø 26 mm also ab ≈ 4 kHz.",
     },
+    "lbl_rad_load": {
+        "en": "Radiation load in the pressure response",
+        "de": "Strahlungslast im Druckgang",
+    },
+    "help_rad_load": {
+        "en": "Without diffraction a closed capsule computes the PRESSURE "
+              "response: uniform pressure at the diaphragm, as in COMSOL, "
+              "a coupler or an electrostatic actuator. The diaphragm does "
+              "not radiate into a free field there, so the radiation "
+              "impedance is left out by default (self-test, check 65; the "
+              "3D model then meets the COMSOL FEM of the B&K 4134 to "
+              "0.07 dB RMS instead of 0.10 dB). Switch it on to add the "
+              "radiation load of a piston in an infinite baffle, as up to "
+              "check 64 (B&K 4134: −0.3 dB at 20 kHz). With diffraction, "
+              "an open rear side or the K67 design the load is always "
+              "present.",
+        "de": "Ohne Beugung rechnet eine dichte Kapsel den DRUCKGANG: "
+              "gleichförmiger Druck an der Membran wie in COMSOL, im Kuppler "
+              "oder am Aktuator. Dort strahlt die Membran nicht ins freie "
+              "Feld, deshalb fehlt die Strahlungsimpedanz standardmäßig "
+              "(Selbsttest, Gegenprobe 65; der 3D-Löser trifft die "
+              "COMSOL-FEM der B&K 4134 damit auf 0,07 statt 0,10 dB RMS). "
+              "Eingeschaltet kommt die Strahlungslast eines Kolbens in "
+              "unendlicher Schallwand dazu, wie bis Gegenprobe 64 (B&K "
+              "4134: −0,3 dB bei 20 kHz). Mit Beugung, bei offener "
+              "Rückseite und bei der K67-Bauform liegt sie immer an.",
+    },
     "lbl_ax_body": {
         "en": "Axial body (front-to-rear transfer)",
         "de": "Axialer Körper (Front-Rück-Transfer)",
@@ -1010,8 +1037,8 @@ TR = {
         "en": "**Body model 'sphere' for a single-diaphragm capsule.** The "
               "sphere puts the diaphragm on a curved cap and underestimates "
               "the pressure build-up of a flat front face: for the B&K 4134 "
-              "(⌀13.2 mm) up to 3.5 dB at 20 kHz below the NBS measurement, "
-              "2.2 dB RMS over 4–20 kHz; the flat face in the BEM: 0.6 dB "
+              "(⌀13.2 mm) up to 3.8 dB at 20 kHz below the NBS measurement, "
+              "2.3 dB RMS over 4–20 kHz; the flat face in the BEM: 0.5 dB "
               "(self-test, check 64). For measurement microphones and "
               "cylindrical housings choose 'BEM (head + body)', set 'BEM: "
               "capsule length' to the housing length (capsule plus "
@@ -1021,9 +1048,9 @@ TR = {
         "de": "**Körpermodell „Kugel“ bei einer Ein-Membran-Kapsel.** Die "
               "Kugel legt die Membran auf eine gekrümmte Kalotte und "
               "unterschätzt den Druckstau einer flachen Stirnfläche: bei der "
-              "B&K 4134 (⌀13,2 mm) bis 3,5 dB bei 20 kHz unter der "
-              "NBS-Messung, 2,2 dB RMS über 4–20 kHz; die flache Stirnfläche "
-              "im BEM: 0,6 dB (Selbsttest, Gegenprobe 64). Für Messmikrofone "
+              "B&K 4134 (⌀13,2 mm) bis 3,8 dB bei 20 kHz unter der "
+              "NBS-Messung, 2,3 dB RMS über 4–20 kHz; die flache Stirnfläche "
+              "im BEM: 0,5 dB (Selbsttest, Gegenprobe 64). Für Messmikrofone "
               "und zylindrische Gehäuse „BEM (Kopf + Körper)“ wählen, „BEM: "
               "Kapsellänge“ auf die Gehäuselänge (Kapsel samt "
               "Vorverstärker; ab ~30 mm ändert sich ≤ 0,3 dB) und „BEM: "

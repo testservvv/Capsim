@@ -292,7 +292,11 @@ der 4134 gegen die NBS-Messung (64). Der Spaltwiderstand
 gegen Zuckerwars Tabelle II war bis Gegenprobe 59 eine Sperrklinke
 (Streuung der Škvor-Zellregel); seit dem Makroelement rechnet das
 2D-Modell den Film am Lochkreis exakt, und die Tabelle ist Zuckerwars
-eigene Näherung — bewusst gelockert zum Stand-Wert (Gegenprobe 60). Wird ein solcher Wert schlechter als
+eigene Näherung — bewusst gelockert zum Stand-Wert (Gegenprobe 60).
+Neu festgelegt wurde mit Gegenprobe 65 die 2D-Amplitude gegen
+Zuckerwars 4146 (0,63 → 0,87 dB): der alte Wert enthielt die
+Strahlungslast im Druckgang, die den Hochtonüberschuss des 2D-Modells
+verdeckte. Wird ein solcher Wert schlechter als
 die Basis (über eine kleine Toleranz hinaus), scheitert der Test; wird
 er besser, meldet es der Bericht.
 
@@ -314,7 +318,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 105 Werte aus 31 Gegenproben, davon 10 Sperrklinken.
+Die Basis umfasst 106 Werte aus 32 Gegenproben, davon 10 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -330,8 +334,9 @@ Schreiben.
 1. **Lochkreise: 2D gelöst, Rest im 3D-Löser (Gegenproben 38, 52, 58,
    59, 60).** Das 2D-Feld rechnet Lochkreise seit Gegenprobe 60 als
    exaktes Makroelement: statisch auf 0,22 % gegen eine unabhängige
-   Lösung, gegen die COMSOL-FEM der 4134 0,26 dB RMS
-   (`gp59.rms_2d_gegen_fem_makro`, vorher 1,80 dB), Re Z 6 % unter der
+   Lösung, gegen die COMSOL-FEM der 4134 0,31 dB RMS
+   (`gp59.rms_2d_gegen_fem_makro`, vorher 1,80 dB; seit Gegenprobe 65
+   ohne die verdeckende Strahlungslast), Re Z 6 % unter der
    FEM (`gp59.widerstand_2d_zu_fem`, vorher 61 % darüber). Offen bleibt:
    - **Mittelloch im 3D-Löser:** ein Loch auf der Polarachse des
      3D-Gitters überschätzt dessen Filmwiderstand um 5–54 % (r/a =
@@ -340,15 +345,16 @@ Schreiben.
      Große Mündungen abseits der Achse trifft 3D auf 1–3 %.
    - **Zuckerwars 4134 von 1978** war stärker gedämpft als heutige 4134
      (20 kHz: −3,1 gegen −1,2 dB); 2D und 3D liegen gleichermaßen
-     darüber (2,1 bzw. 1,7 dB RMS, `gp38.rms_2d_4134_db`). Warum, bleibt
+     darüber (2,2 bzw. 1,7 dB RMS, `gp38.rms_2d_4134_db`). Warum, bleibt
      offen (Tabelle I weicht von B&Ks Geometrie ab: Spalt 20,77 statt
-     18,6 µm, Lochkreis 2,03 statt 1,70 mm). Am 4146 trifft 2D die
-     Messung jetzt besser als 3D (0,63 gegen 0,75 dB,
-     `gp38.rms_2d_4146_db`).
+     18,6 µm, Lochkreis 2,03 statt 1,70 mm). Am 4146 liegen 2D 0,87
+     und 3D 0,73 dB daneben (`gp38.rms_2d_4146_db`, mit Gegenprobe 65
+     neu festgelegt, s. Punkt 9).
 
-2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 497 Hz, 3D
-   495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,096,
-   `gp32.verstimmung_3d` 0,10). Bis Gegenprobe 59 lag 2D bei 478 Hz,
+2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 500 Hz, 3D
+   497 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,091,
+   `gp32.verstimmung_3d` 0,095; mit der Strahlungslast im Druckgang bis
+   Gegenprobe 65 waren es 497 und 495 Hz). Bis Gegenprobe 59 lag 2D bei 478 Hz,
    und der Abstand zu 3D wurde den diskreten Bohrungen zugeschrieben;
    mit dem Makroelement (Gegenprobe 60) liegen beide gleichauf — es war
    die Lochkreis-Darstellung. Die 10 % zur FEM teilen beide Modelle; der
@@ -408,20 +414,25 @@ Schreiben.
    betroffen; richtig wäre der Anteil der Löcher im Freistich.
 8. **Freifeldkorrektur der 4134 im Hochton (Gegenprobe 64).** Gegen die
    NBS-Messung (4134 ohne Gitter) trifft das BEM der flachen Stirnfläche
-   den Tiefton auf 0,12 dB, liegt aber von 5 bis 20 kHz 0,2–0,8 dB
-   darüber (`gp64.rms_bem_gegen_nbs` 0,58 dB). Ausgeschlossen: BEM-Netz
-   und Winkelquadratur (≤ 0,03 dB), die Gewichtung mit der Grundmode
-   (das reziproke Gewicht des 3D-Felds weicht 0,02 dB ab), die
-   Stablänge ab 30 mm (≤ 0,3 dB). Offen sind die reale Stirnform ohne
-   Gitter (Gewinde, Fase, Klemmring), der Messstab (Vorverstärker
-   ⌀12,7 mm) und die **Strahlungslast im Druckgang**: Capsim legt auch
-   ohne Beugung die Strahlungsimpedanz des Kolbens in unendlicher
-   Schallwand vor die Membran, die COMSOL-FEM, Kuppler und Aktuator
-   haben sie nicht. Ohne sie träfe 3D die FEM besser (0,098 → 0,066 dB
-   RMS), 2D läge im Hochton bis 0,68 dB über der FEM (Grenze der
-   Gegenprobe 59: 0,6 dB), und die Freifeldkorrektur sänke bei 20 kHz
-   um 0,3 dB. Die Umstellung ändert die Bedeutung von „ohne Beugung“
-   für alle dichten Kapseln und ist deshalb noch nicht gemacht.
+   den Tiefton auf 0,12 dB, liegt aber im Hochton bis 0,8 dB darüber
+   (`gp64.rms_bem_gegen_nbs` 0,53 dB, vor Gegenprobe 65 0,58 dB).
+   Ausgeschlossen: BEM-Netz und Winkelquadratur (≤ 0,03 dB), die
+   Gewichtung mit der Grundmode (das reziproke Gewicht des 3D-Felds
+   weicht 0,02 dB ab), die Stablänge ab 30 mm (≤ 0,3 dB); die
+   Strahlungslast steckt seit Gegenprobe 65 richtig nur im Freifeldgang.
+   Offen sind die reale Stirnform ohne Gitter (Gewinde, Fase,
+   Klemmring) und der Messstab (Vorverstärker ⌀12,7 mm).
+9. **Aktuatorlast (Gegenprobe 65).** Zuckerwars Fig. 6/7 und
+   vermutlich auch B&Ks Messmittel sind Aktuatormessungen. Der Aktuator
+   belastet die Membran (Luft zwischen Gitter und Membran, Strömung
+   durch die Schlitze); Capsim vergleicht dagegen den lastfreien
+   Druckgang. Bis Gegenprobe 65 wirkte die Freifeld-Strahlungslast dort
+   als ungefährer Ersatz; ohne sie liegen 2D/3D gegen Fig. 6 bei
+   2,17/1,71 dB (vorher 2,11/1,67), gegen das Messmittel bei 0,61/0,36 dB
+   (vorher 0,56/0,32), und die Sperrklinke 2D gegen die 4146 ist neu
+   festgelegt (0,63 → 0,87 dB; 3D 0,744 → 0,734 dB). Gegenprobe 52 d
+   grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,6 dB);
+   eine hergeleitete Aktuatorlast (Abstand, Schlitzgeometrie) fehlt.
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
@@ -2279,7 +2290,7 @@ Druck auf der Membran, kein Körper), mit Beugung rechnet Capsim den
 Freifeldkorrektur, der Druckstau vor der Stirnfläche — bei einem
 ½-Zoll-Mikrofon gemessen +4,0 dB bei 10 kHz und +8,0 dB bei 20 kHz.
 Falsch war dagegen ihr Betrag: die Voreinstellung „Kugel“ legt die
-Membran auf eine gekrümmte Kalotte und lieferte nur +3,3 / +4,5 dB.
+Membran auf eine gekrümmte Kalotte und liefert nur +3,4 / +4,1 dB.
 Und „BEM (Kopf + Körper)“ hätte den 56-mm-Körper der U87-Voreinstellung
 mitgerechnet (bei 4 kHz −10,8 dB).
 
@@ -2294,22 +2305,24 @@ in `tests/basis.py`.
 
 **Gegenprobe 64** (`tests/test_beugung_bem.py`; Prüfling: der
 Messprüfling der COMSOL-Geometrie als ½-Zoll-Stab, flache Stirnfläche
-⌀13,2 mm, 50 mm lang, ohne Körper):
+⌀13,2 mm, 50 mm lang, ohne Körper; Stand nach Gegenprobe 65, also
+Druckgang ohne Strahlungslast — vorher 0,58 dB RMS mit dem BEM):
 
 | | 1,25–4 kHz | 10 kHz | 16 kHz | 20 kHz | RMS 4–20 kHz |
 |---|---|---|---|---|---|
 | NBS-Messung | −0,03…+0,99 | +4,01 | +7,04 | +7,96 | — |
-| BEM, flache Stirnfläche | ±0,12 dB daneben | +4,44 | +7,66 | +8,72 | 0,58 dB |
-| Kugel (bisher Voreinstellung) | bis −0,47 dB daneben | +3,29 | +4,00 | +4,45 | 2,17 dB |
+| BEM, flache Stirnfläche | ±0,12 dB daneben | +4,51 | +7,57 | +8,42 | 0,53 dB |
+| Kugel (bisher Voreinstellung) | bis −0,45 dB daneben | +3,36 | +3,91 | +4,14 | 2,25 dB |
 
 - a) Tiefton: BEM trifft die Messung innerhalb ihrer Unsicherheit
   (0,16 dB) und bis 2,5 kHz Matsuis Theorie auf 0,05 dB.
-- b) Hochton: BEM liegt 0,2–0,8 dB darüber; Sperrklinke
+- b) Hochton: BEM liegt bis 0,8 dB darüber; Sperrklinke
   `gp64.rms_bem_gegen_nbs` (Ursachen offen, s. „Offene Punkte“ 8).
 - c) Kugel: Stand-Werte; geprüft wird die Richtung (BEM mindestens
   doppelt so gut, Kugel ab 10 kHz zu niedrig).
-- d) Bei dichter Rückseite ist der Druckgang exakt der Freifeldgang
-  geteilt durch den Frontfaktor (Abweichung ≤ 10⁻¹²).
+- d) `pressure_response()` der Freifeldkapsel ist exakt der Druckgang
+  der Kapsel ohne Beugung (Abweichung ≤ 10⁻¹²; bis Gegenprobe 65 war
+  es der Freifeldgang geteilt durch den Frontfaktor).
 - e) **Gewicht des Frontdrucks.** Die Kette projiziert den
   Oberflächendruck auf die Grundmode J₀. Physikalisch richtig ist das
   reziproke Gewicht, c = S⁻ᵀ·w_out aus dem 3D-Feld (Membran im
@@ -2322,7 +2335,7 @@ Messprüfling der COMSOL-Geometrie als ½-Zoll-Stab, flache Stirnfläche
 **Was sich geändert hat.**
 - Das Bode-Diagramm zeigt mit Beugung bei dichter Rückseite zusätzlich
   den **Druckfrequenzgang** gestrichelt („wie COMSOL/Kuppler“), nach d)
-  ohne zweite Rechnung; der Abstand beider Kurven ist die
+  aus derselben Rechnung; der Abstand beider Kurven ist die
   Freifeldkorrektur. Der CSV-Export hat dafür die Spalte
   `pressure_response_db`.
 - Bei einer Ein-Membran-Kapsel mit dem Körpermodell „Kugel“ warnt die
@@ -2334,6 +2347,67 @@ Messprüfling der COMSOL-Geometrie als ½-Zoll-Stab, flache Stirnfläche
 - Die Phase des Freifeldgangs bezieht sich, wie bei der Kugel, auf den
   ungestörten Druck im Körpermittelpunkt; beim 30-mm-Stab enthält sie
   deshalb die Laufzeit über 15 mm (+157° bei 10 kHz).
+
+### Strahlungslast im Druckgang (Gegenprobe 65)
+
+**Befund.** Capsim legte die Strahlungsimpedanz der Membran (Kolben in
+unendlicher Schallwand) immer vor die Membran, auch ohne Beugung. Bei
+einer dichten Kapsel ist das aber der **Druckfrequenzgang**:
+gleichförmiger Druck an der Membran wie in der COMSOL-FEM, im Kuppler
+oder am Aktuator. Dort strahlt die Membran nicht ins freie Feld. Bei der
+4134 senkte die Last den Hochton um 0,30 dB bei 20 kHz
+(`gp65.last_20khz_2d`).
+
+**Korrektur.** Die Last liegt jetzt nur im **Freifeld** an: mit
+Beugung, bei offener Rückseite (auch im Modell ohne Körper strahlt die
+Membranvorderseite) und bei der Doppelmembran-Bauform. Im Druckfeld
+fehlt sie standardmäßig; `pressure_radiation_load=True` bzw. der
+GUI-Schalter „Strahlungslast im Druckgang“ (Gehäuse & Beugung) legt sie
+wieder dazu. Im 3D-Löser wird der Frontknoten ohne Last und ohne
+Gewebe auf den Quelldruck gesetzt (Dirichlet statt 1/Z). Neu ist
+`pressure_response()`: der Druckgang einer dichten Kapsel, auch wenn
+sie mit Beugung gebaut ist. Im 3D-Modell kommt er aus derselben
+Feldlösung (Knotendruck p_n und Netzwerkfluss q_n:
+X_p = (X_f/p_n)/(1 + Z_Gewebe·q_n/p_n)), die GUI zeichnet ihn als
+gestrichelte Vergleichskurve.
+
+**Gegenprobe 65** (`tests/test_beugung_bem.py`):
+- a) Im Freifeld (Beugung, offene Rückseite, K67) ändert der Schalter
+  nichts, bitgleich.
+- b) Im Druckfeld ist die Last exakt ein Serienglied:
+  Θ/(jω·H_mit) − Θ/(jω·H_ohne) = Z_rad auf 10⁻¹⁰.
+- c) Der Dirichlet-Knoten des 3D-Lösers ist der stetige Grenzfall
+  Z → 0 (4·10⁻¹¹); `pressure_response()` der Freifeldkapsel ist in 2D
+  und 3D, mit und ohne Frontgewebe, der Druckgang ohne Beugung. Mit
+  gesetztem Schalter rechnet das Modell bitgleich wie vor der Änderung
+  (gegen den alten Code geprüft, 10⁻¹⁶).
+- d) Gegen die COMSOL-FEM (falls die Daten vorliegen) trifft 3D ohne
+  Last besser: 0,098 → 0,066 dB RMS.
+
+**Was sich verschoben hat** (bewusst in die Basis übernommen):
+
+| Vergleich | Referenz | mit Last | ohne Last |
+|---|---|---|---|
+| 3D gegen COMSOL-FEM | ohne Last | 0,098 dB | 0,066 dB |
+| 2D gegen COMSOL-FEM | ohne Last | 0,28 dB | 0,31 dB (max. 0,68) |
+| Resonanzlage gegen die FEM (Gegenprobe 32), 2D / 3D | FEM | 9,6 / 10,0 % | 9,1 / 9,5 % |
+| BEM-Freifeldkorrektur gegen NBS | Freifeld | 0,58 dB | 0,53 dB |
+| 3D gegen Zuckerwar 4146 (Aktuator) | Aktuatorlast | 0,744 dB | 0,734 dB |
+| 2D gegen Zuckerwar 4146 (Aktuator) | Aktuatorlast | 0,63 dB | 0,87 dB |
+| 2D / 3D gegen Zuckerwar 4134 (Aktuator) | Aktuatorlast | 2,11 / 1,67 dB | 2,17 / 1,71 dB |
+| 2D / 3D gegen B&Ks Messmittel | Aktuator (vermutlich) | 0,56 / 0,32 dB | 0,61 / 0,36 dB |
+
+Gegen alle lastfreien Referenzen wird das Modell besser, gegen die
+Aktuatormessungen meist etwas schlechter. Der Aktuator belastet die
+Membran selbst (Luft zwischen Gitter und Membran, Strömung durch die
+Schlitze); die Freifeld-Strahlungslast wirkte dort als ungefährer
+Ersatz. Zwei Grenzen sind deshalb bewusst neu festgelegt (Entscheidung
+des Projekts): die 2D-Abweichung gegen die FEM in Gegenprobe 59
+(0,6 → 0,7 dB) und die Sperrklinke `gp38.rms_2d_4146_db`
+(0,63 → 0,87 dB). Beide alten Werte enthielten die Last, die den
+Hochtonüberschuss des 2D-Modells verdeckte; das 3D-Modell trifft beide
+Referenzen ohne sie besser. Die Aktuatorlast selbst ist offen („Offene
+Punkte“ 9).
 
 ## Verlustmechanismen (vollständig erfasst)
 
@@ -2427,12 +2501,13 @@ beschreiben:
 - *COMSOL-Geometrie* (`_BK4134_COMSOL`, Gegenproben 58 e, 59, 61): die
   Originalgeometrie aus dem COMSOL-Anwendungsmodell (Spalt 18,6 µm,
   Platte 1,029 mm, Lochkreis 3,4 mm, offener Ring 0,86 × 0,30 mm zur
-  Rückkammer, 200 V). Gegen die FEM: 2D 0,28 dB, 3D 0,10 dB RMS über
-  1–20 kHz; gegen B&Ks Messmittel 3D 0,32 dB RMS.
+  Rückkammer, 200 V). Gegen die FEM: 2D 0,31 dB, 3D 0,06 dB RMS über
+  1–20 kHz; gegen B&Ks Messmittel 3D 0,37 dB RMS (Aktuatorlast nicht
+  modelliert, s. „Offene Punkte“ 9).
 - *Zuckerwar 1978, Tab. I* (`_BK38["4134"]`, Gegenproben 38, 52, 54,
   58, 62): der Prüfling seiner Messung (Spalt 20,77 µm, Platte
   0,843 mm, Lochkreis 4,064 mm, Randschlitz 0,838 × 0,3048 mm, 28 V).
-  Gegen Fig. 6: 2D 2,1 dB / 6,9° RMS — der Prüfling von 1978 war
+  Gegen Fig. 6: 2D 2,2 dB / 7,6° RMS — der Prüfling von 1978 war
   stärker gedämpft (s. Gegenproben 58, 59).
 
 Beide geben die **Vakuumresonanz** vor (22 664,9 bzw. 22 953,7 Hz)
@@ -2442,9 +2517,11 @@ steckt also schon darin (Gegenprobe 62). Gerechnet wird der
 **Druckfrequenzgang ohne Beugung** wie in FEM und Messung. Mit
 „Gehäuse & Beugung“ rechnen beide den Freifeldgang eines ½-Zoll-Stabs
 im BEM (flache Stirnfläche ⌀13,2 mm, 30 mm, ohne Körper); er liegt um
-die Freifeldkorrektur über dem Druckgang (+4,4 dB bei 10 kHz, +8,6 dB
+die Freifeldkorrektur über dem Druckgang (+4,5 dB bei 10 kHz, +8,3 dB
 bei 20 kHz; gemessen +4,0 / +8,0 dB, Gegenprobe 64), der gestrichelt
-zum Vergleich mit COMSOL stehen bleibt. Werkstoff ist
+zum Vergleich mit COMSOL stehen bleibt. Der Druckgang ist ohne
+Strahlungslast, wie in der FEM (Gegenprobe 65; zuschaltbar unter
+„Gehäuse & Beugung“). Werkstoff ist
 das GUI-Nickel (COMSOL: 8900 kg/m³, 221 GPa; Unterschied < 0,01 dB).
 Gegen die Testmodelle weichen die geladenen Dateien höchstens
 0,007 dB ab. Für die 0,84–0,86 mm breiten Randspalte reicht das

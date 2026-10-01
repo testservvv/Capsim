@@ -1241,15 +1241,17 @@ def test_gp64_freifeldkorrektur_b_k_4134(stand, monkeypatch):
     #    ist das nicht (Elementlänge 1 → 0.25 mm und doppelte
     #    φ-Quadratur ändern ≤ 0.03 dB), die Gewichtung auch nicht (e).
     #    Offen: die reale Stirnform ohne Gitter (Gewinde, Fase, Klemm-
-    #    ring), der Messstab (Vorverstärker ⌀12.7 mm) und die Strahlungs-
-    #    last (README). Sperrklinke.
+    #    ring) und der Messstab (Vorverstärker ⌀12.7 mm). Seit Gegenprobe
+    #    65 hat der Druckgang keine Strahlungslast mehr, der Freifeldgang
+    #    schon; die Korrektur enthält damit wie die Messung den Lastterm
+    #    Z_mic/(Z_mic + Z_rad) (−0.3 dB bei 20 kHz). Sperrklinke.
     # c) Die Kugel (Voreinstellung „Kugel (d_ext, montiert)“) setzt die
     #    Membran auf eine gekrümmte Kalotte und sättigt bei +4.5 dB: bis
     #    3.5 dB zu wenig bei 20 kHz und schon im Tiefton 0.3…0.5 dB.
     #    Stand-Werte; geprüft wird die Richtung.
-    # d) Bei dichter Rückseite ist der Druckfrequenzgang exakt der
-    #    Freifeldgang geteilt durch den Frontfaktor (die GUI zeichnet ihn
-    #    so als Vergleichskurve, ohne zweite Rechnung).
+    # d) pressure_response() der Freifeldkapsel ist exakt der Druckgang
+    #    der Kapsel ohne Beugung (die GUI zeichnet ihn so als Vergleichs-
+    #    kurve, ohne zweite Rechnung).
     # e) Gewicht des Frontdrucks: die Kette projiziert den Oberflächen-
     #    druck auf die Grundmode J0. Physikalisch richtig ist das
     #    REZIPROKE Gewicht: der Ausgang auf eine Druckverteilung p(r) ist
@@ -1306,10 +1308,9 @@ def test_gp64_freifeldkorrektur_b_k_4134(stand, monkeypatch):
         (f"die flache Stirnfläche muss die Messung deutlich besser treffen "
          f"als die Kugel, die den Druckstau unterschätzt (RMS {rms_bem:.2f} "
          f"gegen {rms_kug:.2f} dB)")
-    # d) Druckgang = Freifeldgang / Frontfaktor
-    F = c_bem._source_pressures(2.0 * np.pi * f, np.array([0.0]))[0][:, 0]
-    assert np.max(np.abs(H_bem / F / Hp - 1.0)) < 1e-12, \
-        "bei dichter Rückseite muss H_frei/F exakt der Druckgang sein"
+    # d) Druckgang aus der Freifeldkapsel
+    assert np.max(np.abs(c_bem.pressure_response(f) / Hp - 1.0)) < 1e-12, \
+        "pressure_response muss exakt der Druckgang ohne Beugung sein"
 
     # e) reziprokes Gewicht aus dem 3D-Feld
     erfasst = []
@@ -1366,5 +1367,123 @@ def test_gp64_freifeldkorrektur_b_k_4134(stand, monkeypatch):
           f"RMS (10/20 kHz {ffk_bem[i10]:.2f}/{ffk_bem[i20]:.2f} gegen "
           f"{ffk_nbs_4134[i10]:.2f}/{ffk_nbs_4134[i20]:.2f} dB); Kugel "
           f"{rms_kug:.2f} dB RMS ({ffk_kug[i20]:.2f} dB bei 20 kHz); "
-          f"Druckgang = Freifeld/F exakt; reziprokes 3D-Gewicht gegen J0 "
+          f"Druckgang aus der Freifeldkapsel exakt; reziprokes 3D-Gewicht "
+          f"gegen J0 "
           f"{rez[10e3]:+.3f}/{rez[20e3]:+.3f} dB  OK")
+
+
+@pytest.mark.feld3d
+def test_gp65_strahlungslast_im_druckgang(stand, k67):
+    """Gegenprobe 65: Strahlungslast der Membran nur im Freifeld."""
+    # Der DRUCKFREQUENZGANG (gleichförmiger Druck an der Membran: COMSOL-
+    # FEM, Kuppler, Aktuator) hat keine Abstrahlung ins freie Feld. Bis
+    # Gegenprobe 64 lag die Strahlungsimpedanz des Kolbens trotzdem auch
+    # dort vor der Membran. Jetzt nur noch im Freifeld (Beugung, offene
+    # Rückseite, Doppelmembran-Bauform) oder mit
+    # pressure_radiation_load=True.
+    # a) GELTUNGSBEREICH: im Freifeld ändert der Schalter nichts (bit-
+    #    gleich), im Druckfeld schaltet er die Last.
+    # b) KETTE: die Last ist ein Serienglied vor der Membran, also gilt
+    #    exakt Θ/(jω·H_mit) − Θ/(jω·H_ohne) = Z_rad.
+    # c) 3D: ohne Last und ohne Gewebe wird der Frontknoten auf den
+    #    Quelldruck gesetzt (Dirichlet). Das muss der stetige Grenzfall
+    #    Z -> 0 sein. pressure_response() der Freifeldkapsel muss in 2D
+    #    und 3D (auch mit Frontgewebe) exakt der Druckgang ohne Beugung
+    #    sein — im 3D-Modell aus derselben Feldlösung.
+    # d) WIRKUNG (Stand-Wert): B&K 4134 bei 20 kHz; gegen die COMSOL-FEM
+    #    (falls die Daten in tests/extern liegen) trifft 3D ohne Last
+    #    besser — die FEM hat keine.
+    if not _HAS_SCIPY:
+        return
+    from test_referenzen import _BK4134_COMSOL, _messpruefling, _EXTERN
+    par = _messpruefling(_BK4134_COMSOL)
+    f = np.array([100.0, 1000.0, 5000.0, 10000.0, 20000.0])
+    om = 2.0 * np.pi * f
+
+    def rel(a, b):
+        return float(np.max(np.abs(a / b - 1.0)))
+
+    # a) Geltungsbereich
+    p2 = dict(par, squeeze_model="2d")
+    c_ohne = MicrophoneCapsule(**p2)
+    c_mit = MicrophoneCapsule(**p2, pressure_radiation_load=True)
+    assert not c_ohne._front_rad_on() and c_mit._front_rad_on()
+    H_ohne = c_ohne.transfer_function(f)
+    H_mit = c_mit.transfer_function(f)
+    frei = dict(p2, include_diffraction=True, body_diameter=13.2e-3)
+    for kw_, name in ((frei, "Beugung"),
+                      (dict(p2, rear_network_enabled=False), "offen")):
+        a_ = MicrophoneCapsule(**kw_).transfer_function(f)
+        b_ = MicrophoneCapsule(**kw_, pressure_radiation_load=True
+                               ).transfer_function(f)
+        assert np.array_equal(a_, b_), \
+            f"im Freifeld ({name}) darf der Schalter nichts ändern"
+    assert k67._front_rad_on(), "Doppelmembran: Last liegt immer an"
+    # b) Serienglied
+    th = c_ohne._theta
+    dZ = th / (1j * om * H_mit) - th / (1j * om * H_ohne)
+    Z_rad = c_ohne._radiation_impedance_membrane(om)
+    assert rel(dZ, Z_rad) < 1e-9, \
+        f"die Last muss exakt Z_rad in Serie sein ({rel(dZ, Z_rad):.1e})"
+    # c) 3D: Dirichlet-Knoten und pressure_response
+    p3 = dict(par, squeeze_model="3d")
+    H3 = MicrophoneCapsule(**p3).transfer_function(f)
+    z_orig = MicrophoneCapsule._radiation_impedance_membrane
+    try:
+        MicrophoneCapsule._radiation_impedance_membrane = (
+            lambda s_, o_: 1e-9 * z_orig(s_, o_))
+        H3_lim = MicrophoneCapsule(**p3, pressure_radiation_load=True
+                                   ).transfer_function(f)
+    finally:
+        MicrophoneCapsule._radiation_impedance_membrane = z_orig
+    assert rel(H3_lim, H3) < 1e-8, \
+        (f"3D: Dirichlet-Knoten muss der Grenzfall Z -> 0 sein "
+         f"({rel(H3_lim, H3):.1e})")
+    for sm, tol in (("2d", 1e-12), ("3d", 1e-9)):
+        for gew in (0.0, 30.0):
+            q = dict(par, squeeze_model=sm, fabric_front_rayl=gew)
+            ref = MicrophoneCapsule(**q).transfer_function(f)
+            cf = MicrophoneCapsule(**dict(q, include_diffraction=True,
+                                          body_diameter=13.2e-3))
+            assert rel(cf.pressure_response(f), ref) < tol, \
+                (f"{sm}, Gewebe {gew}: pressure_response der Freifeld"
+                 f"kapsel muss der Druckgang sein "
+                 f"({rel(cf.pressure_response(f), ref):.1e})")
+    with pytest.raises(ValueError):
+        MicrophoneCapsule(**dict(p2, rear_network_enabled=False)
+                          ).pressure_response(f)
+    # d) Wirkung
+    last20 = float(20.0 * np.log10(abs(H_mit[-1] / H_ohne[-1])))
+    stand.wert("last_20khz_2d", last20, "dB",
+               "Strahlungslast im Druckgang, B&K 4134, 20 kHz (2D)")
+    assert last20 < 0.0, "die Last muss den Hochton der 4134 senken"
+    fem_txt = ""
+    d_u = _EXTERN / "comsol_4134_unexposed.txt"
+    if d_u.is_file():
+        dat = np.array([z.split() for z in d_u.read_text().splitlines()
+                        if z.strip() and not z.startswith("%")], float)
+        fd, fem = dat[:, 0], dat[:, 1]
+        sel = fd >= 1000.0
+        f_norm = np.array([fd[np.argmin(np.abs(fd - 250.0))]])
+        rms = {}
+        MicrophoneCapsule._RANDSCHICHT = False
+        try:
+            for last in (False, True):
+                c = MicrophoneCapsule(squeeze_model="3d",
+                                      pressure_radiation_load=last,
+                                      **_BK4134_COMSOL)
+                L = 20.0 * np.log10(np.abs(c.transfer_function(fd[sel])
+                                           / c.transfer_function(f_norm)[0]))
+                rms[last] = float(np.sqrt(np.mean((L - fem[sel]) ** 2)))
+        finally:
+            MicrophoneCapsule._RANDSCHICHT = True
+        assert rms[False] < rms[True], \
+            (f"3D muss die FEM ohne Last besser treffen ({rms[False]:.3f} "
+             f"gegen {rms[True]:.3f} dB RMS)")
+        fem_txt = (f"; 3D gegen COMSOL-FEM {rms[True]:.3f} -> "
+                   f"{rms[False]:.3f} dB RMS")
+    print(f"Strahlungslast im Druckgang: im Freifeld unverändert, im "
+          f"Druckfeld exakt Z_rad in Serie ({rel(dZ, Z_rad):.0e}); 3D-"
+          f"Dirichlet = Grenzfall Z->0 ({rel(H3_lim, H3):.0e}); "
+          f"pressure_response = Druckgang (2D/3D, mit/ohne Gewebe); "
+          f"Wirkung 4134 bei 20 kHz {last20:+.2f} dB{fem_txt}  OK")
