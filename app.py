@@ -835,6 +835,18 @@ def compute_results(cache_key, capsule, progress=None):
         "amplitude_db_norm": amp_db - ref_db,
         "phase_deg": np.rad2deg(np.unwrap(np.angle(H))),
     }
+    # Mit Beugung zusätzlich der DRUCKFREQUENZGANG als Vergleichskurve —
+    # das, was COMSOL, Kuppler und Aktuator liefern. Bei dichter Rückseite
+    # ist er exakt H/F mit dem Frontfaktor F der Beugung (Gegenprobe 64 d),
+    # also ohne zweite Rechnung; der Abstand beider Kurven ist die
+    # Freifeldkorrektur. Gleiche Bezugsgröße (H bei 1 kHz) für beide.
+    if (capsule.include_diffraction and not capsule.rear_open
+            and capsule.architecture != "dual_diaphragm"):
+        F0 = capsule._source_pressures(2.0 * np.pi * f,
+                                       np.array([0.0]))[0][:, 0]
+        p_db = 20.0 * np.log10(np.maximum(np.abs(H / F0), 1e-30))
+        fr["pressure_db"] = p_db
+        fr["pressure_db_norm"] = p_db - ref_db
     habs = np.maximum(np.abs(H), 1e-30)
     aux = {
         "level_90_db": 20.0 * np.log10(np.maximum(np.abs(H90), 1e-30)
@@ -919,14 +931,28 @@ def bode_figure(fr, normalized):
     amp_title = tr("fig_amp_norm") if normalized else tr("fig_amp_abs")
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         vertical_spacing=0.10, row_heights=[0.58, 0.42])
+    druck = "pressure_db" in fr
     fig.add_trace(go.Scatter(
         x=fr["frequency_hz"], y=amp, mode="lines",
-        line=dict(color=SERIES[0], width=2), name=tr("fig_amp_abs"),
+        line=dict(color=SERIES[0], width=2),
+        name=tr("name_freefield") if druck else tr("fig_amp_abs"),
+        showlegend=druck,
         hovertemplate="%{x:.0f} Hz · %{y:.1f} dB<extra></extra>",
     ), row=1, col=1)
+    if druck:
+        # Druckfrequenzgang (ohne Körper) zum Vergleich mit COMSOL/Kuppler
+        fig.add_trace(go.Scatter(
+            x=fr["frequency_hz"],
+            y=fr["pressure_db_norm"] if normalized else fr["pressure_db"],
+            mode="lines", line=dict(color=MUTED, width=1.5, dash="dash"),
+            name=tr("name_pressure"), showlegend=True,
+            hovertemplate=("%{x:.0f} Hz · %{y:.1f} dB<extra>"
+                           + tr("name_pressure_short") + "</extra>"),
+        ), row=1, col=1)
     fig.add_trace(go.Scatter(
         x=fr["frequency_hz"], y=fr["phase_deg"], mode="lines",
         line=dict(color=SERIES[4], width=2), name=tr("fig_phase"),
+        showlegend=False,
         hovertemplate="%{x:.0f} Hz · %{y:.0f}°<extra></extra>",
     ), row=2, col=1)
 
@@ -948,9 +974,12 @@ def bode_figure(fr, normalized):
                      gridcolor=GRID, griddash="dot", linecolor=AXIS,
                      tickfont=dict(color=MUTED), title_font=dict(color=INK_2),
                      zeroline=False)
-    fig.update_layout(showlegend=False, hovermode="x unified",
+    fig.update_layout(showlegend=druck, hovermode="x unified",
                       title=dict(text=tr("fig_bode_title"),
-                                 font=dict(color=INK, size=16)))
+                                 font=dict(color=INK, size=16)),
+                      legend=dict(x=0.01, y=0.99, xanchor="left",
+                                  yanchor="top", bgcolor="rgba(0,0,0,0)",
+                                  font=dict(color=INK_2, size=12)))
     return _base_layout(fig, 560)
 
 
@@ -1430,6 +1459,12 @@ if capsule.axial_body_model == "bem" and capsule.rear_open \
                         if capsule.cavity_hole_position == "end"
                         else "warn_bem_circ")))
 
+# Kugel als Körper einer Ein-Membran-Kapsel: der Druckstau der flachen
+# Stirnfläche fehlt bis zu 3.5 dB (B&K 4134 gegen NBS, Gegenprobe 64).
+if (capsule.include_diffraction and capsule.axial_body_model == "sphere"
+        and capsule.architecture != "dual_diaphragm"):
+    st.warning(tr("warn_sphere_flat"))
+
 # Homogenisierungsgrenze der 1D/2D-Modelle: gerechnet wird trotzdem, aber
 # oberhalb f_hom ist das Ergebnis nicht mehr gegen den 3D-Löser
 # abgesichert (s. Gegenprobe 48).
@@ -1562,6 +1597,8 @@ df_fr = pd.DataFrame({
     tr("col_l90"): aux["level_90_db"],
     tr("col_l180"): aux["level_180_db"],
 })
+if "pressure_db" in fr:
+    df_fr[tr("col_pressure")] = fr["pressure_db"]
 if aux["D_r"] is not None:
     df_fr[tr("col_drmag")] = np.abs(aux["D_r"])
     df_fr[tr("col_drph")] = np.rad2deg(np.unwrap(np.angle(aux["D_r"])))

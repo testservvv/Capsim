@@ -716,5 +716,42 @@
   "text": "K67 (PET, Resonanz vorgegeben), Tiefton mit/ohne Randschicht",
   "test": "tests/test_membran_elektrostatik.py::test_gp62_randschicht_der_folie",
   "art": "stand"
+ },
+ "gp64.max_bem_gegen_nbs": {
+  "wert": 0.8084673953883801,
+  "einheit": "dB",
+  "text": "größte Abweichung BEM-Stab gegen NBS, 4–20 kHz",
+  "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
+  "art": "stand"
+ },
+ "gp64.max_kugel_gegen_nbs": {
+  "wert": 3.513553496328388,
+  "einheit": "dB",
+  "text": "größte Abweichung Kugel gegen NBS",
+  "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
+  "art": "stand"
+ },
+ "gp64.reziprok_gegen_j0_20k": {
+  "wert": -0.016753380905170593,
+  "einheit": "dB",
+  "text": "Frontfaktor reziprokes 3D-Gewicht gegen J0, 20 kHz",
+  "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
+  "art": "stand"
+ },
+ "gp64.rms_bem_gegen_nbs": {
+  "wert": 0.5791725889845778,
+  "einheit": "dB",
+  "text": "Freifeldkorrektur BEM-Stab gegen NBS, 4–20 kHz",
+  "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
+  "art": "sperrklinke",
+  "besser": "kleiner",
+  "toleranz": 0.05
+ },
+ "gp64.rms_kugel_gegen_nbs": {
+  "wert": 2.167900022565325,
+  "einheit": "dB",
+  "text": "Freifeldkorrektur Kugel gegen NBS, 4–20 kHz",
+  "test": "tests/test_beugung_bem.py::test_gp64_freifeldkorrektur_b_k_4134",
+  "art": "stand"
  }
 }

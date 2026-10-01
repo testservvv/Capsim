@@ -1006,6 +1006,30 @@ TR = {
         "en": "in the rear end face",
         "de": "in der hinteren Stirnfläche",
     },
+    "warn_sphere_flat": {
+        "en": "**Body model 'sphere' for a single-diaphragm capsule.** The "
+              "sphere puts the diaphragm on a curved cap and underestimates "
+              "the pressure build-up of a flat front face: for the B&K 4134 "
+              "(⌀13.2 mm) up to 3.5 dB at 20 kHz below the NBS measurement, "
+              "2.2 dB RMS over 4–20 kHz; the flat face in the BEM: 0.6 dB "
+              "(self-test, check 64). For measurement microphones and "
+              "cylindrical housings choose 'BEM (head + body)', set 'BEM: "
+              "capsule length' to the housing length (capsule plus "
+              "preamplifier; beyond ~30 mm it changes ≤ 0.3 dB) and "
+              "'BEM: body Ø' to 0, unless a separate body sits behind "
+              "the capsule.",
+        "de": "**Körpermodell „Kugel“ bei einer Ein-Membran-Kapsel.** Die "
+              "Kugel legt die Membran auf eine gekrümmte Kalotte und "
+              "unterschätzt den Druckstau einer flachen Stirnfläche: bei der "
+              "B&K 4134 (⌀13,2 mm) bis 3,5 dB bei 20 kHz unter der "
+              "NBS-Messung, 2,2 dB RMS über 4–20 kHz; die flache Stirnfläche "
+              "im BEM: 0,6 dB (Selbsttest, Gegenprobe 64). Für Messmikrofone "
+              "und zylindrische Gehäuse „BEM (Kopf + Körper)“ wählen, „BEM: "
+              "Kapsellänge“ auf die Gehäuselänge (Kapsel samt "
+              "Vorverstärker; ab ~30 mm ändert sich ≤ 0,3 dB) und „BEM: "
+              "Körper-Ø“ auf 0 setzen, sofern kein eigener Körper hinter "
+              "der Kapsel sitzt.",
+    },
     "warn_grid_capped": {
         "en": "**Fine 3D grid capped at {n} cells per field.** The smallest "
               "hole mouth is resolved with only {c:.1f} instead of {k:.0f} "
@@ -1687,6 +1711,15 @@ TR = {
         "en": "Level rel. 0° [dB]",
         "de": "Pegel rel. 0° [dB]",
     },
+    "name_freefield": {
+        "en": "Free field 0° (with body)",
+        "de": "Freifeld 0° (mit Körper)",
+    },
+    "name_pressure": {
+        "en": "Pressure response (no body, as COMSOL/coupler)",
+        "de": "Druckfrequenzgang (ohne Körper, wie COMSOL/Kuppler)",
+    },
+    "name_pressure_short": {"en": "pressure", "de": "Druck"},
     "name_90": {"en": "90° rel. 0°", "de": "90° rel. 0°"},
     "name_180": {"en": "180° rel. 0°", "de": "180° rel. 0°"},
     "fig_dr_title": {
@@ -1721,6 +1754,10 @@ TR = {
         "de": "amplitude_db_norm_1khz",
     },
     "col_phase": {"en": "phase_deg", "de": "phase_deg"},
+    "col_pressure": {
+        "en": "pressure_response_db",
+        "de": "pressure_response_db",
+    },
     "col_l90": {"en": "level_90_rel0_db", "de": "pegel_90_rel0_db"},
     "col_l180": {"en": "level_180_rel0_db", "de": "pegel_180_rel0_db"},
     "col_drmag": {"en": "dr_magnitude", "de": "dr_betrag"},

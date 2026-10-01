@@ -176,6 +176,42 @@ f_exp0 = np.array([9000.0, 10000.0, 12000.0, 14000.0, 15000.0])
 exp0_grin = np.array([10.5, 10.2, 8.8, 8.5, 7.5])
 
 
+# ----------------------------------------------------------------------
+# Messanker NBS 1987, Fig. 23 (Gegenprobe 64)
+# ----------------------------------------------------------------------
+# E. D. Burnett, V. Nedzelnitsky, "Free-Field Reciprocity Calibration
+# of Microphones", J. Res. Natl. Bur. Stand. 92(2), 129–151 (1987),
+# Fig. 23: gemessene Freifeldkorrektur (Freifeld- minus
+# Druckübertragungsmaß, 0°, ebene Welle) einer B&K 4134 OHNE
+# Schutzgitter, S/N 666748, Membran bündig in der Stirnfläche des
+# ½-Zoll-Zylinders. Unsicherheit laut Bericht 0.16 dB (1.25–5 kHz) und
+# 0.07 dB (5–20 kHz). Gemeinfrei (Veröffentlichung einer US-Behörde),
+# deshalb hier im Repo — anders als die COMSOL-Daten.
+#
+# DIGITALISIERT, nicht abgelesen: Seite 148 mit 400 dpi gerastert, die
+# Messkreise per Ring-Mustervergleich (Radius 11 px) gefunden. Achsen
+# aus den Teilstrichen: dB-Achse aus 12 Strichen (Ausgleichsgerade auf
+# 0.013 dB), Frequenzachse aus 19 Strichen 2…20 kHz (auf 2.2 px =
+# 0.5 %). Die Kreise liegen bei 1.25, 1.5, 2, 2.5, 3, 4 kHz und dann in
+# 1-kHz-Schritten bis 20 kHz. Ablesefehler ≈ ±0.03 dB, unter 3 kHz, wo
+# Kreis und Kreuz sich überdecken, ≈ ±0.05 dB.
+#
+# Die Kreuze sind Matsuis Theorie (halbunendlicher Stab gleichen
+# Durchmessers, bündige Membran, Tieftonnäherung; laut Bericht ab
+# 4–5 kHz nicht mehr gültig), ebenso digitalisiert (Schablone: das
+# Legenden-x). Gegenprobe der Digitalisierung: Kreis − Kreuz gegen
+# Tabelle 6 des Berichts (−0.11/+0.08/+0.08/−0.03/−0.08/−0.16/−0.37 dB
+# bei 1.25…5 kHz) stimmt auf ≤ 0.07 dB.
+f_nbs_4134 = np.array([1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
+                       9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                       17.0, 18.0, 19.0, 20.0]) * 1e3
+ffk_nbs_4134 = np.array([-0.03, 0.19, 0.38, 0.47, 0.56, 0.99, 1.39, 1.89,
+                         2.38, 2.94, 3.48, 4.01, 4.73, 5.25, 5.75, 6.25,
+                         6.66, 7.04, 7.38, 7.60, 7.78, 7.96])
+f_matsui_4134 = np.array([1.25, 1.5, 2.0, 2.5, 3.0]) * 1e3
+ffk_matsui_4134 = np.array([0.10, 0.16, 0.27, 0.43, 0.69])
+
+
 def _grin_rms(cap, ang, f_ref=None, a_ref=None):
     """Frequenzgang gegen die digitalisierte Kurve, LF-normiert."""
     f_ref = f_grin if f_ref is None else f_ref
@@ -191,4 +227,5 @@ __all__ = sorted(set(_MODUL) | {
     "k67_null_angle", "DEB_KWARGS", "debenham", "DEB_CLEARANCE",
     "DEB_CLEARANCE_WIDE", "hermetic_capsule", "_fchk", "f_grin",
     "vc_grin", "f_exp90", "exp90_grin", "f_exp0", "exp0_grin",
-    "_grin_rms"})
+    "_grin_rms", "f_nbs_4134", "ffk_nbs_4134", "f_matsui_4134",
+    "ffk_matsui_4134"})

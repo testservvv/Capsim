@@ -1218,3 +1218,153 @@ def test_gp44_ruckpatch_des_gradientenempfangers(k67_bem):
               f"{weg44['dual']['bem'] * 1e3:.1f} mm (F/B "
               f"{fb44d['bem'][0]:.1f} statt {fb44d['kugel'][0]:.1f} dB); "
               f"Druckempfänger unverändert  OK")
+
+
+@pytest.mark.slow
+@pytest.mark.bem
+@pytest.mark.feld3d
+def test_gp64_freifeldkorrektur_b_k_4134(stand, monkeypatch):
+    """Gegenprobe 64: Freifeldkorrektur der B&K 4134 gegen die NBS-Messung."""
+    # Freifeldkorrektur = Freifeld- minus Druckübertragungsmaß bei 0°.
+    # Sie ist genau das, was die Beugung zum Druckfrequenzgang (COMSOL,
+    # Kuppler, Aktuator) hinzufügt, und für die 4134 ohne Schutzgitter
+    # GEMESSEN: Burnett/Nedzelnitsky, J. Res. NBS 92 (1987), Fig. 23
+    # (digitalisiert, s. basis.py). Prüfling ist der Messprüfling der
+    # COMSOL-Geometrie (Gegenproben 59, 62), als ½-Zoll-Stab: flache
+    # Stirnfläche ⌀13.2 mm, 50 mm lang, ohne den Mikrofonkörper der
+    # U87-Voreinstellung.
+    # a) Tiefton (≤ 4 kHz): BEM trifft die Messung innerhalb ihrer
+    #    Unsicherheit (0.16 dB) plus Ablesefehler (0.05 dB), und bis
+    #    2.5 kHz Matsuis Theorie für den halbunendlichen Stab auf 0.1 dB
+    #    (Ablesefehler plus endliche Stablänge).
+    # b) Hochton: das BEM liegt 0.2…0.8 dB ÜBER der Messung. Numerisch
+    #    ist das nicht (Elementlänge 1 → 0.25 mm und doppelte
+    #    φ-Quadratur ändern ≤ 0.03 dB), die Gewichtung auch nicht (e).
+    #    Offen: die reale Stirnform ohne Gitter (Gewinde, Fase, Klemm-
+    #    ring), der Messstab (Vorverstärker ⌀12.7 mm) und die Strahlungs-
+    #    last (README). Sperrklinke.
+    # c) Die Kugel (Voreinstellung „Kugel (d_ext, montiert)“) setzt die
+    #    Membran auf eine gekrümmte Kalotte und sättigt bei +4.5 dB: bis
+    #    3.5 dB zu wenig bei 20 kHz und schon im Tiefton 0.3…0.5 dB.
+    #    Stand-Werte; geprüft wird die Richtung.
+    # d) Bei dichter Rückseite ist der Druckfrequenzgang exakt der
+    #    Freifeldgang geteilt durch den Frontfaktor (die GUI zeichnet ihn
+    #    so als Vergleichskurve, ohne zweite Rechnung).
+    # e) Gewicht des Frontdrucks: die Kette projiziert den Oberflächen-
+    #    druck auf die Grundmode J0. Physikalisch richtig ist das
+    #    REZIPROKE Gewicht: der Ausgang auf eine Druckverteilung p(r) ist
+    #    Σ c_i p(r_i), mit c = S⁻ᵀ·w_out aus dem 3D-Feld (Membran im
+    #    verteilten Spaltfilm). Gleichförmiger Druck muss X_f ergeben
+    #    (Gegenprobe der Methode); das reziproke Gewicht liefert dieselbe
+    #    Freifeldkorrektur wie J0 — der Film flacht die Form nicht ab.
+    #    (Das Flächenmittel träfe NBS zufällig besser; es ist physikalisch
+    #    nicht begründet und wird nicht benutzt.)
+    if not _HAS_SCIPY:
+        return
+    from scipy.sparse.linalg import splu
+    from test_referenzen import _BK4134_COMSOL, _messpruefling
+    par = dict(_messpruefling(_BK4134_COMSOL), squeeze_model="2d")
+    stab = dict(include_diffraction=True, body_diameter=13.2e-3,
+                axial_body_model="bem", body_length=50e-3,
+                bem_body_diameter=0.0)
+    f = f_nbs_4134
+    Hp = MicrophoneCapsule(**par).transfer_function(f)
+    c_bem = MicrophoneCapsule(**{**par, **stab})
+    H_bem = c_bem.transfer_function(f)
+    ffk_bem = 20.0 * np.log10(np.abs(H_bem / Hp))
+    c_kug = MicrophoneCapsule(**{**par, "include_diffraction": True,
+                                 "body_diameter": 13.2e-3})
+    ffk_kug = 20.0 * np.log10(np.abs(c_kug.transfer_function(f) / Hp))
+    d_bem = ffk_bem - ffk_nbs_4134
+    d_kug = ffk_kug - ffk_nbs_4134
+    tief, hoch = f <= 4000.0, f >= 4000.0
+
+    # a) Tiefton gegen Messung und Matsui
+    assert np.max(np.abs(d_bem[tief])) < 0.21, \
+        (f"BEM muss die NBS-Messung bis 4 kHz innerhalb der Unsicherheit "
+         f"treffen ({np.round(d_bem[tief], 2)} dB)")
+    im = np.searchsorted(f, f_matsui_4134)
+    d_mat = ffk_bem[im] - ffk_matsui_4134
+    m_mat = f_matsui_4134 <= 2500.0
+    assert np.max(np.abs(d_mat[m_mat])) < 0.1, \
+        (f"BEM muss Matsuis Stab-Theorie bis 2.5 kHz auf 0.1 dB treffen "
+         f"({np.round(d_mat, 2)} dB)")
+    # b) Hochton: bekannter Rest
+    rms_bem = float(np.sqrt(np.mean(d_bem[hoch] ** 2)))
+    rms_kug = float(np.sqrt(np.mean(d_kug[hoch] ** 2)))
+    stand.sperrklinke("rms_bem_gegen_nbs", rms_bem, "dB",
+                      "Freifeldkorrektur BEM-Stab gegen NBS, 4–20 kHz",
+                      toleranz=0.05)
+    stand.wert("max_bem_gegen_nbs", float(np.max(np.abs(d_bem[hoch]))),
+               "dB", "größte Abweichung BEM-Stab gegen NBS, 4–20 kHz")
+    # c) Kugel
+    stand.wert("rms_kugel_gegen_nbs", rms_kug, "dB",
+               "Freifeldkorrektur Kugel gegen NBS, 4–20 kHz")
+    stand.wert("max_kugel_gegen_nbs", float(np.max(np.abs(d_kug))), "dB",
+               "größte Abweichung Kugel gegen NBS")
+    assert rms_bem < 0.5 * rms_kug and np.all(d_kug[f >= 10e3] < 0.0), \
+        (f"die flache Stirnfläche muss die Messung deutlich besser treffen "
+         f"als die Kugel, die den Druckstau unterschätzt (RMS {rms_bem:.2f} "
+         f"gegen {rms_kug:.2f} dB)")
+    # d) Druckgang = Freifeldgang / Frontfaktor
+    F = c_bem._source_pressures(2.0 * np.pi * f, np.array([0.0]))[0][:, 0]
+    assert np.max(np.abs(H_bem / F / Hp - 1.0)) < 1e-12, \
+        "bei dichter Rückseite muss H_frei/F exakt der Druckgang sein"
+
+    # e) reziprokes Gewicht aus dem 3D-Feld
+    erfasst = []
+    lu_orig = MicrophoneCapsule._lu_solve_3d
+
+    def _fang(self, S, rhs):
+        erfasst.append(S)
+        return lu_orig(self, S, rhs)
+    monkeypatch.setattr(MicrophoneCapsule, "_lu_solve_3d", _fang)
+    c3 = MicrophoneCapsule(**{**par, "squeeze_model": "3d"})
+    g = c3._g3d
+    Np_, NF, NM, Nr_m = g["Np"], g["NF"], g["NM"], g["Nr_m"]
+    off_w = g["n_films"] * NF
+    ring = np.repeat(np.arange(Nr_m), Np_)
+    w_out = -np.repeat(g["A_fw"] * c3._output_weight_3d(g["r_f"]), Np_)
+    geo = c_bem._bem_geometry()
+    rez = {}
+    for f_e in (10e3, 20e3):
+        om = np.array([2.0 * np.pi * f_e])
+        erfasst.clear()
+        Xf = c3._solve_3d(om)[0][0]
+        lu = splu(erfasst[-1].tocsc())
+        e = np.zeros(erfasst[-1].shape[0], dtype=complex)
+        e[off_w:off_w + NF] = w_out
+        y = lu.solve(e, trans="T")[off_w:off_w + NM]
+        c_i = -y * g["A_mw"][ring]
+        assert abs(np.sum(c_i) / Xf - 1.0) < 1e-8, \
+            "Reziprozität: gleichförmiger Druck muss X_f ergeben"
+        # Gewicht je Fläche, über φ gemittelt, an den Membranringen
+        w_r = -np.array([np.mean(y[ring == q]) for q in range(Nr_m)])
+        F_j0 = c_bem._bem_axial_fields(om, np.array([0.0]))[0][0, 0]
+        c_bem._membrane_mode_weight = (
+            lambda r, mode=1, _w=w_r, _r=g["r_m"]:
+            np.interp(r, _r, _w.real, right=0.0)
+            + 1j * np.interp(r, _r, _w.imag, right=0.0))
+        geo["_cache"].clear()
+        c_bem._bem_cache = None
+        try:
+            F_rz = c_bem._bem_axial_fields(om, np.array([0.0]))[0][0, 0]
+        finally:
+            del c_bem._membrane_mode_weight
+            geo["_cache"].clear()
+            c_bem._bem_cache = None
+        rez[f_e] = float(20.0 * np.log10(abs(F_rz / F_j0)))
+    stand.wert("reziprok_gegen_j0_20k", rez[20e3], "dB",
+               "Frontfaktor reziprokes 3D-Gewicht gegen J0, 20 kHz")
+    assert max(abs(v) for v in rez.values()) < 0.05, \
+        (f"das reziproke 3D-Gewicht muss die J0-Projektion bestätigen "
+         f"({rez} dB)")
+    i10, i20 = np.searchsorted(f, [10e3, 20e3])
+    print(f"Freifeldkorrektur B&K 4134 gegen NBS 1987: BEM-Stab bis 4 kHz "
+          f"auf {np.max(np.abs(d_bem[tief])):.2f} dB, Matsui bis 2.5 kHz auf "
+          f"{np.max(np.abs(d_mat[m_mat])):.2f} dB; 4–20 kHz {rms_bem:.2f} dB "
+          f"RMS (10/20 kHz {ffk_bem[i10]:.2f}/{ffk_bem[i20]:.2f} gegen "
+          f"{ffk_nbs_4134[i10]:.2f}/{ffk_nbs_4134[i20]:.2f} dB); Kugel "
+          f"{rms_kug:.2f} dB RMS ({ffk_kug[i20]:.2f} dB bei 20 kHz); "
+          f"Druckgang = Freifeld/F exakt; reziprokes 3D-Gewicht gegen J0 "
+          f"{rez[10e3]:+.3f}/{rez[20e3]:+.3f} dB  OK")
