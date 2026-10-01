@@ -150,6 +150,305 @@ def _ring_compliance_factor(rho):
     return 1.0 - rho**4 + (1.0 - rho**2) ** 2 / np.log(rho)
 
 
+def _abgestuft(lo, hi, spans, h_f, h_max, wachs=0.3):
+    """Knoten auf [lo, hi]: Weite h_f in den Spannen ``spans``, nach außen
+    wachsend (h ≈ h_f + wachs·Abstand), höchstens h_max; lo und hi exakt."""
+    def h_at(x):
+        d = min((max(a - x, x - b, 0.0) for a, b in spans), default=np.inf)
+        return min(h_max, h_f + wachs * d)
+    pts = [lo]
+    x = lo
+    while True:
+        h = h_at(x)
+        if x + h >= hi - 0.3 * h:
+            break
+        x += h
+        pts.append(x)
+    pts.append(hi)
+    return np.array(pts)
+
+
+def _linsen_flaeche(rho, R, r):
+    """Fläche des Lochs (Mitte im Abstand R, Radius r) innerhalb des
+    Kreises vom Radius rho um die Achse (Kreis-Kreis-Schnitt)."""
+    if rho <= 0.0:
+        return 0.0
+    if R <= 0.0:
+        return np.pi * min(rho, r) ** 2
+    if rho >= R + r:
+        return np.pi * r * r
+    if rho <= R - r:
+        return 0.0
+    if rho <= r - R:
+        return np.pi * rho * rho
+    if r >= rho + R:
+        return np.pi * rho * rho
+    a1 = np.arccos(np.clip((R * R + rho * rho - r * r) / (2 * R * rho), -1, 1))
+    a2 = np.arccos(np.clip((R * R + r * r - rho * rho) / (2 * R * r), -1, 1))
+    w = max((-R + rho + r) * (R + rho - r) * (R - rho + r) * (R + rho + r), 0.0)
+    return float(rho * rho * a1 + r * r * a2 - 0.5 * np.sqrt(w))
+
+
+_MAKRO_CACHE = {}
+
+
+def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
+                    nur_knoten=False):
+    """Lochband als exaktes Makroelement für das axialsymmetrische FV-Feld
+    (statischer Reynolds-Film, Leitfähigkeit K = 1; Gegenprobe 60).
+
+    ``gruppen``: Lochgruppen [(n, R, r, Phase)] — n gleichverteilte,
+    äquipotentiale Mündungen vom Radius r auf dem Kreis R, das erste Loch
+    unter dem Winkel Phase; R < r ist ein Mittelloch (dann ``innen`` None).
+    ``faces``: die K+1 Flächenradien der K Bandzellen. ``innen``/``aussen``:
+    Radius des Randknotens (Mitte der Nachbarzelle bzw. Plattenrand) oder
+    None = dichte Wand am ersten/letzten Face. ``kappa``: relative
+    Leitfähigkeit der K+2 Zellen [innere Randzelle, Band, äußere
+    Randzelle] (Freistich), sonst 1.
+
+    Gelöst in der log-Ebene ζ = ln z, in der die Reynolds-Gleichung
+    konform invariant bleibt: der Kreisring wird zum Streifen, das
+    Lochmuster periodisch mit 2π/g (g = ggT der Lochzahlen). Tensorgitter,
+    um die Löcher verdichtet; am Lochrand die symmetrische Shortley–
+    Weller-Form (Gibou et al. 2002, zweite Ordnung) mit den analytischen
+    Schnittpunkten der Kreiskontur.
+
+    Knoten des Makroelements: die K Bandzellen (Zellmittel des Drucks
+    über die FILMfläche der Zelle — über den Löchern gibt es keinen Film
+    — gegen eine über dieselbe Fläche gleichverteilte Quelle; beides ist
+    zueinander reziprok), dann [innen], [außen] und je Gruppe ein
+    Lochknoten. Rückgabe: Leitwertmatrix Y (symmetrisch, Zeilensumme 0,
+    mal K(ω) zu nehmen), die diskreten Filmflächen der Bandzellen und die
+    Maske der Zellen mit eigenem Knoten — eine Zelle ganz ohne Filmknoten
+    (überlappende Löcher) hat keinen. Das Ergebnis ist maßstabsfrei und
+    wird nach der normierten Geometrie zwischengespeichert.
+    """
+    import math
+    from scipy.sparse import csr_matrix, diags
+    from scipy.sparse.linalg import splu
+
+    faces = np.asarray(faces, dtype=float)
+    K = faces.size - 1
+    kap = (np.ones(K + 2) if kappa is None
+           else np.asarray(kappa, dtype=float))
+    s = float(faces[-1])
+    key = (tuple((int(n), round(R / s, 12), round(r / s, 12), round(ph, 12))
+                 for n, R, r, ph in gruppen),
+           tuple(np.round(faces / s, 12)),
+           None if innen is None else round(innen / s, 12),
+           None if aussen is None else round(aussen / s, 12),
+           tuple(np.round(kap, 12)), int(n_fein))
+    hit = None if nur_knoten else _MAKRO_CACHE.get(key)
+    if hit is not None:
+        return hit[0], hit[1] * s * s, hit[2]
+
+    ring = [(gi, n, R / s, r / s, ph) for gi, (n, R, r, ph)
+            in enumerate(gruppen) if R >= r]
+    mitte = [(gi, n, R / s, r / s, ph) for gi, (n, R, r, ph)
+             in enumerate(gruppen) if R < r]
+    fz = faces / s
+    g = 0
+    for _, n, *_ in ring:
+        g = math.gcd(g, int(n))
+    g = max(g, 1)
+    per = 2.0 * math.pi / g
+    terms = (["innen"] if innen is not None else []) + \
+        (["aussen"] if aussen is not None else [])
+    T_grp = {gi: len(terms) + gi for gi in range(len(gruppen))}
+    nT = len(terms) + len(gruppen)
+
+    # x = ln ρ: Bandflächen als Gitterknoten, um die Löcher verdichtet
+    if mitte:
+        x_a = math.log(mitte[0][3])
+    elif innen is not None:
+        x_a = math.log(innen / s)
+    else:
+        x_a = math.log(max(fz[0], 1e-4))
+    x_b = math.log(aussen / s) if aussen is not None else math.log(fz[-1])
+    lf = np.log(np.maximum(fz, 1e-4))
+    x_spans = [(math.log(max(R - r, 1e-12)), math.log(R + r))
+               for _, n, R, r, ph in ring]
+    h_t = (min(r / R for _, n, R, r, ph in ring) / n_fein) if ring else None
+    bps = sorted(set([x_a, x_b] + [v for v in lf if x_a < v < x_b]))
+    X = [bps[0]]
+    for a, b in zip(bps[:-1], bps[1:]):
+        seg = (np.linspace(a, b, 3) if h_t is None
+               else _abgestuft(a, b, x_spans, h_t, max(b - a, h_t)))
+        X += list(seg[1:])
+    X = np.array(X)
+    Nx = X.size
+    # y periodisch über [0, per)
+    loecher = []
+    for gi, n, R, r, ph in ring:
+        for j in range(int(n)):
+            psi = ph + 2.0 * math.pi * j / n
+            psi -= per * math.floor(psi / per)
+            for k in (-1, 0, 1):
+                loecher.append((gi, r, R, psi + k * per))
+    if ring:
+        y_spans = [(ps - math.asin(min(r / R, 1.0)),
+                    ps + math.asin(min(r / R, 1.0)))
+                   for (gi, r, R, ps) in loecher]
+        Yg = _abgestuft(0.0, per, y_spans, h_t, per / 12.0)[:-1]
+    else:
+        Yg = np.linspace(0.0, per, 9)[:-1]
+    Ny = Yg.size
+    if nur_knoten:                    # Größe des Sektorgitters (Aufwand)
+        return Nx * Ny
+    dy = np.diff(np.append(Yg, per))
+    wy = 0.5 * (dy + np.roll(dy, 1))
+    rho = np.exp(X)[:, None]
+    Lg = -np.ones((Nx, Ny), dtype=int)
+    Li = -np.ones((Nx, Ny), dtype=int)
+    for li, (gi, r, R, ps) in enumerate(loecher):
+        inn = ((rho * np.cos(Yg)[None, :] - R * math.cos(ps)) ** 2
+               + (rho * np.sin(Yg)[None, :] - R * math.sin(ps)) ** 2) < r * r
+        Lg[inn] = gi
+        Li[inn] = li
+    unb = Lg < 0
+    if mitte or innen is not None:
+        unb[0] = False
+    if aussen is not None:
+        unb[-1] = False
+    idx = -np.ones((Nx, Ny), dtype=int)
+    nu = int(unb.sum())
+    idx[unb] = np.arange(nu)
+    t_in = (T_grp[mitte[0][0]] if mitte
+            else (terms.index("innen") if innen is not None else None))
+    t_out = terms.index("aussen") if aussen is not None else None
+    # Leitfähigkeit je x-Intervall: jedes liegt in genau einer Zelle
+    zelle = np.searchsorted(lf, 0.5 * (X[:-1] + X[1:])) - 1
+    kap_int = kap[np.clip(zelle + 1, 0, K + 1)]
+    hx = np.diff(X)
+    wx = np.zeros(Nx)
+    wx[:-1] += 0.5 * hx * kap_int
+    wx[1:] += 0.5 * hx * kap_int
+
+    def _x_schnitt(xa, xb, y, li):
+        gi, r, R, ps = loecher[li]
+        d = r * r - (R * math.sin(y - ps)) ** 2
+        best = None
+        if d >= 0.0:
+            c = R * math.cos(y - ps)
+            for q in (c - math.sqrt(d), c + math.sqrt(d)):
+                if q > 0.0:
+                    xq = math.log(q)
+                    if min(xa, xb) - 1e-14 <= xq <= max(xa, xb) + 1e-14:
+                        dd = abs(xq - xa)
+                        best = dd if best is None else min(best, dd)
+        return best
+
+    def _y_schnitt(x, ya, richt, li):
+        gi, r, R, ps = loecher[li]
+        rr = math.exp(x)
+        c = (rr * rr + R * R - r * r) / (2.0 * rr * R)
+        if abs(c) > 1.0:
+            return None
+        hw = math.acos(c)
+        best = None
+        for yq in (ps - hw, ps + hw):
+            for k in (-1, 0, 1):
+                d = (yq + k * per - ya) * richt
+                if d >= -1e-14:
+                    best = d if best is None else min(best, d)
+        return best
+
+    rows, cols, vals = [], [], []
+    diag = np.zeros(nu)
+    Bi, Bt, Bv = [], [], []
+
+    def _rand(k, c, t):
+        diag[k] += c
+        Bi.append(k)
+        Bt.append(t)
+        Bv.append(c)
+
+    for i in range(Nx - 1):
+        a_u, b_u = unb[i], unb[i + 1]
+        c0 = wy * kap_int[i] / hx[i]
+        both = a_u & b_u
+        ka, kb, cb = idx[i, both], idx[i + 1, both], c0[both]
+        rows += [ka, kb]
+        cols += [kb, ka]
+        vals += [-cb, -cb]
+        np.add.at(diag, ka, cb)
+        np.add.at(diag, kb, cb)
+        for (ii, jj_sel, nb) in ((i, np.nonzero(a_u & ~b_u)[0], i + 1),
+                                 (i + 1, np.nonzero(b_u & ~a_u)[0], i)):
+            for j in jj_sel:
+                if Lg[nb, j] >= 0:
+                    d = _x_schnitt(X[ii], X[nb], Yg[j], Li[nb, j]) or hx[i]
+                    _rand(idx[ii, j], wy[j] * kap_int[i]
+                          / max(d, 1e-3 * hx[i]), T_grp[Lg[nb, j]])
+                else:
+                    _rand(idx[ii, j], c0[j], t_out if nb > ii else t_in)
+    for j in range(Ny):
+        jn = (j + 1) % Ny
+        a_u, b_u = unb[:, j], unb[:, jn]
+        c0 = wx / dy[j]
+        both = a_u & b_u
+        ka, kb, cb = idx[both, j], idx[both, jn], c0[both]
+        rows += [ka, kb]
+        cols += [kb, ka]
+        vals += [-cb, -cb]
+        np.add.at(diag, ka, cb)
+        np.add.at(diag, kb, cb)
+        for (jj, ii_sel, nb, richt) in ((j, np.nonzero(a_u & ~b_u)[0], jn, 1),
+                                        (jn, np.nonzero(b_u & ~a_u)[0], j, -1)):
+            for i in ii_sel:
+                if Lg[i, nb] < 0:
+                    continue
+                d = _y_schnitt(X[i], Yg[jj], richt, Li[i, nb])
+                d = dy[j] if d is None or d > dy[j] else d
+                _rand(idx[i, jj], wx[i] / max(d, 1e-3 * dy[j]),
+                      T_grp[Lg[i, nb]])
+    M = csr_matrix((np.concatenate(vals) if vals else np.zeros(0),
+                    (np.concatenate(rows) if rows else np.zeros(0, int),
+                     np.concatenate(cols) if cols else np.zeros(0, int))),
+                   shape=(nu, nu)) + diags(diag)
+    B = csr_matrix((Bv, (Bi, Bt)), shape=(nu, nT)).toarray()
+    # Flächengewichte (ρ² dx dy) je Knoten und Zelle, Hälften je Intervall
+    W = np.zeros((nu, K))
+    for i in range(Nx):
+        m = unb[i]
+        if not np.any(m):
+            continue
+        for iv in (i - 1, i):
+            if 0 <= iv < Nx - 1 and 0 <= zelle[iv] < K:
+                W[idx[i, m], zelle[iv]] += (0.5 * hx[iv] * math.exp(2 * X[i])
+                                            * wy[m])
+    # Zellen ohne Filmknoten (überlappende Löcher bilden dort einen
+    # geschlossenen Ringschlitz) haben keinen eigenen Knoten; der Aufrufer
+    # bindet sie an den Lochknoten
+    W_sum = W.sum(axis=0)
+    keep = W_sum > 0.0
+    if not np.any(keep):
+        raise ValueError("Lochband ohne Filmfläche")
+    W, W_sum = W[:, keep], W_sum[keep]
+    K = int(keep.sum())
+    Wn = W / W_sum
+    U = splu(M.tocsc()).solve(np.hstack([Wn, B]))
+    Uq, Ut = U[:, :K], U[:, K:]
+    # Sektor -> ganze Platte (g Sektoren): Druck je Quelle /g, Ströme je
+    # Druck ·g; die gemischten Blöcke sind dimensionslos
+    H_cc = (Wn.T @ Uq) / g
+    H_cc = 0.5 * (H_cc + H_cc.T)
+    H_cT = 0.5 * (Wn.T @ Ut + (B.T @ Uq).T)
+    H_TT = (B.T @ Ut - np.diag(B.sum(axis=0))) * g
+    H_TT = 0.5 * (H_TT + H_TT.T)
+    Hi = np.linalg.inv(H_cc)
+    Y = np.empty((K + nT, K + nT))
+    Y[:K, :K] = Hi
+    Y[:K, K:] = -Hi @ H_cT
+    Y[K:, :K] = Y[:K, K:].T
+    Y[K:, K:] = H_cT.T @ Hi @ H_cT - H_TT
+    A_film = W_sum * g
+    if len(_MAKRO_CACHE) > 256:
+        _MAKRO_CACHE.clear()
+    _MAKRO_CACHE[key] = (Y, A_film, keep)
+    return Y, A_film * s * s, keep
+
+
 # ---------------------------------------------------------------------------
 # Stoffwerte Luft bei 20 °C, 1013 hPa
 # ---------------------------------------------------------------------------
@@ -541,8 +840,34 @@ class MicrophoneCapsule:
     # gerechnet, Stand Gegenprobe 55; vorher 2,20 kHz und 0,91 dB). Der
     # Abstand ist knapp. Die Prüfung ist sonst vorsichtig — bei zwei
     # Lochkreisen warnt sie bis zu 40-fach zu früh.
+    # Seit dem Makroelement (Gegenprobe 60) rechnet das 2D-Feld die Loch-
+    # kreise selbst exakt; die Prüfung misst weiter die Spanne der GAUSS-
+    # BAND-Darstellung als Anzeiger für das radial stark gegliederte
+    # Druckfeld, dem die Einmoden-Membran nicht folgen kann. Neu vermessen
+    # (80 Lochkreis-Fälle): alle vor dem 1-dB-Einsatz gewarnt, im
+    # knappsten Fall (derselbe) setzt die Abweichung erst zwischen 2,6 und
+    # 2,9 kHz ein; ohne die Prüfung blieben 8 Fälle (½", 65 µm) ungewarnt.
     _RING_BAND = 0.10
     _RING_REPR_DB = 0.5
+
+    # LOCHKREIS ALS MAKROELEMENT (Gegenprobe 60): im 2D-Feld ersetzt ein
+    # exakt gerechnetes Netzwerk das Lochband jedes Lochkreises — Knoten
+    # sind die FV-Zellen des Bandes, die Nachbarzellen innen und außen und
+    # je Lochgruppe ein Lochknoten (s. _lochband_makro). Die azimutale
+    # Zuströmung zu den diskreten Mündungen, die Lochfläche ohne Film und
+    # die Abschirmung durch große Löcher stecken darin; das Gaußband mit
+    # Škvor-Zelle überschätzte den Filmwiderstand großer Löcher (B&K 4134)
+    # um bis zu 60 %. False = Gaußband plus Škvor-Zelle (bis Gegenprobe
+    # 59), für Vergleiche erreichbar. _RING_MARGIN: Bandrand in Vielfachen
+    # der Abklinglänge R/g der Lochharmonischen (g = ggT der Lochzahlen),
+    # e^-3 der Störung am Rand. _MAKRO_KNOTEN: größtes Sektorgitter, für
+    # das benachbarte Kreise mit nicht abgeklungenen Harmonischen noch ein
+    # gemeinsames Band erhalten (B&K 4146: getrennt 1,5 % weniger Film-
+    # widerstand); darüber, etwa bei vielen teilerfremden Kreisen wie der
+    # Debenham-Platte, werden sie an einer gemeinsamen Randzelle getrennt.
+    _RING_MAKRO = True
+    _RING_MARGIN = 3.0
+    _MAKRO_KNOTEN = 30000
 
     # Nullstellen von J0 — die axialsymmetrischen (0,m)-Membranmoden.
     # Konstanten, deshalb ohne SciPy hinterlegt.
@@ -1242,6 +1567,9 @@ class MicrophoneCapsule:
         self._clr_th_relieved = bool(np.any(mask & (self._fld_dens_th > thr)))
         self._clr_bh_relieved = bool(np.any(mask & (self._fld_dens_bh > thr)))
 
+        # LOCHKREISE ALS MAKROELEMENTE (Gegenprobe 60, s. _RING_MAKRO)
+        self._lochband_layout(r_f, dr, r0, N)
+
         # Elektrodenrand in Modenkoordinate u = r^2/a_mem^2
         self._ub = min((self.a_bp / self.a_mem) ** 2, 1.0)
 
@@ -1870,17 +2198,23 @@ class MicrophoneCapsule:
             # aber gewarnt — der 3D-Löser löst den Fall auf.
             lim = self.homogenization_limit()
             if lim["f_limit"] < self._F_BAND_TOP and lim["cause"] == "ring":
+                film = ("den Film rechnet das 2D-Feld dort exakt "
+                        "(Makroelement), aber"
+                        if self.squeeze_model == "2d" and self._fld_bands
+                        else "das Modell fasst die Lochkreise nur pauschal, "
+                        "und")
                 warnings.warn(
                     f"squeeze_model='{self.squeeze_model}': die Lochkreis-"
                     f"Darstellung ist oberhalb von etwa "
-                    f"{lim['f_ring'] / 1e3:.2f} kHz nicht belastbar. Das "
-                    f"Radialfeld verschmiert jeden Lochkreis zu einem Band; "
-                    f"ab dort hängt das Ergebnis um mehr als "
-                    f"{self._RING_REPR_DB:.1f} dB von dieser Darstellungs"
-                    f"wahl ab (Liniensenke statt Band), und gegen den 3D-"
-                    f"Löser erreicht die Abweichung 1 dB und mehr — bei "
-                    f"Kreisen mit vielen Löchern bis 5 dB (Gegenprobe 53). "
-                    f"Für diesen Bereich squeeze_model='3d' verwenden.",
+                    f"{lim['f_ring'] / 1e3:.2f} kHz nicht belastbar. Um "
+                    f"die Lochkreise ändert sich der Spaltdruck radial "
+                    f"stark; {film} die Membran schwingt in EINER festen "
+                    f"Form und folgt diesem Druckfeld nicht. Angezeigt wird "
+                    f"das über die Banddarstellung: ab dort hängt sie um "
+                    f"mehr als {self._RING_REPR_DB:.1f} dB von der Band"
+                    f"breite ab. Gegen den 3D-Löser erreicht die Abweichung "
+                    f"danach 1 dB und mehr (Gegenproben 53, 60). Für diesen "
+                    f"Bereich squeeze_model='3d' verwenden.",
                     UserWarning, stacklevel=3)
             elif lim["f_hom"] < self._F_BAND_TOP:
                 warnings.warn(
@@ -4195,6 +4529,12 @@ class MicrophoneCapsule:
             keep = (self.squeeze_model, self._fld_dens_th)
             q = []
             try:
+                # Indikator in der Banddarstellung (Gegenprobe 53): wie
+                # stark das Ergebnis an der Bandbreite hängt, zeigt an, wo
+                # das radial stark gegliederte Druckfeld eine Formanpassung
+                # der Membran verlangt — unabhängig davon, wie der Film die
+                # Lochkreise anschließt (Makroelement, Gegenprobe 60)
+                self._RING_MAKRO = False
                 self.squeeze_model = "2d"
                 for dens in (keep[1], self._fld_dens_th_line):
                     self._fld_dens_th = dens
@@ -4203,6 +4543,7 @@ class MicrophoneCapsule:
                         om, T_total, T_rear, p_f[:, 0], p_r[:, 0]))
             finally:
                 self.squeeze_model, self._fld_dens_th = keep
+                del self._RING_MAKRO
             d = np.abs(20.0 * np.log10(np.abs(q[0] / q[1])))
             over = np.nonzero(d > self._RING_REPR_DB)[0]
             if over.size:
@@ -4301,6 +4642,246 @@ class MicrophoneCapsule:
                 # bis Gegenprobe 50 wurde ab 0 gezählt)
                 stub = int(np.clip((r_ring - r0) / dr, 0, r_c.size - 1))
         return relief, stub
+
+    def _lochband_layout(self, r_f, dr, r0, N):
+        """Lochbänder des 2D-Felds (Gegenprobe 60, s. _lochband_makro).
+
+        Je expliziter Lochkreis eine Gruppe, Lage wie im 3D-Löser
+        (Durchgangskreis m um 20°·m, Sacklochkreis m um 15° + 20°·m
+        verdreht; filmseitig zählt bei Stufenbohrung die weite Senkung);
+        ein Kreis mit R < r ist ein Mittelloch. Kreise, deren Lochspannen
+        [R − r, R + r] sich berühren, teilen sich ein Band. Jedes Band
+        reicht um _RING_MARGIN Abklinglängen der Lochharmonischen (Faktor
+        e^(±c/g), g = ggT der Lochzahlen) über die Spanne hinaus, höchstens
+        bis zur logarithmischen Mitte zum Nachbarband und bis an die
+        Plattenränder; stoßen zwei Bänder auf dem Gitter zusammen, werden
+        sie vereinigt. Freistich-Zellen gehen mit dem statischen
+        Leitfähigkeitsverhältnis ((h + t)/h)³ ein (oberhalb einiger kHz
+        nähert das die Trägheit im Freistich-Anteil des Bandes nur).
+
+        Setzt _fld_bands (leer: Gaußband-Darstellung), _fld_ring_groups,
+        _fld_area_film (Filmfläche je Zelle), _fld_area_hole (je Gruppe
+        und Zelle), _fld_cell_merged (Zelle ganz im Mittelloch -> Gruppe,
+        sonst −1) und _fld_band_note (Grund, falls keine Bänder).
+        """
+        import math
+        grp = []
+        rw_th = self.r_bh if self.stepped else self.r_th
+        m = 0
+        for cnt, R in self._th_rings:
+            if cnt > 0 and R is not None:
+                grp.append(dict(typ="th", n=int(cnt), R=float(R), r=rw_th,
+                                phase=math.radians(20.0 * m)))
+                m += 1
+        m = 0
+        for cnt, R in self._bh_rings:
+            if cnt > 0 and R is not None:
+                grp.append(dict(typ="bh", n=int(cnt), R=float(R),
+                                r=self.r_bh,
+                                phase=math.radians(15.0 + 20.0 * m)))
+                m += 1
+        for G in grp:
+            G["mitte"] = G["R"] - G["r"] < 0.5 * dr
+        self._fld_ring_groups = grp
+        self._fld_bands = []
+        self._fld_area_film = self._fld_area.copy()
+        self._fld_area_hole = np.zeros((len(grp), N))
+        self._fld_cell_merged = -np.ones(N, dtype=int)
+        self._fld_band_note = None
+        if not grp:
+            return
+        if not _HAS_SCIPY:
+            self._fld_band_note = "ohne SciPy"
+            return
+        mid = [i for i, G in enumerate(grp) if G["mitte"]]
+        if mid and (r0 > 0.0 or len(mid) > 1):
+            self._fld_band_note = ("Mittelloch mit Pfosten" if r0 > 0.0
+                                   else "mehrere Mittellöcher")
+            return
+        if any(G["R"] - G["r"] < r0 for G in grp if not G["mitte"]):
+            self._fld_band_note = "Lochkreis über dem Pfosten"
+            return
+
+        # Loch- und Filmflächen je Zelle (Kreis-Kreis-Schnitt, exakt)
+        A_hole = np.zeros((len(grp), N))
+        for gi, G in enumerate(grp):
+            R_g = 0.0 if G["mitte"] else G["R"]
+            n_g = 1 if G["mitte"] else G["n"]
+            lens = np.array([n_g * _linsen_flaeche(rf, R_g, G["r"])
+                             for rf in r_f])
+            A_hole[gi] = np.maximum(np.diff(lens), 0.0)
+        A_film = np.maximum(self._fld_area - A_hole.sum(axis=0), 0.0)
+        merged = -np.ones(N, dtype=int)
+        if mid:
+            full = A_film <= 1e-9 * self._fld_area
+            k = 0
+            while k < N and full[k]:
+                merged[k] = mid[0]
+                k += 1
+
+        # Cluster sich berührender Lochspannen, dann Bänder auf dem Gitter
+        def _span(i):
+            G = grp[i]
+            return (r0 if G["mitte"] else G["R"] - G["r"]), G["R"] + G["r"]
+
+        cls = []
+        for i in sorted(range(len(grp)), key=lambda i: _span(i)[0]):
+            lo, hi = _span(i)
+            if cls and lo <= cls[-1]["hi"] + dr:
+                cls[-1]["ids"].append(i)
+                cls[-1]["hi"] = max(cls[-1]["hi"], hi)
+            else:
+                cls.append(dict(ids=[i], lo=lo, hi=hi))
+
+        def _snap(j):
+            c = cls[j]
+            ns = [grp[i]["n"] for i in c["ids"] if not grp[i]["mitte"]]
+            gc = reduce(math.gcd, ns) if ns else 0
+            has_mid = any(grp[i]["mitte"] for i in c["ids"])
+            lo, hi = c["lo"], c["hi"]
+            lo_m = lo * math.exp(-self._RING_MARGIN / gc) if gc else lo
+            hi_m = hi * math.exp(self._RING_MARGIN / gc) if gc else hi
+            if j > 0:
+                lo_m = max(lo_m, math.sqrt(cls[j - 1]["hi"] * lo))
+            if j + 1 < len(cls):
+                hi_m = min(hi_m, math.sqrt(hi * cls[j + 1]["lo"]))
+            if has_mid:
+                f1 = 0
+            else:
+                f1 = int(np.clip(min(math.floor((lo_m - r0) / dr + 1e-9),
+                                     math.floor((lo - r0) / dr + 1e-9)),
+                                 0, N - 1))
+            f2 = int(np.clip(max(math.ceil((hi_m - r0) / dr - 1e-9),
+                                 math.ceil((hi - r0) / dr - 1e-9)),
+                             f1 + 1, N))
+            if has_mid:
+                first = int(np.sum(merged >= 0))
+                f2 = max(f2, first + 1)
+            return f1, f2
+
+        def _ggt(ids):
+            ns = [grp[i]["n"] for i in ids if not grp[i]["mitte"]]
+            return reduce(math.gcd, ns) if ns else 0
+
+        def _knoten(ids, lo, hi):
+            """Größe des Sektorgitters, wenn diese Kreise ein Band teilen."""
+            gc = _ggt(ids)
+            gr = [(grp[i]["n"], grp[i]["R"], grp[i]["r"], grp[i]["phase"])
+                  for i in ids if not grp[i]["mitte"]]
+            if not gr:
+                return 0
+            f1 = int(np.clip(math.floor(
+                (lo * math.exp(-self._RING_MARGIN / gc) - r0) / dr), 1, N - 1))
+            f2 = int(np.clip(math.ceil(
+                (hi * math.exp(self._RING_MARGIN / gc) - r0) / dr), f1 + 1, N))
+            return _lochband_makro(gr, r_f[f1:f2 + 1], None, None,
+                                   nur_knoten=True)
+
+        while True:
+            snaps = [list(_snap(j)) for j in range(len(cls))]
+            vereinigen = None
+            for j in range(len(cls) - 1):
+                # Klingen die Lochharmonischen bis zur gemeinsamen Grenze
+                # (logarithmische Mitte) nicht ab, teilen sich die Kreise
+                # ein Band — sofern das Sektorgitter tragbar bleibt
+                # (_MAKRO_KNOTEN); sonst bleibt die Trennung eine Näherung
+                mid_jj = math.sqrt(cls[j]["hi"] * cls[j + 1]["lo"])
+                gA, gB = _ggt(cls[j]["ids"]), _ggt(cls[j + 1]["ids"])
+                q = min(gA * math.log(mid_jj / cls[j]["hi"]) if gA
+                        else np.inf,
+                        gB * math.log(cls[j + 1]["lo"] / mid_jj) if gB
+                        else np.inf)
+                if (q < self._RING_MARGIN
+                        and _knoten(cls[j]["ids"] + cls[j + 1]["ids"],
+                                    cls[j]["lo"], cls[j + 1]["hi"])
+                        <= self._MAKRO_KNOTEN):
+                    vereinigen = j
+                    break
+                if snaps[j + 1][0] > snaps[j][1]:
+                    continue
+                # getrennt: die Nachbarbänder teilen sich eine Randzelle d
+                # (links endet das Band an Fläche d, rechts beginnt es an
+                # d + 1), wenn die Lochspannen das zulassen
+                kand = [d for d in range(snaps[j][0] + 1,
+                                         snaps[j + 1][1] - 1)
+                        if r_f[d] >= cls[j]["hi"] - 1e-12
+                        and r_f[d + 1] <= cls[j + 1]["lo"] + 1e-12]
+                if kand:
+                    d = min(kand, key=lambda d: abs(r0 + (d + 0.5) * dr
+                                                    - mid_jj))
+                    snaps[j][1] = min(snaps[j][1], d)
+                    snaps[j + 1][0] = max(snaps[j + 1][0], d + 1)
+                    continue
+                vereinigen = j
+                break
+            if vereinigen is None:
+                break
+            j = vereinigen
+            cls[j]["ids"] += cls[j + 1]["ids"]
+            cls[j]["lo"] = min(cls[j]["lo"], cls[j + 1]["lo"])
+            cls[j]["hi"] = max(cls[j]["hi"], cls[j + 1]["hi"])
+            del cls[j + 1]
+
+        h = self.h_gap
+        kap_cell = ((h + self._clr_relief) / h) ** 3
+        r_c = r0 + (np.arange(N) + 0.5) * dr
+        ring_open = self.ring_vent_w > 0.0
+        G_tot = len(grp)
+        bands = []
+        try:
+            for c, (f1, f2) in zip(cls, snaps):
+                has_mid = any(grp[i]["mitte"] for i in c["ids"])
+                cells = [k for k in range(f1, f2) if merged[k] < 0]
+                k0 = cells[0]
+                gruppen = [(1 if grp[i]["mitte"] else grp[i]["n"],
+                            0.0 if grp[i]["mitte"] else grp[i]["R"],
+                            grp[i]["r"], grp[i]["phase"]) for i in c["ids"]]
+                knoten = []
+                if has_mid:
+                    innen = None
+                elif f1 > 0:
+                    innen = float(r_c[f1 - 1])
+                    knoten.append(f1 - 1)
+                else:
+                    innen = None
+                rand = False
+                if f2 < N:
+                    aussen = float(r_c[f2])
+                    knoten.append(f2)
+                elif ring_open:
+                    aussen = float(r_f[N])
+                    knoten.append(N + G_tot)          # Randknoten
+                    rand = True
+                else:
+                    aussen = None
+                knoten += [N + i for i in c["ids"]]
+                kap = np.concatenate((
+                    [kap_cell[f1 - 1] if f1 > 0 else kap_cell[k0]],
+                    kap_cell[cells],
+                    [kap_cell[f2] if f2 < N else kap_cell[N - 1]]))
+                Y, _, keep = _lochband_makro(gruppen, r_f[k0:f2 + 1],
+                                             innen, aussen, kappa=kap)
+                # Zellen ohne Film (geschlossener Ringschlitz aus sich
+                # überlappenden Löchern) hängen am Lochknoten der Gruppe
+                # mit der größten Lochfläche dort
+                for k in np.asarray(cells)[~keep]:
+                    gi = max(c["ids"], key=lambda i: A_hole[i, k])
+                    merged[k] = gi
+                    A_hole[gi, k] += A_film[k]
+                    A_film[k] = 0.0
+                cells = list(np.asarray(cells)[keep])
+                bands.append(dict(knoten=np.array(cells + knoten), Y=Y,
+                                  cells=np.array(cells),
+                                  w=A_film[cells], kappa=kap_cell[cells],
+                                  faces=(f1, f2), rand=rand,
+                                  ids=list(c["ids"])))
+        except ValueError as exc:            # Band ganz ohne Film
+            self._fld_band_note = str(exc)
+            return
+        self._fld_bands = bands
+        self._fld_area_film = A_film
+        self._fld_area_hole = A_hole
+        self._fld_cell_merged = merged
 
     def _build_3d_geometry(self):
         """Einmalige Gitter-/Lochgeometrie für ``squeeze_model='3d'``.
@@ -5667,6 +6248,14 @@ class MicrophoneCapsule:
         oder ringförmig sitzenden Löchern kommt die im Gitter aufgelöste
         plattenweite Ausbreitung additiv hinzu.
 
+        LOCHKREISE (Gegenprobe 60): explizite Lochkreise laufen seitdem
+        nicht mehr über Gaußband und Zellterm — das überschätzte den
+        Filmwiderstand großer Löcher um bis zu 70 % —, sondern als exakte
+        Makroelemente mit eigenen Lochknoten (s. _lochband_makro,
+        _gap_field_makro); Dichte und Zellterm gelten dann nur noch für
+        die gleichverteilten Anteile. _RING_MAKRO = False stellt den
+        alten Weg her.
+
         Der entscheidende Fortschritt gegenüber dem 1D-Modell: der
         Nachgiebigkeits-Rückweg (Spaltvolumen + Blindlöcher, überall lokal)
         und der Rückkopplungsweg (nur durch die wenigen Durchgangslöcher)
@@ -5812,42 +6401,74 @@ class MicrophoneCapsule:
         # Portseite: Mündungsmasse (mit Fok-Array-Wechselwirkung) +
         # viskoser Mündungswiderstand (Sampson). Ohne Durchgangslöcher
         # (rein randbelüftete Platte) entfällt der Lochleitwert.
-        Z_th1 = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
-                                      end_correction=False, visc_ends=1)
-                 + 1j * omega * RHO0 * (0.85 * self.r_th * self._fok_th)
-                 / S_th
-                 + _cell_B_flow(r_well_th) / (np.pi * K_entry_th)
-                 ) if self.n_th > 0 else None
+        Z_core = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
+                                       end_correction=False, visc_ends=1)
+                  + 1j * omega * RHO0 * (0.85 * self.r_th * self._fok_th)
+                  / S_th) if self.n_th > 0 else None
         if self.stepped:
             # weites Senkungssegment in Serie + Karal-Stufenmündung
             # (Masse und viskoser Anteil; die filmseitige Ausbreitung
             # deckt die Zelle mit r_bh ab)
             karal = 1.0 - self.r_th / self.r_bh
-            Z_th1 = (Z_th1
-                     + self._hole_impedance(omega, self.r_bh, self.d_bh, 1,
-                                            end_correction=False)
-                     + 1j * omega * RHO0 * 0.85 * self.r_th * karal / S_th
-                     + self._hole_impedance(
-                         omega, self.r_th,
-                         (3.0 * np.pi / 16.0) * self.r_th, 1,
-                         end_correction=False).real * karal)
-        g_tot = (self.n_th / Z_th1 if self.n_th > 0
-                 else np.zeros(Nf, dtype=complex))        # Gesamtleitwert (Nf,)
+            Z_core = (Z_core
+                      + self._hole_impedance(omega, self.r_bh, self.d_bh, 1,
+                                             end_correction=False)
+                      + 1j * omega * RHO0 * 0.85 * self.r_th * karal / S_th
+                      + self._hole_impedance(
+                          omega, self.r_th,
+                          (3.0 * np.pi / 16.0) * self.r_th, 1,
+                          end_correction=False).real * karal)
         # Sackloch-/Senkungs-Shunts als geschlossene thermoviskose Stubs
         # (verteilte Reibung, isotherm→adiabatisch, s. _closed_hole_stub)
         Z_stub1 = (self._closed_hole_stub(omega, self.r_bh, self.d_bh)
                    if (self.n_bh > 0 or self.stepped) else None)
-        if self.n_bh > 0:
-            y_tot = self.n_bh / (Z_stub1
-                                 + _cell_B(self.r_bh) / (np.pi * K_entry_bh))
+        makro = self._RING_MAKRO and bool(self._fld_bands)
+        if makro:
+            # LOCHKREISE ALS MAKROELEMENTE (Gegenprobe 60): die Lochkreise
+            # hängen mit eigenen Lochknoten an ihren Bändern (s. unten);
+            # als Senkendichte bleiben nur die gleichverteilten Anteile,
+            # mit der Škvor-Zelle IHRER Anzahl — ohne Lochkreise wäre das
+            # exakt die bisherige Form.
+            n_uni_th = sum(c for c, r in self._th_rings
+                           if r is None and c > 0)
+            n_uni_bh = sum(c for c, r in self._bh_rings
+                           if r is None and c > 0)
+            # (Zellen ganz im Mittelloch tragen keine Senken)
+            live = (self._fld_cell_merged < 0).astype(float)
+            dens_u = live / float(np.sum(live * A))
+            g_u = np.zeros(Nf, dtype=complex)
+            y_u = np.zeros(Nf, dtype=complex)
+            if n_uni_th > 0:
+                g_u = n_uni_th / (Z_core + _B_of(n_uni_th, r_well_th)
+                                  / (np.pi * K_entry_th))
+                if self.stepped:
+                    y_u = y_u + n_uni_th / (
+                        Z_stub1 + _B_of(n_uni_th + n_uni_bh, self.r_bh)
+                        / (np.pi * K_entry_th))
+            if n_uni_bh > 0:
+                y_u = y_u + n_uni_bh / (
+                    Z_stub1 + _B_of(n_uni_th + n_uni_bh, self.r_bh)
+                    / (np.pi * K_entry_bh))
+            G_h = g_u[:, None] * dens_u[None, :]
+            Y_bh = y_u[:, None] * dens_u[None, :]
         else:
-            y_tot = np.zeros(Nf, dtype=complex)
-        if self.stepped:
-            # Senkungsvolumina der Stufenbohrungen (sitzen auf dens_th)
-            y_cb = self.n_th / (Z_stub1
-                                + _cell_B(self.r_bh) / (np.pi * K_entry_th))
-        else:
-            y_cb = np.zeros(Nf, dtype=complex)
+            Z_th1 = (Z_core + _cell_B_flow(r_well_th) / (np.pi * K_entry_th)
+                     if self.n_th > 0 else None)
+            g_tot = (self.n_th / Z_th1 if self.n_th > 0
+                     else np.zeros(Nf, dtype=complex))    # Gesamtleitwert (Nf,)
+            if self.n_bh > 0:
+                y_tot = self.n_bh / (Z_stub1 + _cell_B(self.r_bh)
+                                     / (np.pi * K_entry_bh))
+            else:
+                y_tot = np.zeros(Nf, dtype=complex)
+            if self.stepped:
+                # Senkungsvolumina der Stufenbohrungen (sitzen auf dens_th)
+                y_cb = self.n_th / (Z_stub1 + _cell_B(self.r_bh)
+                                    / (np.pi * K_entry_th))
+            else:
+                y_cb = np.zeros(Nf, dtype=complex)
+            G_h = g_tot[:, None] * dens_th[None, :]
+            Y_bh = y_tot[:, None] * dens_bh[None, :] + y_cb[:, None] * dens_th[None, :]
 
         # RANDSPALT (B&K): der Filmrand bei r = a_bp ist nicht mehr dicht.
         # Eine ZUSÄTZLICHE Unbekannte p_rand (Randdruck am Plattenumfang)
@@ -5887,6 +6508,11 @@ class MicrophoneCapsule:
         q_by = 1.0 - f_in                                 # Umgehungsfluss
         S_out = Sphi_tot - Sphi                           # Modengewicht außen
         src_a = phi * A / Sphi_tot                        # Membran treibt (U=1)
+        if makro:
+            return self._gap_field_makro(
+                omega, K_cell, K_face, c_cell, G_h, Y_bh, y_ring, Z_core,
+                Z_stub1, Sphi_tot, S_out, q_by,
+                (A_l, B_l, D_l) if ring_open else None)
         T = np.empty((2, 2, Nf), dtype=complex)
         M_sys = N + 1 if ring_open else N
         ab = np.zeros((3, M_sys), dtype=complex)
@@ -5895,8 +6521,8 @@ class MicrophoneCapsule:
             Gface = gg * K_face[f]                        # (N+1,) komplex
             ab[0, 1:N] = -Gface[1:N]                      # Superdiagonale
             ab[2, :N - 1] = -Gface[1:N]                   # Subdiagonale
-            g_h = g_tot[f] * dens_th                      # (N,) verteilt
-            y_bh = y_tot[f] * dens_bh + y_cb[f] * dens_th
+            g_h = G_h[f]                                  # (N,) verteilt
+            y_bh = Y_bh[f]
             Y = 1j * omega[f] * c_cell[f] + y_bh + g_h
             if self._clr_stub_cell is not None:
                 Y[self._clr_stub_cell] += (y_ring[f]
@@ -5936,6 +6562,129 @@ class MicrophoneCapsule:
             T[0, 1, f] = alpha / gamma
             T[1, 0, f] = -delta / gamma
             T[1, 1, f] = 1.0 / gamma
+        return T
+
+    def _gap_field_makro(self, omega, K_cell, K_face, c_cell, G_h, Y_bh,
+                         y_ring, Z_core, Z_stub1, Sphi_tot, S_out, q_by,
+                         line):
+        """Zweitor des Spaltfilms mit Lochkreis-MAKROELEMENTEN (Gegenprobe
+        60); Filmphysik, Randspalt, Randumgehung und Extraktion wie in
+        :meth:`_gap_field_2port`.
+
+        Knoten: die N Zellen, je Lochgruppe ein Lochknoten, mit Randspalt
+        der Randknoten. Außerhalb der Bänder bleiben die FV-Flächen; in
+        jedem Band ersetzt das Makroelement (s. _lochband_makro) alle
+        Flächen, skaliert mit der Filmleitfähigkeit des Bandes
+            K_b(ω) = Σ w_k·K_k(ω)/κ_k / Σ w_k
+        (w = Filmfläche, κ = statisches Freistich-Verhältnis; ohne
+        Freistich und Durchbiegung exakt K(ω)). Speicherung und Membran-
+        quelle der Zellen laufen über ihre FILMfläche; die Membran über den
+        Mündungen pumpt direkt in den Lochknoten und spürt dessen Druck.
+        Durchgangslöcher führen mit n/Z_core zum Rückport (Stufenbohrung:
+        Senkungsvolumen n/Z_stub als Nebenschluss), Sacklöcher mit n/Z_stub
+        gegen Masse. Zellen ganz im Mittelloch sind an den Lochknoten
+        gebunden. Dicht gelöst, blockweise über die Frequenzen.
+        """
+        N = self._fld_N
+        A = self._fld_area
+        A_f = self._fld_area_film
+        phi = self._fld_phi
+        grp = self._fld_ring_groups
+        bands = self._fld_bands
+        nG = len(grp)
+        Nf = omega.size
+        ring_open = line is not None
+        E = N + nG                                       # Randknoten
+        M = E + (1 if ring_open else 0)
+        im_band = np.zeros(N + 1, dtype=bool)
+        for b in bands:
+            f1, f2 = b["faces"]
+            im_band[f1:f2 + 1] = True
+        fv = np.nonzero(~im_band[1:N])[0] + 1             # FV-Flächen
+        edge_fv = ring_open and not any(b["rand"] for b in bands)
+        merged = self._fld_cell_merged
+        tot = np.nonzero(merged >= 0)[0]
+        # Quelle = Projektion (reziprok): Filmfläche der Zellen, Lochfläche
+        # der Gruppen, Ringraum außerhalb der Platte
+        w_cell = phi * A_f / Sphi_tot
+        w_grp = (self._fld_area_hole * phi[None, :]).sum(axis=1) / Sphi_tot
+        y_rear = np.zeros((Nf, nG), dtype=complex)
+        y_gnd = np.zeros((Nf, nG), dtype=complex)
+        for gi, G in enumerate(grp):
+            if G["typ"] == "th":
+                y_rear[:, gi] = G["n"] / Z_core
+                if self.stepped:
+                    y_gnd[:, gi] = G["n"] / Z_stub1
+            else:
+                y_gnd[:, gi] = G["n"] / Z_stub1
+        gidx = N + np.arange(nG)
+        iz = np.arange(N)
+        gg = self._fld_gface_geom
+        T = np.empty((2, 2, Nf), dtype=complex)
+        for s0 in range(0, Nf, 64):
+            sl = slice(s0, min(s0 + 64, Nf))
+            nc = sl.stop - s0
+            om = omega[sl]
+            Am = np.zeros((nc, M, M), dtype=complex)
+            rhs = np.zeros((nc, M, 2), dtype=complex)
+            Gf = gg[None, :] * K_face[sl]
+            Am[:, fv - 1, fv - 1] += Gf[:, fv]
+            Am[:, fv, fv] += Gf[:, fv]
+            Am[:, fv - 1, fv] -= Gf[:, fv]
+            Am[:, fv, fv - 1] -= Gf[:, fv]
+            Yc = (1j * om[:, None] * c_cell[sl] * A_f[None, :]
+                  + (G_h[sl] + Y_bh[sl]) * A[None, :])
+            if self._clr_stub_cell is not None:
+                Yc[:, self._clr_stub_cell] += y_ring[sl]
+            Am[:, iz, iz] += Yc
+            for b in bands:
+                w = b["w"]
+                Kb = ((K_cell[sl][:, b["cells"]] * (w / b["kappa"])[None, :])
+                      .sum(axis=1) / float(np.sum(w)))
+                kn = b["knoten"]
+                Am[:, kn[:, None], kn[None, :]] += (Kb[:, None, None]
+                                                    * b["Y"][None, :, :])
+            Am[:, gidx, gidx] += y_rear[sl] + y_gnd[sl]
+            if ring_open:
+                A_l, B_l, D_l = (v[sl] for v in line)
+                if edge_fv:
+                    Ge = self._fld_gedge_geom * K_face[sl, N]
+                    Am[:, N - 1, N - 1] += Ge
+                    Am[:, N - 1, E] -= Ge
+                    Am[:, E, N - 1] -= Ge
+                    Am[:, E, E] += Ge
+                Am[:, E, E] += D_l / B_l
+                rhs[:, E, 1] = 1.0 / B_l
+                rhs[:, E, 0] = q_by
+            elif q_by > 0.0:
+                rhs[:, N - 1, 0] += q_by
+            for k in tot:                                # p_Zelle = p_Loch
+                Am[:, k, :] = 0.0
+                Am[:, k, k] = 1.0
+                Am[:, k, N + merged[k]] = -1.0
+            rhs[:, :N, 0] += w_cell
+            rhs[:, gidx, 0] += w_grp
+            rhs[:, :N, 1] += G_h[sl] * A[None, :]
+            rhs[:, gidx, 1] += y_rear[sl]
+            sol = np.linalg.solve(Am, rhs)
+            pa, pb = sol[..., 0], sol[..., 1]
+            p_out_a = pa[:, E] if ring_open else pa[:, N - 1]
+            p_out_b = pb[:, E] if ring_open else pb[:, N - 1]
+            alpha = (pa[:, :N] @ w_cell + pa[:, gidx] @ w_grp
+                     + S_out * p_out_a / Sphi_tot)
+            beta = (pb[:, :N] @ w_cell + pb[:, gidx] @ w_grp
+                    + S_out * p_out_b / Sphi_tot)
+            gamma = ((G_h[sl] * A[None, :] * pa[:, :N]).sum(axis=1)
+                     + (y_rear[sl] * pa[:, gidx]).sum(axis=1))
+            delta = ((G_h[sl] * A[None, :] * (pb[:, :N] - 1.0)).sum(axis=1)
+                     + (y_rear[sl] * (pb[:, gidx] - 1.0)).sum(axis=1))
+            if ring_open:
+                gamma = gamma + pa[:, E] / B_l
+                delta = delta + pb[:, E] / B_l - A_l / B_l
+            T[0, 0, sl] = beta - alpha * delta / gamma
+            T[0, 1, sl] = alpha / gamma
+            T[1, 0, sl] = -delta / gamma
+            T[1, 1, sl] = 1.0 / gamma
         return T
 
     def _backplate_gap_abcd(self, omega, outside_to_membrane,

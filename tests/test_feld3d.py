@@ -918,13 +918,19 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
     #    sich einen Spaltknoten).
     # c) KEIN FEHLER: bei erzwungener Grundmodenform (sehr steife Membran)
     #    ist der Filmwiderstand von 3D und 2D für gleichverteilte Löcher
-    #    IDENTISCH. Für Löcher auf EINEM Lochkreis überschätzt das 2D-Feld
-    #    ihn (B&K 4134: 1.7-fach) — es löst die radiale Zuströmung zum
-    #    Lochring selbst auf und addiert die volle Škvor-Zelle.
-    # OFFEN: die B&K-Messung (Zuckerwar 1978, Aktuator) folgt dem 2D-
-    #    Modell. Der 3D-Löser rechnet die Modellgleichungen nachweislich
-    #    richtig — also dämpft die reale Kapsel stärker als der Reynolds-
-    #    Film. Die zweite Möglichkeit, dass die Aktuatormessung im Hochton
+    #    IDENTISCH. Für Löcher auf EINEM Lochkreis überschätzte das 2D-Feld
+    #    ihn (B&K 4134: 1.7-fach) — es löste die radiale Zuströmung zum
+    #    Lochring selbst auf und addierte die volle Škvor-Zelle.
+    #    NACHTRAG (Gegenprobe 60): mit dem Makroelement rechnet 2D den Film
+    #    am Lochkreis exakt. Der Vergleich schaltet jetzt den Folienverlust
+    #    ab (2D: fester Widerstand ω0·M/Q, 3D: mit ω wachsend — bei
+    #    erzwungener Form und Nickelfolie verfälschte er das Verhältnis um
+    #    ~8 %); sauber liegt 3D/2D bei 1.04 (Gaußband 0.65).
+    # OFFEN: die B&K-Messung (Zuckerwar 1978, Aktuator) folgte dem alten
+    #    2D-Modell (ein Ausgleich, Gegenprobe 59); mit dem Makroelement
+    #    liegen 2D und 3D gleichermaßen über ihr (Gegenprobe 38). Der
+    #    Reynolds-Film ist richtig gerechnet — also dämpfte dieser
+    #    Prüfling stärker als der Reynolds-Film. Die zweite Möglichkeit, dass die Aktuatormessung im Hochton
     #    vom Druckfrequenzgang abweicht, ist in d) eingegrenzt: höchstens
     #    +0.6 dB, falsches Vorzeichen.
     if _HAS_SCIPY:
@@ -1085,14 +1091,23 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
         # c) Filmwiderstand bei erzwungener Form (sehr steife Membran):
         #    tan(Phase) ≈ −ω·R·C im Steifigkeitsbereich
         def _Rratio52(p):
+            # ohne Folienverlust: 2D setzt ihn als festen Widerstand
+            # ω0·M/Q an, 3D wachsend mit ω — bei f_res = 300 kHz und
+            # Nickelfolie wären das im 2D ~8 % des Filmwiderstands
+            # (Gegenprobe 60)
             q = dict(p, membrane_resonance_hz=300e3)
             q.pop("membrane_tension", None)
             ff = np.array([1000.0])
             ph = {}
-            for sm in ("2d", "3d"):
-                cc = MicrophoneCapsule(squeeze_model=sm, **q)
-                ph[sm] = np.angle(cc.transfer_function(ff)[0]
-                                  / cc.transfer_function([20.0])[0])
+            Q0 = MicrophoneCapsule._Q_MEMBRANE_INTERNAL
+            MicrophoneCapsule._Q_MEMBRANE_INTERNAL = 1e12
+            try:
+                for sm in ("2d", "3d"):
+                    cc = MicrophoneCapsule(squeeze_model=sm, **q)
+                    ph[sm] = np.angle(cc.transfer_function(ff)[0]
+                                      / cc.transfer_function([20.0])[0])
+            finally:
+                MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q0
             return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
 
         a24_52 = dict(
@@ -1110,9 +1125,6 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
         assert abs(rr_uni52 - 1.0) < 0.01, \
             (f"gleichverteilte Löcher: Filmwiderstand 3D == 2D "
              f"({rr_uni52:.3f})")
-        assert rr_bk52 < 1.0, \
-            (f"Lochkreis (B&K 4134): 2D überschätzt den Filmwiderstand "
-             f"(R_3D/R_2D = {rr_bk52:.2f})")
         stand.wert("r3d_zu_r2d_lochkreis", rr_bk52, "",
                    "Filmwiderstand 3D/2D, B&K 4134, erzwungene Form")
         # d) OFFENER PUNKT eingegrenzt: misst der Aktuator etwas anderes als

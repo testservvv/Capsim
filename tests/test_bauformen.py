@@ -229,9 +229,16 @@ def test_gp15_clearance_ring_stirnflachen_freistich(deb0, deb1, deb_kwargs):
     """Gegenprobe 15: Clearance-Ring (Stirnflächen-Freistich)."""
     # a) Ring aus (0) ≡ exakt das Bestandsverhalten.
     # b) Debenham-artige Platte (12 enge Durchgangslöcher auf Lochkreisen):
-    #    der Freistich am Elektrodenrand entlastet die Mündungs-Engstellen
-    #    des Nieren-Phasenschiebers -> deutlich tiefere 180°-Auslöschung,
-    #    Null bleibt bei 180°.
+    #    ein Freistich über ALLEN Mündungen entlastet die Engstellen des
+    #    Nieren-Phasenschiebers -> deutlich tiefere 180°-Auslöschung, Null
+    #    bleibt bei 180° (wie im 3D-Löser, Gegenprobe 16).
+    #    KORREKTUR (Gegenprobe 60): bis dahin vertiefte schon der schmale
+    #    Rand-Freistich der Zeichnung die Null um 15 dB. Das war ein
+    #    Artefakt: ein Schalter gab ALLEN Durchgangslöchern die entlastete
+    #    Engstelle, sobald eines im Freistich lag. Unter dem Rand-Freistich
+    #    liegen aber nur die sechs Löcher des äußeren Kreises; mit dem
+    #    Makroelement entlastet er nur diese, die Null bleibt flach — wie
+    #    im 3D-Löser (500 Hz: 2D −3.2 dB, 3D −4.1 dB; Gegenproben 16, 17).
     if _HAS_SCIPY:
         deb0_ref = MicrophoneCapsule(clearance_ring_diameter=0.0,
                                      clearance_ring_width=0.0,
@@ -248,13 +255,20 @@ def test_gp15_clearance_ring_stirnflachen_freistich(deb0, deb1, deb_kwargs):
             return pat["db"][180], na
         p0, _ = _n180(deb0, 500.0)
         p1, na1 = _n180(deb1, 500.0)
-        assert p1 < p0 - 8.0, \
-            f"Freistich muss die 180°-Auslöschung vertiefen ({p0:.1f} -> {p1:.1f})"
+        deb_w = MicrophoneCapsule(**{**deb_kwargs, **DEB_CLEARANCE_WIDE})
+        pw, naw = _n180(deb_w, 500.0)
+        assert pw < p0 - 8.0, \
+            (f"Freistich über allen Mündungen muss die 180°-Auslöschung "
+             f"vertiefen ({p0:.1f} -> {pw:.1f})")
         assert na1 > 172.0, \
             f"Null muss bei 180° bleiben ({na1:.0f}°)"
-        print(f"Clearance-Ring: 0 ≡ Bestand; Freistich am Elektrodenrand "
-              f"vertieft die Debenham-Null @500 Hz von {p0:.1f} auf "
-              f"{p1:.1f} dB (Null {na1:.0f}°)  OK")
+        assert p1 > p0 - 3.0, \
+            (f"Rand-Freistich entlastet nur die äußeren Mündungen, die Null "
+             f"bleibt flach ({p0:.1f} -> {p1:.1f})")
+        print(f"Clearance-Ring: 0 ≡ Bestand; Freistich über allen Mündungen "
+              f"vertieft die Debenham-Null @500 Hz (180°) von {p0:.1f} auf "
+              f"{pw:.1f} dB, der Rand-Freistich nur auf {p1:.1f} dB (Null "
+              f"{na1:.0f}°)  OK")
 
 
 def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, hermetic, k67, na_k, stand):
@@ -275,7 +289,9 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
     #    LÄNGERE interne Laufzeit (Verhältnis > 1) -> Minimum bei 180°
     #    gepinnt (kein Außenwinkel bietet mehr Phase), dafür flacher.
     # c) Debenham (2D), Sonde 250 Hz (= Region der tiefsten Null ~290 Hz):
-    #    Verhältnis ~ 1; externe Laufzeit ~ Kugel-Grenzfall 1.5·d_ext/c.
+    #    externe Laufzeit ~ Kugel-Grenzfall 1.5·d_ext/c; mit dem Rand-
+    #    Freistich der Zeichnung stark über-verzögert wie in 3D (seit
+    #    Gegenprobe 60, s. u.).
     # d) 3D: der Rand-Freistich allein lässt die Mündungen verengt ->
     #    hochohmiges RC, stark ÜBER-verzögert (Null bei 180°, aber flach,
     #    s. Gegenprobe 16); der breite Freistich senkt R -> Verhältnis
@@ -312,10 +328,10 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
     assert na45 > 179.0, \
         f"Über-Verzögerung muss das Minimum bei 180° pinnen ({na45:.0f}°)"
     if _HAS_SCIPY:
-        # MIT Rand-Freistich (deb1, wie die Beispiel-JSON): angepasst in
-        # der Region der tiefsten Null (~290 Hz); OHNE Ring (deb0) sind
-        # die Mündungen verengt -> hochohmig -> stark über-verzögert
-        # (konsistent zu Gegenprobe 15: Null 180°, aber nur -3.8 dB).
+        # MIT Rand-Freistich (deb1, wie die Beispiel-JSON), Sonde in der
+        # Region der tiefsten Null (~290 Hz); OHNE Ring (deb0) sind alle
+        # Mündungen verengt -> hochohmig -> noch stärker über-verzögert
+        # (konsistent zu Gegenprobe 15: Null 180°, aber flach).
         dd_deb = deb1.delay_diagnostics(f_probe_hz=250.0)
         tau_kugel = 1.5 * deb1.d_ext / C_AIR
         # Verhältnis > 1: die 12 engen Durchgangslöcher der Braunmühl-
@@ -327,6 +343,13 @@ def test_gp17_laufzeit_diagnose_delay_diagnostics(deb0, deb1, deb3, deb3b, herme
         # (Bis Gegenprobe 29 stand hier ~1: damals zählte die
         # Durchfluss-Zellfunktion alle 58 Bohrungen als Senken statt der
         # 12 Durchgangslöcher — s. _cell_B_flow, Gegenprobe 30.)
+        # NACHTRAG (Gegenprobe 60): bis dahin lag das Verhältnis bei 1.2,
+        # weil der Rand-Freistich über einen Schalter ALLE Durchgangslöcher
+        # entlastete. Er deckt nur die sechs äußeren; mit dem Makroelement
+        # liegt das 2D-Modell bei 5.2 und damit beim 3D-Löser (3.9, d).
+        # Die gemessene Null (−13.6 dB bei 317 Hz) trifft mit dieser
+        # Zeichnungsgeometrie keines der beiden Modelle (2D −3.1, 3D
+        # −3.7 dB) — offener Punkt (README).
         stand.wert("debenham_verhaeltnis", dd_deb["ratio"], "",
                    "Debenham mit Freistich bei 250 Hz")
         assert 0.85 < dd_deb["tau_ext_s"] / tau_kugel < 1.15, \

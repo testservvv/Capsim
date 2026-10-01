@@ -193,7 +193,7 @@ verifiziert): **≈ 1** — angepasst, tiefste Auslöschung bei 180°
 kurz, das Pattern-Minimum wandert vor 180° (K103-Demo: 0,42, Minimum
 bei 114°); **> 1** — zu lang, das Minimum bleibt bei 180° gepinnt,
 wird aber flacher (cardiodtest 45-µm-Spacer: 1,32; Debenham-Beispiel:
-1,46). Die interne Laufzeit ist
+3,52, s. „Offene Punkte" 6). Die interne Laufzeit ist
 frequenzabhängig (RC-Phasenschieber mit Filmträgheit, kein reines
 Laufzeitglied) — der Klassen-Methode `delay_diagnostics(f_probe_hz=…)`
 kann eine andere Sondenfrequenz übergeben werden.
@@ -283,11 +283,15 @@ ersten beiden sind `assert`s.
 
 Sonderfall **Sperrklinke** (`stand.sperrklinke(...)`): ein bekannter
 Restfehler, der nur kleiner werden darf. Das sind die Resonanzlage
-gegen die FEM (Gegenprobe 32, 2D und 3D), der Spaltwiderstand gegen
-Zuckerwar (38, beide Kapseln), die Restlücke der modenweisen Anregung
+gegen die FEM (Gegenprobe 32, 2D und 3D), die Amplitude des 2D-Modells
+gegen Zuckerwars 4146 (38), die Restlücke der modenweisen Anregung
 (34), der Off-Axis-Rest gegen Fig. 6 (41, RMS und 14 kHz), die
-Obergrenze der Aktuatorlast (52) und der Abstand des 3D-Modells zur
-COMSOL-FEM der B&K 4134 (59). Wird ein solcher Wert schlechter als
+Obergrenze der Aktuatorlast (52) und der Abstand des 2D- und des
+3D-Modells zur COMSOL-FEM der B&K 4134 (59). Der Spaltwiderstand
+gegen Zuckerwars Tabelle II war bis Gegenprobe 59 eine Sperrklinke
+(Streuung der Škvor-Zellregel); seit dem Makroelement rechnet das
+2D-Modell den Film am Lochkreis exakt, und die Tabelle ist Zuckerwars
+eigene Näherung — bewusst gelockert zum Stand-Wert (Gegenprobe 60). Wird ein solcher Wert schlechter als
 die Basis (über eine kleine Toleranz hinaus), scheitert der Test; wird
 er besser, meldet es der Bericht.
 
@@ -309,7 +313,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 87 Werte aus 27 Gegenproben, davon 9 Sperrklinken.
+Die Basis umfasst 95 Werte aus 28 Gegenproben, davon 9 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -322,43 +326,38 @@ Schreiben.
 
 ### Physik: Abweichungen gegen Referenzen
 
-1. **Lochkreise im 2D-Modell (Gegenproben 38, 52, 53, 58, 59).**
-   Der wichtigste offene Punkt — seit dem COMSOL-Vergleich (Gegenprobe
-   59) mit klarer Richtung:
-   - **Der 3D-Löser ist richtig.** Auf B&Ks Originalgeometrie der 4134
-     trifft er die volle thermoviskose FEM (COMSOL) über 1–20 kHz auf
-     0,10 dB RMS (`gp59.rms_3d_gegen_fem`) und die heutigen
-     B&K-Messungen auf 0,31 dB (bis 12,6 kHz im Streuband;
-     `gp59.rms_3d_gegen_messung`). Sein Filmwiderstand liegt 13 % über
-     dem der FEM (`gp59.widerstand_3d_zu_fem`).
-   - **Das 2D-Modell überschätzt den Filmwiderstand am Lochkreis**, auf
-     derselben Geometrie um 61 % (`gp59.widerstand_2d_zu_fem`), und ist
-     deshalb überdämpft (1,80 dB RMS gegen die FEM, −4,5 statt −0,25 dB
-     bei 20 kHz). Bei erzwungener Form ist es derselbe Faktor (3D/2D
-     0,59, `gp52.r3d_zu_r2d_lochkreis`). Die Darstellung als
-     verschmiertes Band ist zudem nicht eindeutig (bis 7,3 dB zwischen
-     Band und Liniensenke, Gegenprobe 53, Warnung ab 0,5 dB).
-   - **Zuckerwars Messung von 1978** (Gegenprobe 38) trifft das 2D-Modell
-     nur, weil sein Prüfling viel stärker gedämpft war als heutige 4134
-     (20 kHz: −3,1 gegen −1,2 dB) — zwei Abweichungen gleichen sich aus.
-     Sein Tabellenwert R und die Škvor-Zellregel liegen gleichermaßen
-     hoch. Warum sein Prüfling so gedämpft war, bleibt offen (Tabelle I
-     weicht von B&Ks Geometrie ab: Spalt 20,77 statt 18,6 µm, Lochkreis
-     2,03 statt 1,70 mm; mit Tabelle I liegt 3D 3,5 dB über seiner
-     Messung, Gegenprobe 58).
-   - Beim 4146 trifft der 3D-Löser Zuckerwars Messung besser als 2D
-     (0,75 gegen 1,09 dB; `gp58.rms_3d_4146_db`); der 2D-Spaltwiderstand
-     liegt dort 35 % über Tabelle II (`gp38.spaltwiderstand_4146`).
-   - **Nächster Schritt:** eine Lochkreis-Darstellung im 2D-Feld, die den
-     3D-Widerstand trifft (Anker: Gegenprobe 59 und die 16
-     Ringgeometrien der exakten Reynolds-Lösung aus Gegenprobe 38). Sie
-     wird den 2D-Treffer an Zuckerwars 4134 aufgeben — das ist dann
-     ehrlich so.
+1. **Lochkreise: 2D gelöst, Rest im 3D-Löser (Gegenproben 38, 52, 58,
+   59, 60).** Das 2D-Feld rechnet Lochkreise seit Gegenprobe 60 als
+   exaktes Makroelement: statisch auf 0,22 % gegen eine unabhängige
+   Lösung, gegen die COMSOL-FEM der 4134 0,26 dB RMS
+   (`gp59.rms_2d_gegen_fem_makro`, vorher 1,80 dB), Re Z 6 % unter der
+   FEM (`gp59.widerstand_2d_zu_fem`, vorher 61 % darüber). Offen bleibt:
+   - **Mittelloch im 3D-Löser:** ein Loch auf der Polarachse des
+     3D-Gitters überschätzt dessen Filmwiderstand um 5–54 % (r/a =
+     0,06…0,28; das 2D-Makroelement trifft die geschlossene Form auf
+     0,05 %). Betroffen ist die 4146 (3D/2D 1,09 bei erzwungener Form).
+     Große Mündungen abseits der Achse trifft 3D auf 1–3 %.
+   - **Folienverlust 2D/3D verschieden angesetzt:** 2D fester
+     Widerstand ω₀·M/Q, 3D mit ω wachsend. Im Betrieb klein (B&K 4134
+     bei 1 kHz rund 0,6 % des Filmwiderstands), aber er verfälschte die
+     Phasenmethode bei erzwungener Form um bis zu 8 % (Gegenprobe 60);
+     die Vergleiche schalten ihn jetzt ab. Welcher Ansatz das Material
+     besser beschreibt, ist nicht untersucht.
+   - **Zuckerwars 4134 von 1978** war stärker gedämpft als heutige 4134
+     (20 kHz: −3,1 gegen −1,2 dB); 2D und 3D liegen gleichermaßen
+     darüber (2,1 bzw. 1,7 dB RMS, `gp38.rms_2d_4134_db`). Warum, bleibt
+     offen (Tabelle I weicht von B&Ks Geometrie ab: Spalt 20,77 statt
+     18,6 µm, Lochkreis 2,03 statt 1,70 mm). Am 4146 trifft 2D die
+     Messung jetzt besser als 3D (0,63 gegen 0,75 dB,
+     `gp38.rms_2d_4146_db`).
 
-2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 478 Hz, 3D
-   495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,13,
-   `gp32.verstimmung_3d` 0,10). Die diskreten Bohrungen erklären 23 %
-   des Abstands, der Rest ist keine Homogenisierung. Untersucht wurde
+2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 497 Hz, 3D
+   495 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,096,
+   `gp32.verstimmung_3d` 0,10). Bis Gegenprobe 59 lag 2D bei 478 Hz,
+   und der Abstand zu 3D wurde den diskreten Bohrungen zugeschrieben;
+   mit dem Makroelement (Gegenprobe 60) liegen beide gleichauf — es war
+   die Lochkreis-Darstellung. Die 10 % zur FEM teilen beide Modelle; der
+   nächstliegende Kandidat ist Reynolds-Film gegen Navier–Stokes. Untersucht wurde
    bisher der Lochzweig an seiner Antiresonanz (Kerbe 3203 gegen
    3500 Hz): kein Massenüberschuss der Zelle (wirbelfreie und
    Stokes-Zelle liefern mehr, nicht weniger), die Mündungsmasse hebt
@@ -367,8 +366,9 @@ Schreiben.
    Spaltnachgiebigkeit höchstens 4 %. Einziger starker Hebel ist der
    Lochradius (d ln f/d ln r = +0,61), ein direkt tabellierter Wert.
    Für die Resonanzlage selbst ist die Ursache offen.
-   Getroffen werden Tiefton, Güte (+6,44 gegen +6,74 dB) und das Dublett
-   der vier Bohrungen (3D 3406/4127 Hz gegen 3500/4200 Hz).
+   Getroffen werden Tiefton, Güte (2D +7,11 gegen +6,74 dB; mit dem
+   Gaußband +6,44) und das Dublett der vier Bohrungen (3D 3406/4127 Hz
+   gegen 3500/4200 Hz).
 
 3. **Kolben- statt Modenkonvention im 1D-Pfad (Gegenproben 8, 29).**
    Der 1D-Pfad rechnet den Filmwiderstand für gleichförmigen
@@ -384,25 +384,32 @@ Schreiben.
    stimmen.
 
 4. **Modenweise Anregung bei streifendem Einfall (Gegenprobe 34).**
-   Gegen COMSOL oberhalb 5 kHz 14,1 dB mit uniformer Anregung, 7,3 dB
-   mit drei Moden (`gp34.restluecke_3_moden`). Die Reihe über 1…5 Moden
-   (9,0/7,9/7,3/6,7/6,4 dB) flacht ab; mehr Moden allein schließen die
-   Lücke nicht.
+   Gegen COMSOL oberhalb 5 kHz 13,5 dB mit uniformer Anregung, 6,6 dB
+   mit drei Moden (`gp34.restluecke_3_moden`; mit dem Gaußband 14,1 und
+   7,3 dB). Die Reihe über 1…5 Moden (8,3/7,2/6,6/6,1/5,7 dB) flacht ab;
+   mehr Moden allein schließen die Lücke nicht.
 
 5. **Richtwirkung gegen Grinnip (Gegenproben 41, 43).** Auf Achse trifft
    der BEM-Frontfaktor Grinnips Rechnung auf 1,0 dB RMS; gegen die
    Messung (9–15 kHz) sind es 4,0 dB, Grinnips eigene Rechnung 3,1 dB —
-   beide liegen darüber. Bei 90° bleiben mit einer Mode 3,8 dB RMS
-   (`gp41.rest_90grad_rms`), bei 14 kHz 4,8 dB (`gp41.rest_90grad_14k`);
+   beide liegen darüber. Bei 90° bleiben mit einer Mode 3,9 dB RMS
+   (`gp41.rest_90grad_rms`), bei 14 kHz 4,9 dB (`gp41.rest_90grad_14k`);
    modenweise 2,4 dB (90°) und 1,7 dB (180°) gegen Grinnips Rechnung,
    3,2 dB gegen die Messung bei 90°.
 
-6. **Debenham bei 1–2 kHz (Beispielprojekt).** Die Niere bleibt dort
-   ~10 dB flacher als im Artikel (−12/−8 dB bei 180°). Der 3D-Löser
-   ordnet es ein: mit nur dem Rand-Freistich der Zeichnung bleibt sie
-   flach, mit Freistich über allen Lochkreisen wird sie tief. Vermutet
-   sind angefaste Mündungen, die die Zeichnung nicht bemaßt (s.
-   Geometriefragen).
+6. **Debenham (Beispielprojekt).** Die gemessene Null (−13,6 dB bei
+   317 Hz, −12/−8 dB bei 1–2 kHz) treffen mit der Zeichnungsgeometrie
+   weder 3D noch — seit Gegenprobe 60 — 2D: mit nur dem Rand-Freistich
+   bleibt die Niere flach (317 Hz: 2D −3,1, 3D −3,7 dB), mit Freistich
+   über allen Lochkreisen wird sie tief. Den früheren 2D-Treffer gab ein
+   Schalter, der allen Durchgangslöchern die entlastete Engstelle gab,
+   sobald eines im Freistich lag. Vermutet sind angefaste Mündungen,
+   die die Zeichnung nicht bemaßt (s. Geometriefragen).
+7. **Freistich bei gleichverteilten Löchern.** Derselbe Schalter
+   entlastet bei GLEICHVERTEILTEN Löchern weiter alle Mündungen, sobald
+   der Freistich irgendeine Zelle berührt (Lochkreise rechnet das
+   Makroelement seit Gegenprobe 60 örtlich). Kein Beispielprojekt ist
+   betroffen; richtig wäre der Anteil der Löcher im Freistich.
 
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
@@ -419,6 +426,14 @@ Schreiben.
   Warnbereich. Bei der K67 liegen 2D und 3D auf Achse bis 3,2 dB
   (8 kHz) auseinander, mit einem Tieftonversatz von 1,4 dB, den f_hom
   nicht erklärt (`gp22e.empf_3d_zu_2d`, Zwischenspalt-Geometrie).
+- **Lochkreise im 2D-Feld (Makroelement, Gegenprobe 60):** statisch
+  exakt; dynamisch gilt die Speicherung je Zelle über das Zellmittel des
+  Drucks. Freistich-Zellen im Band gehen mit dem statischen
+  Leitwertverhältnis ein (Debenham: höchstens 0,2 dB bei 10–20 kHz), die
+  Durchbiegung der polarisierten Membran über den mittleren Leitwert des
+  Bandes. Kreise mit teilerfremden Lochzahlen und nicht abgeklungenen
+  Harmonischen werden getrennt, wenn das gemeinsame Sektorgitter zu
+  groß würde (Debenham).
 - **Höhere Membranmoden (`membrane_modes`):** die elektrostatische
   Feder-Erweichung wird nicht auf sie übertragen, und ihre
   Filmdämpfung wird gleich der Grundmode gesetzt (konservativ).
@@ -1242,7 +1257,8 @@ fielen auf, jeder physikalisch begründet behoben:
   senkt. Dass es damit die Messung trifft, heißt: die reale Kapsel
   dämpft stärker als der Reynolds-Film. Die Aktuatormessung als
   Erklärung ist eingegrenzt und scheidet aus (s. Gegenprobe 52); die
-  Ursache der stärkeren Dämpfung ist offen.
+  Ursache der stärkeren Dämpfung ist offen. *Nachtrag (Gegenprobe 60):*
+  mit dem Makroelement liegt auch 2D über der Messung, wie 3D.
 
 ### 3D-Gitter grob/fein (Gegenprobe 50)
 
@@ -1413,7 +1429,9 @@ steifer Membran, ist der Filmwiderstand von 3D und 2D **identisch**
 ist der Filmwiderstand der B&K 4134 im 3D nur das **0,59-Fache** des
 2D-Werts (Stand-Wert; vor dem Massenfaktor 8/j₀₁² 0,57). Das 2D-Feld löst die radiale Zuströmung zum Lochring selbst
 auf und addiert zusätzlich die volle Škvor-Zelle, die diese Konvergenz
-nochmals enthält.
+nochmals enthält. *Nachtrag (Gegenprobe 60):* der Faktor enthielt
+zusätzlich den verschieden angesetzten Folienverlust (sauber 0,65);
+mit dem Makroelement liegt 3D/2D bei 1,04.
 
 **Offen:** Die B&K-Messung (Zuckerwar 1978, Aktuatorverfahren) folgt dem
 2D-Modell. Da der 3D-Löser die Modellgleichungen nachweislich richtig
@@ -1506,6 +1524,18 @@ beim Aufbau einer Kapsel mit Lochkreisen höchstens 0,12 s.
 Darstellung im 2D-Feld, die die Formanpassung an das radiale Druckfeld
 mitnimmt. Das würde validierte Ergebnisse (B&K 4134, Debenham) ändern
 und ist deshalb nicht Teil dieser Änderung.
+
+**Nachtrag (Gegenprobe 60):** Mit dem Makroelement rechnet das 2D-Feld
+die Lochkreise exakt; die frühe Abweichung von 3D ist seitdem allein die
+Formanpassung der Membran. Neu vermessen an 80 Lochkreis-Fällen (beide
+Kapseln, 20/25/38/65 µm, ein und zwei Kreise): die Warnung kommt
+weiterhin in allen vor dem 1-dB-Einsatz. Im knappsten Fall (½"-Kapsel,
+65 µm, 48 Löcher) warnt sie ab 2,23 kHz, die Mehrabweichung erreicht
+1 dB erst zwischen 2,6 und 2,9 kHz. Ohne die Lochkreis-Prüfung blieben
+acht Fälle (½"-Kapsel, 65 µm) ungewarnt; sie bleibt also. Beim alten
+Stichprobenfall (25 µm) reicht inzwischen die lokale Grenze, die
+Gegenprobe prüft deshalb den 65-µm-Fall: Warnung 2225 Hz, lokale Grenze
+4630 Hz, dazwischen steigt die Mehrabweichung über 1 dB (1,36 dB).
 
 ### Statischer Versatz 2D/3D aufgeklärt (Gegenprobe 54)
 
@@ -1871,7 +1901,8 @@ mit abgeschirmter Belüftung):
 |---|---|---|---|---|---|---|
 | COMSOL-FEM | +0,79 | +1,04 | +0,52 | −0,25 | — | 0,32 dB |
 | **Capsim 3D** | +0,93 | +1,14 | +0,41 | −0,51 | **0,10 dB** | **0,31 dB** |
-| Capsim 2D | −0,78 | −1,96 | −3,47 | −4,48 | 1,80 dB | 1,51 dB |
+| Capsim 2D, Gaußband (bis Gegenprobe 59) | −0,78 | −1,96 | −3,47 | −4,48 | 1,80 dB | 1,51 dB |
+| **Capsim 2D, Makroelement (Gegenprobe 60)** | +1,12 | +1,54 | +0,94 | +0,03 | **0,26 dB** | **0,54 dB** |
 | B&K-Messungen (Mittel) | +0,74 | +0,57 | −0,26 | −1,20 | | |
 | Zuckerwar 1978 (Fig. 6) | +0,14 | −0,71¹ | −1,11² | −3,06 | | |
 
@@ -1880,15 +1911,17 @@ höchstens 0,02 dB auseinander). Bis 12,6 kHz liegt es im Streuband der
 drei Messkurven; darüber liegen FEM und 3D gleichermaßen etwas über der
 Messung. Der äquivalente akustische Widerstand Re(p/Q) ohne
 Strahlungslast (die FEM hat keine) liegt im 3D-Modell 13 % über der
-FEM, im 2D-Modell 61 % (bei 2–5 kHz FEM 1,43·10⁸, 3D 1,63·10⁸, 2D
-2,34·10⁸ Pa·s/m³).
+FEM, im 2D-Modell mit Gaußband 61 % darüber, mit dem Makroelement 6 %
+darunter (bei 2–5 kHz FEM 1,43·10⁸, 3D 1,63·10⁸, 2D 2,34·10⁸ bzw.
+1,37·10⁸ Pa·s/m³).
 
 **Folgerung:** Der 3D-Löser ist für den Lochkreis richtig, das 2D-Modell
 überschätzt dort den Filmwiderstand um rund 60 %. Zuckerwars Prüfling
 von 1978 war deutlich stärker gedämpft als heutige 4134; dass das
 2D-Modell ihn trifft, ist das Zusammentreffen beider Abweichungen. Die
 Aufgabe ist damit eine bessere Lochkreis-Darstellung im 2D-Feld, mit
-Gegenprobe 59 als Anker („Offene Punkte" 1).
+Gegenprobe 59 als Anker — erledigt mit dem Makroelement (Gegenprobe 60,
+nächster Abschnitt).
 
 **Referenzdaten lokal:** Die COMSOL-Daten stehen unter COMSOLs Lizenz
 und liegen nicht im Repo. Gegenprobe 59 liest sie aus `tests/extern/`
@@ -1903,6 +1936,116 @@ exportieren und als `tests/extern/comsol_4134_sens.txt`,
 `comsol_4134_unexposed.txt` bzw. `comsol_4134_resis.txt` ablegen. Ab
 1 kHz unterscheiden sich offene und abgeschirmte Belüftung um höchstens
 0,0013 dB (die Gegenprobe prüft das).
+
+### Lochkreise als Makroelement (Gegenprobe 60)
+
+Das 2D-Feld verschmierte jeden Lochkreis zu einem Gaußband der Breite
+0,1·a_bp und gab jeder Bohrung die Škvor-Zelle in Serie. Für kleine
+Löcher glichen sich die beiden Näherungen aus; für große Löcher (B&K
+4134: r = 0,14·a) überschätzte das den Filmwiderstand um 60–70 %
+(Gegenproben 52, 58, 59). Zwei Zwischenstufen wurden geprüft und
+verworfen:
+
+- **Liniensenke** mit dem Zusammenlaufwiderstand ln(R/(n·r))/(2πK) je
+  Loch (aus dem Potential ln|zⁿ − Rⁿ|): trifft kleine Löcher auf 0,6 %,
+  wird aber negativ, sobald n·r > R. Große, äquipotentiale Löcher
+  schließen das Feld zwischen innen und außen teilweise kurz
+  (Dipolanteil); die Liniensenke kennt das nicht (B&K: 2,5-fach daneben).
+- **Exakter Dreipol** (innen, außen, Loch) aus einer Sektorrechnung:
+  behebt den Kurzschluss, verliert aber die Quellen im Band, also die
+  Druckbögen zwischen den Löchern und die Lochfläche ohne Film (±3 %).
+
+**Das Makroelement** (`_lochband_makro`) nimmt alles mit. Je Lochkreis
+rechnet eine kleine statische Sektorlösung die vollständige Kopplung
+zwischen den FV-Zellen des Bandes, den Nachbarzellen innen und außen
+und einem Lochknoten je Lochgruppe. Gelöst wird in der log-Ebene
+ζ = ln z, in der die Reynolds-Gleichung konform invariant bleibt: der
+Kreisring wird zum Streifen, das Lochmuster periodisch mit 2π/g (g =
+ggT der Lochzahlen). Das Tensorgitter ist um die Löcher verdichtet, am
+Lochrand gilt die symmetrische Shortley–Weller-Form (Gibou et al. 2002,
+zweite Ordnung) mit den analytischen Schnittpunkten der Kreiskontur.
+Knoten sind die Zellmittel des Drucks über der FILMfläche jeder Zelle,
+gegen eine über dieselbe Fläche gleichverteilte Quelle; beides ist
+zueinander reziprok, die Leitwertmatrix symmetrisch mit Zeilensumme 0.
+Im Feld skaliert sie mit der Filmleitfähigkeit K(ω) (Reibung und
+Trägheit). Speicherung und Membranquelle der Zellen laufen über die
+Filmfläche, die Membran über den Mündungen pumpt in den Lochknoten und
+spürt dessen Druck. Durchgangslöcher führen von dort mit n/Z_Loch zum
+Rückport, Sacklöcher mit ihrem Stub gegen Masse. Zellen ganz in einem
+Mittelloch oder in einem geschlossenen Ringschlitz aus sich
+überlappenden Löchern hängen am Lochknoten. Das Ergebnis ist
+maßstabsfrei und wird zwischengespeichert; der Aufbau dauert für die
+B&K 4134 rund 60 ms, für die Debenham-Platte (acht Lochkreise) 200 ms.
+
+**Bänder.** Kreise, deren Lochspannen [R − r, R + r] sich berühren,
+teilen sich ein Band. Jedes Band reicht drei Abklinglängen R/g der
+Lochharmonischen über die Spanne hinaus (Störung am Rand e⁻³), höchstens
+bis zur logarithmischen Mitte zum Nachbarband. Klingen die Harmonischen
+bis dorthin nicht ab, teilen sich die Kreise ein Band, solange das
+Sektorgitter höchstens 30 000 Knoten hat. Getrennt verlöre die B&K 4146
+1,5 % Filmwiderstand; die Debenham-Platte mit teilerfremden Lochzahlen
+bleibt an zwei Stellen getrennt (dokumentierte Näherung).
+
+**Gegenproben:**
+
+| Prüfung | Gaußband + Škvor | Makroelement |
+|---|---|---|
+| statisch gegen unabhängige exakte Lösung (4 Lochkreise, B&K, Tab. I, r = 0,15·a, 24 kleine) | B&K 1,71-fach | höchstens 0,22 % |
+| Mittelloch gegen geschlossene Form | — | 0,1 % |
+| 3D/2D bei erzwungener Form, 26 Lochkreis-Fälle der Testbank (zwei Kapseln) | 0,956…1,019 | 0,999…1,000 |
+| dasselbe, B&K-Fälle ohne Folienverlust (s. u.) | 0,59…0,72 | 0,99…1,04 |
+| COMSOL-FEM B&K 4134, RMS 1–20 kHz | 1,80 dB | 0,26 dB |
+| Re Z gegen FEM | 1,61 | 0,94 |
+| Zuckerwar 4146 (Fig. 7), Amplitude | 1,09 dB | 0,63 dB |
+
+Die unabhängige Lösung (`_exakt60`) rechnet die GANZE Platte auf dem
+Halbsektor einer Lochteilung, mit anderer Diskretisierung als das
+Makroelement; ihre eigene Konvergenz liegt bei 0,1 %. Das Zweitor bleibt
+mit Bändern, Mittelloch, Ringschlitz und Freistich reziprok (det T = 1
+auf 10⁻⁹).
+
+**Was es verändert hat:**
+
+- **B&K 4134 (Zuckerwar 1978):** 2D liegt jetzt wie 3D über der Messung
+  (2,1 gegen 1,7 dB RMS, vorher 0,30 dB). Der alte Treffer war der
+  Ausgleich zweier Fehler (Gegenprobe 59). Die Messschranken gelten dort
+  nicht mehr dem 2D-Modell; geprüft wird, dass 2D und 3D gleich liegen.
+- **Debenham mit Rand-Freistich:** ein Schalter gab bisher ALLEN
+  Durchgangslöchern die entlastete Engstelle, sobald eines im Freistich
+  lag. Unter dem Rand-Freistich der Zeichnung liegen aber nur die sechs
+  äußeren. Mit dem Makroelement entlastet er nur diese: die Null bei
+  500 Hz bleibt flach (2D −3,2 dB, 3D −4,1 dB, vorher 2D −17,5 dB),
+  die Niere ist stark über-verzögert (Verhältnis 5,2; 3D 3,9; vorher
+  1,2), die interne Resonanz steigt von 2,3 auf 3,1 kHz. Erst ein
+  Freistich über allen Mündungen vertieft die Null (2D −22,3, 3D
+  −25,6 dB). Gegenprobe 15 prüft jetzt das.
+- **Lochkreis-Warnung (Gegenprobe 53):** neu vermessen an 80
+  Lochkreis-Fällen. Die Warnung kommt weiter in allen vor dem
+  1-dB-Einsatz; ohne die Lochkreis-Prüfung blieben 8 Fälle (½"-Kapsel,
+  65 µm) ungewarnt. Die Ursache ist jetzt allein die Formanpassung der
+  Membran. Die Stichprobe der Gegenprobe ist deshalb der 65-µm-Fall.
+
+**Grenzen:** Freistich-Zellen gehen mit dem statischen Verhältnis
+((h + t)/h)³ ins Band ein. Oberhalb einiger kHz fällt das wahre
+Verhältnis durch die Trägheit (Debenham: 7,97 statisch, 3,6 bei 10 kHz);
+das ändert die Debenham-Kurve bei 10–20 kHz um höchstens 0,2 dB. Die
+Durchbiegung der polarisierten Membran nimmt das Band über den mittleren
+Leitwert mit, nicht als Profil.
+
+**Vorsicht bei der Phasenmethode** (erzwungene Form, Gegenproben 52,
+53, 60): der Materialverlust der Folie ist im 2D ein fester Widerstand
+ω₀·M/Q (an der Resonanz definiert), im 3D wächst er mit ω. Mit
+f_res = 300 kHz bläht das den 2D-Wert bei 1 kHz 300-fach auf; bei
+Nickelfolie sind das bis 8 % des Filmwiderstands (B&K-Geometrie: 3D/2D
+scheinbar 0,94 statt 1,02, mit 40 µm Spalt 0,49 statt 1,03). Die
+Vergleiche schalten ihn deshalb ab. Sauber liegt 3D bei großen
+Mündungen 1–3 % über der exakten Lösung (B&K 1,02, r/a = 0,17: 1,03;
+`gp60.r3d_zu_exakt_bk`), die B&K-Fälle der Testbank bei 0,99–1,04
+(Gaußband 0,59–0,72), der FEM-Fall der Gegenprobe 32 bei 1,02 (0,91).
+Bei der 4146 sind es 1,09: dort sitzt ein Mittelloch auf der
+Polarachse des 3D-Gitters, und das überschätzt der 3D-Löser um 5–54 %
+(r/a = 0,06…0,28, gegen die geschlossene Form, die das 2D-Makroelement
+auf 0,05 % trifft) — offen („Offene Punkte" 1).
 
 ## Verlustmechanismen (vollständig erfasst)
 
@@ -1949,17 +2092,18 @@ Lochkreisen der Konstruktionszeichnung (0.860/0.688/0.516/0.344/0.172"),
 50 V — und der **Clearance-Ring** der Zeichnung: ein
 Stirnflächen-Freistich am Elektrodenrand (0,038 mm Abtrag über die
 äußeren 1,27 mm, GUI-Felder „Clearance-Ring", Klasse
-`clearance_ring_*`). Dieser Freistich entlastet die
-Mündungs-Engstellen der wenigen engen Durchgangslöcher im 38-µm-Spalt —
-sie waren der begrenzende Widerstand des Nieren-Phasenschiebers. Damit
-trifft das Modell Fig. 9 bei 100 Hz fast exakt (−1,2/−4,8/−10,2/−12,7
-@ 45/90/135/180° vs. −1/−3/−10/−12), hält die Null von 100 Hz bis
-2 kHz auf 180° (250 Hz: −19 dB; früher stand hier −30 dB) und trifft
-die gemessene HF-Bündelung (10 kHz: Null 144° vs. 142°); bei 1–2 kHz
-bleibt es ~10 dB flacher als der Artikel (−12/−8 dB bei 180°; die
-axialsymmetrische Homogenisierung der 12 diskreten Löcher erfasst dort
-nur einen Teil der Mündungs-Entlastung — offener Rest, s. „Offene
-Punkte"). Das Beispiel legt die Stufenbohrung ausdrücklich ab
+`clearance_ring_*`). Er liegt nur über dem äußeren Lochkreis: die
+sechs Durchgangslöcher dort werden entlastet, die sechs inneren bleiben
+im 38-µm-Spalt verengt und begrenzen den Nieren-Phasenschieber. Seit
+Gegenprobe 60 rechnet das 2D-Modell das örtlich und ist sich darin mit
+dem 3D-Löser einig: die Niere bleibt flach (180°: −2,8 / −3,1 / −3,3 /
+−3,9 dB bei 100 / 250 / 1000 / 2000 Hz, Laufzeitverhältnis 3,5), die
+gemessene HF-Bündelung trifft es weiter (10 kHz: Null 143° vs. 142°).
+Der Artikel zeigt eine tiefe Niere (Fig. 9, 100 Hz: −1/−3/−10/−12 dB
+@ 45/90/135/180°). Bis Gegenprobe 59 traf das 2D-Modell sie fast exakt
+(−1,2/−4,8/−10,2/−12,7) — aber nur, weil ein Schalter ALLEN
+Durchgangslöchern die entlastete Engstelle gab, sobald eines im
+Freistich lag (s. „Offene Punkte" 6). Das Beispiel legt die Stufenbohrung ausdrücklich ab
 (`th_stepped: false`): bis zur Korrektur des Projekt-Laders erbte es
 sie von der K67-Voreinstellung, 12 der 46 Sacklöcher wurden zu
 Senkungen, und das Minimum lag bei 250 Hz–1 kHz auf 145–153°. Der
@@ -1969,8 +2113,9 @@ bleibt die Niere flach (−4 dB @ 1 kHz — die inneren Lochmündungen
 bleiben verengt); deckt der Freistich dagegen alle Lochkreise ab (im
 GUI-Clearance-Ring einstellbar, physikalisch ≈ angesenkte/entgratete
 Mündungen), wird sie breitbandig tief (−13…−15 dB @ 250 Hz–2 kHz, Null
-exakt 180°). Die reale Kapsel dürfte solche Mündungs-Fasen haben (in
-Zeichnungen selten bemaßt).
+exakt 180°; 2D bei 500 Hz −22 dB). Die reale Kapsel dürfte solche
+Mündungs-Fasen haben (in Zeichnungen selten bemaßt); das Beispiel
+bleibt bei der Zeichnung, statt die Fasen an die Messung anzupassen.
 
 `examples/k103_bauform_demo.json` — Demonstration der **K103-Bauform**
 (Neumann TLM 103): Einzelmembran-Niere auf K87-Basis, deren Rückseite

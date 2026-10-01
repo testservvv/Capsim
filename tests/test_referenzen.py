@@ -78,6 +78,11 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
     #    3D-Löser gitterkonvergent und legt die Resonanz auf 495 Hz — 4 %
     #    über 2D, 10 % unter der FEM. Die diskreten Bohrungen erklären
     #    damit rund ein Viertel der Verstimmung; der Rest bleibt offen.
+    #    NACHTRAG (Gegenprobe 60): auch dieses Viertel war die Lochkreis-
+    #    Darstellung des 2D-Felds. Mit dem Makroelement liegt 2D bei
+    #    497 Hz, gleichauf mit 3D (495 Hz); die verbleibenden 10 % zur FEM
+    #    teilen beide Modelle — Reynolds-Film gegen Navier–Stokes ist der
+    #    nächstliegende Kandidat, offen.
     if _HAS_SCIPY:
         # COMSOL-Referenz, auf 100 Hz normiert (Fig. 4 der Arbeit)
         ref32 = ((100.0, 0.00), (200.0, 0.70), (300.0, 1.98), (500.0, 6.20),
@@ -186,9 +191,9 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
               f"(Güte getroffen); Dublett der vier Bohrungen: 2D "
               f"{len(m2_32)} Minimum, 3D {np.round(m3_32).astype(int)} Hz "
               f"gegen FEM 3500/4200; Lage {fpk32:.0f} gegen 550 Hz "
-              f"({100 * (det32 - 1):+.0f} %, 3D {fpk32_3:.0f} Hz — die "
-              f"diskreten Bohrungen erklären {100 * anteil32:.0f} % des "
-              f"Abstands, offener Restfehler)  OK")
+              f"({100 * (det32 - 1):+.0f} %, 3D {fpk32_3:.0f} Hz — Anteil der "
+              f"diskreten Bohrungen {100 * anteil32:.0f} %, den Rest teilen "
+              f"beide Modelle, offen)  OK")
 
 
 # Zuckerwar, JASA 64, 1278 (1978): B&K 4134 und 4146 — Tab. I (Geometrie),
@@ -240,6 +245,7 @@ _BK38 = {
 }
 
 
+@pytest.mark.feld3d
 def test_gp38_externe_referenz_b_k_4134(stand):
     """Gegenprobe 38: EXTERNE Referenz B&K 4134/4146."""
     # Zweite fremde Verankerung, und die erste gegen eine MESSUNG:
@@ -275,9 +281,10 @@ def test_gp38_externe_referenz_b_k_4134(stand):
     # spaltenweise verfolgt, Messsymbole per gleitendem Median entfernt);
     # die Restunsicherheit liegt bei etwa ±0.15 dB und ±2°. Die Schranken
     # unten sind entsprechend gesetzt und nicht enger. Der SPALTWIDERSTAND
-    # ist dagegen eine Sperrklinke: seine Abweichung ist nicht die
-    # Unsicherheit der Tabelle, sondern die bekannte Streuung der
-    # Škvor-Zellregel (s. u.) — sie darf nur kleiner werden.
+    # war bis Gegenprobe 59 eine Sperrklinke (Streuung der Škvor-Zell-
+    # regel, s. u.); seit dem Makroelement (Gegenprobe 60) rechnet das
+    # 2D-Modell den Film am Lochkreis exakt, und Tab. II ist Zuckerwars
+    # eigene Näherung — die Abweichung ist ein Stand-Wert.
     #
     # WAS SIE GEZEIGT HAT. Vor der Randumgehung (Gegenprobe 37) lag der
     # Spaltwiderstand um +39 % (4134) bzw. +106 % (4146) zu hoch und der
@@ -299,6 +306,15 @@ def test_gp38_externe_referenz_b_k_4134(stand):
     # gleicht sich hier aus. Die Probe bleibt als Referenz gegen die
     # Messung stehen; eine bessere Lochkreis-Darstellung wird sie
     # verschieben.
+    # NACHTRAG (Gegenprobe 60): so ist es gekommen. Mit dem Makroelement
+    # rechnet 2D den Film am Lochkreis exakt (Gegenprobe 60) und liegt am
+    # 4134 wie 3D über der Messung (2.1 gegen 1.7 dB RMS, vorher 0.30 dB,
+    # Tab. II-Widerstand −27 % statt +10 %); die Messschranken dort gelten
+    # deshalb nicht mehr dem 2D-Modell, sondern dem Befund: 2D und 3D
+    # liegen gleich, beide im Hochton über der Messung. Am 4146 trifft 2D
+    # die Messung jetzt BESSER (0.63 statt 1.09 dB RMS, Phase 4.8 statt
+    # 7.2°, Tab. II-Widerstand +9 % statt +35 %) — dort gibt es keinen
+    # Ausgleich zu verdecken.
     if _HAS_SCIPY:
         bk38 = _BK38
         res38 = {}
@@ -324,9 +340,8 @@ def test_gp38_externe_referenz_b_k_4134(stand):
             assert abs(eC38) < lim38[2], \
                 (f"{nm38}: Luftnachgiebigkeit gegen Tab. II "
                  f"({100 * eC38:+.1f} %)")
-            stand.sperrklinke(f"spaltwiderstand_{nm38}", abs(eR38), "",
-                              "|R/R(Tab. II) − 1|, Streuung der Zellregel",
-                              besser="kleiner", toleranz=0.01)
+            stand.wert(f"spaltwiderstand_{nm38}_makro", eR38, "",
+                       "R/R(Tab. II) − 1 (Tab. II: Zuckerwars Näherung)")
             # c) Frequenzgang gegen Fig. 6/7 (Amplitude UND Phase)
             fa38 = np.asarray(f38, dtype=float)
             Hn38 = (c38.transfer_function(fa38)
@@ -336,11 +351,37 @@ def test_gp38_externe_referenz_b_k_4134(stand):
                     - np.asarray(p38))
             rms_a38 = float(np.sqrt(np.mean(am38**2)))
             rms_p38 = float(np.sqrt(np.mean(ph38**2)))
-            assert rms_a38 < lim38[0], \
-                (f"{nm38}: Amplitude gegen Fig. 6/7 "
-                 f"({rms_a38:.2f} dB RMS)")
-            assert rms_p38 < lim38[1], \
-                (f"{nm38}: Phase gegen Fig. 6/7 ({rms_p38:.2f}° RMS)")
+            if nm38 == "4146":
+                assert rms_a38 < lim38[0], \
+                    (f"{nm38}: Amplitude gegen Fig. 7 "
+                     f"({rms_a38:.2f} dB RMS)")
+                assert rms_p38 < lim38[1], \
+                    (f"{nm38}: Phase gegen Fig. 7 ({rms_p38:.2f}° RMS)")
+                stand.sperrklinke("rms_2d_4146_db", rms_a38, "dB",
+                                  "2D gegen Fig. 7, Amplitude",
+                                  toleranz=0.05)
+            else:
+                # 4134: der Prüfling war stärker gedämpft als der exakte
+                # Film (Gegenproben 58, 59) — 2D muss dort liegen, wo 3D
+                # liegt: im Hochton über der Messung, im Mittel gleich
+                c3_38 = MicrophoneCapsule(**{**par38, "squeeze_model": "3d"})
+                H3_38 = (c3_38.transfer_function(fa38)
+                         / c3_38.transfer_function(np.array([250.0]))[0])
+                am3_38 = 20.0 * np.log10(np.abs(H3_38)) - np.asarray(a38)
+                hoch = fa38 >= 13e3
+                assert np.all(am38[hoch] > 0.0) and np.all(am3_38[hoch] > 0.0), \
+                    (f"4134: 2D und 3D müssen im Hochton über der Messung "
+                     f"liegen (2D {np.round(am38[hoch], 2)}, 3D "
+                     f"{np.round(am3_38[hoch], 2)} dB)")
+                # (Abstand 2D–3D unter der früheren Messschranke)
+                d23 = float(np.sqrt(np.mean((am38 - am3_38) ** 2)))
+                assert d23 < lim38[0], \
+                    (f"4134: 2D muss gegen die Messung wie 3D liegen "
+                     f"({d23:.2f} dB RMS Abstand)")
+                stand.wert("rms_2d_4134_db", rms_a38, "dB",
+                           "2D gegen Fig. 6, Amplitude (Prüfling gedämpfter)")
+                stand.wert("rms_2d_4134_grad", rms_p38, "°",
+                           "2D gegen Fig. 6, Phase")
             res38[nm38] = (rms_a38, rms_p38, eC38, eR38)
         print(f"Externe Messreferenz (Zuckerwar 1978, B&K 4134/4146): "
               f"M und C_M analytisch getroffen (<0.2 %); 4134 "
@@ -349,8 +390,8 @@ def test_gp38_externe_referenz_b_k_4134(stand):
               f"R {100 * res38['4134'][3]:+.1f} %; 4146 "
               f"{res38['4146'][0]:.2f} dB / {res38['4146'][1]:.2f}° RMS "
               f"gegen Fig. 7, C_A {100 * res38['4146'][2]:+.1f} %, "
-              f"R {100 * res38['4146'][3]:+.1f} % (Streuung der Škvor-"
-              f"Zellregel, dokumentiert)  OK")
+              f"R {100 * res38['4146'][3]:+.1f} % gegen Tab. II (Zuckerwars "
+              f"Näherung); 4134 liegt wie 3D über der Messung  OK")
 
 
 @pytest.mark.feld3d
@@ -405,6 +446,9 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
     # ist 4134-spezifisch. Gegenprobe 59 (COMSOL-FEM derselben
     # B&K-Geometrie) bestätigt das: 3D trifft die FEM auf 0.1 dB, und
     # Zuckerwars Prüfling war stärker gedämpft als heutige 4134.
+    # NACHTRAG (Gegenprobe 60): das 2D-Modell überschätzt den Film am
+    # Lochkreis nicht mehr (Makroelement) und liegt jetzt wie 3D über
+    # Zuckerwars 4134-Messung (Gegenprobe 38).
     if not _HAS_SCIPY:
         return
 
@@ -536,16 +580,20 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     # obere; heutige 4134, 200 V).
     # a) Das 3D-Modell trifft die FEM über 1–20 kHz auf 0.1 dB RMS — dem
     #    Reynolds-Film mit diskreten Löchern fehlt KEINE Physik. Das
-    #    2D-Modell liegt deutlich darunter (überdämpft): seine
-    #    Lochkreis-Darstellung überschätzt den Filmwiderstand.
+    #    2D-Modell lag mit dem Gaußband und der Škvor-Zelle 1.8 dB RMS
+    #    darunter (überdämpft): diese Lochkreis-Darstellung überschätzte
+    #    den Filmwiderstand um 60 %. Mit dem Makroelement (Gegenprobe 60)
+    #    trifft es die FEM auf 0.26 dB RMS und liegt im Hochton höchstens
+    #    0.5 dB darüber; das ist eine Sperrklinke.
     # b) Gegen die Messungen liegt 3D bis 12.6 kHz im Streuband; darüber
     #    liegen FEM und 3D gleichermaßen etwas über der Messung.
     # c) Äquivalenter akustischer Widerstand Re(p_in/Q_Membran), ohne
-    #    Strahlungslast (die FEM hat keine): 3D liegt nahe der FEM, 2D weit
-    #    darüber.
+    #    Strahlungslast (die FEM hat keine): 2D lag mit dem Gaußband 61 %
+    #    über der FEM, mit dem Makroelement 6 % darunter; 3D liegt 12 %
+    #    darüber (Stand-Werte).
     # Folgerung für Gegenprobe 38/58: Zuckerwars Prüfling von 1978 war
     # deutlich stärker gedämpft als heutige 4134 (20 kHz: −3.1 gegen
-    # −1.2 dB); dass das 2D-Modell ihn trifft, ist das Zusammentreffen
+    # −1.2 dB); dass das alte 2D-Modell ihn traf, war das Zusammentreffen
     # dieser Abweichung mit der Überschätzung am Lochkreis.
     # Die COMSOL-Daten stehen unter COMSOLs Lizenz und liegen nicht im
     # Repo: Export aus dem Anwendungsmodell (Empfindlichkeit mit offener
@@ -597,12 +645,15 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     assert rms["3d"] < rms["2d"], \
         (f"3D muss die FEM besser treffen als 2D ({rms['3d']:.2f} gegen "
          f"{rms['2d']:.2f} dB RMS)")
-    assert np.all(pegel["2d"][fs >= 10e3] < fem[sel][fs >= 10e3]), \
-        "2D muss gegen die FEM überdämpft sein (Überschätzung am Lochkreis)"
+    d2 = float(np.max(np.abs(pegel["2d"] - fem[sel])))
+    assert d2 < 0.6, \
+        (f"2D muss die FEM mit dem Makroelement über 1–20 kHz auf 0.6 dB "
+         f"treffen (größte Abweichung {d2:.2f} dB)")
     stand.sperrklinke("rms_3d_gegen_fem", rms["3d"], "dB",
                       "3D gegen COMSOL-FEM, 1–20 kHz", toleranz=0.05)
-    stand.wert("rms_2d_gegen_fem", rms["2d"], "dB",
-               "2D gegen COMSOL-FEM, 1–20 kHz")
+    stand.sperrklinke("rms_2d_gegen_fem_makro", rms["2d"], "dB",
+                      "2D (Makroelement) gegen COMSOL-FEM, 1–20 kHz",
+                      toleranz=0.05)
     # b) Messungen: 3D bis 12.6 kHz im Streuband der drei Kurven
     band = fs <= 12.6e3
     lo = np.minimum(unten, oben)[sel]
@@ -621,14 +672,16 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     # c) Widerstand
     q3 = float(np.mean(re_z["3d"] / res[sel, 1]))
     q2 = float(np.mean(re_z["2d"] / res[sel, 1]))
-    assert abs(np.log(q3)) < abs(np.log(q2)), \
-        f"3D-Widerstand muss näher an der FEM liegen ({q3:.2f} gegen {q2:.2f})"
+    assert abs(np.log(q2)) < np.log(1.1), \
+        (f"2D-Widerstand muss mit dem Makroelement auf 10 % an der FEM "
+         f"liegen (Re Z 2D/FEM {q2:.2f})")
     stand.wert("widerstand_3d_zu_fem", q3, "", "Re Z 3D / FEM, Mittel 1–20 kHz")
     stand.wert("widerstand_2d_zu_fem", q2, "", "Re Z 2D / FEM, Mittel 1–20 kHz")
     i20 = int(np.argmax(fs))
     print(f"COMSOL-Referenz B&K 4134 (Originalgeometrie, 200 V): 3D "
           f"{rms['3d']:.2f} dB RMS gegen die FEM, 2D {rms['2d']:.2f} dB "
-          f"(überdämpft); 20 kHz: FEM {fem[sel][i20]:+.2f}, 3D "
+          f"(Makroelement, höchstens {d2:.2f} dB); 20 kHz: FEM "
+          f"{fem[sel][i20]:+.2f}, 3D "
           f"{pegel['3d'][i20]:+.2f}, 2D {pegel['2d'][i20]:+.2f}, Messmittel "
           f"{mittel[sel][i20]:+.2f} dB; 3D bis 12.6 kHz im Streuband der "
           f"Messungen ({rms_m['3d']:.2f} dB RMS gegen das Mittel); Re Z "

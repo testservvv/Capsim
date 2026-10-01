@@ -1028,30 +1028,33 @@ TR = {
               "Gegenproben 48 und 53).",
     },
     "warn_ring_repr": {
-        "en": "**Hole-circle representation of the {model} model not "
-              "reliable above about {f:.2f} kHz.** The radial field smears "
-              "each hole circle into a band of finite width. A real circle "
-              "of many holes acts as a line sink, and the band width has no "
-              "unique physical value. Above the stated frequency the result "
-              "changes by more than {db:.1f} dB if the circle is drawn as a "
-              "line sink instead of the band. The 3D solver deviates there "
-              "by 1 dB and more, by up to 5 dB for circles with many holes "
-              "(self-test, check 53). The check is cautious: with two hole "
-              "circles it can warn well before a real deviation appears. "
-              "Use the 3D solver for this range.",
-        "de": "**Lochkreis-Darstellung des {model}-Modells oberhalb von "
-              "etwa {f:.2f} kHz nicht belastbar.** Das Radialfeld "
-              "verschmiert jeden Lochkreis zu einem Band endlicher Breite. "
-              "Ein realer Kreis aus vielen Löchern wirkt aber als "
-              "Liniensenke, und für die Bandbreite gibt es keinen "
-              "eindeutigen physikalischen Wert. Oberhalb der genannten "
-              "Frequenz ändert sich das Ergebnis um mehr als {db:.1f} dB, "
-              "wenn der Kreis als Liniensenke statt als Band gerechnet "
-              "wird. Der 3D-Löser weicht dort um 1 dB und mehr ab, bei "
-              "Kreisen mit vielen Löchern um bis zu 5 dB (Selbsttest, "
-              "Gegenprobe 53). Die Prüfung ist vorsichtig: bei zwei "
-              "Lochkreisen kann sie deutlich vor einer echten Abweichung "
-              "warnen. Für diesen Bereich den 3D-Löser verwenden.",
+        "en": "**Hole circles: the {model} model is not reliable above "
+              "about {f:.2f} kHz.** Around a hole circle the gap pressure "
+              "changes strongly with radius. The 2D model computes the film "
+              "there exactly (macro element), but the membrane vibrates in "
+              "one fixed shape and cannot follow this pressure field (the "
+              "1D model lumps the circles anyway). The check uses the band "
+              "representation as an indicator: above the stated frequency "
+              "it changes by more than {db:.1f} dB with the band width. The "
+              "3D solver deviates by 1 dB and more only above that; in 80 "
+              "test cases the warning always came first (self-test, checks "
+              "53 and 60). The check is cautious: with two hole circles it "
+              "can warn well before a real deviation appears. Use the 3D "
+              "solver for this range.",
+        "de": "**Lochkreise: das {model}-Modell ist oberhalb von etwa "
+              "{f:.2f} kHz nicht belastbar.** Um einen Lochkreis ändert "
+              "sich der Spaltdruck radial stark. Das 2D-Modell rechnet den "
+              "Film dort exakt (Makroelement), aber die Membran schwingt in "
+              "einer festen Form und folgt diesem Druckfeld nicht (das "
+              "1D-Modell fasst die Lochkreise ohnehin pauschal). Angezeigt "
+              "wird das über die Banddarstellung: oberhalb der genannten "
+              "Frequenz ändert sie sich um mehr als {db:.1f} dB mit der "
+              "Bandbreite. Der 3D-Löser weicht erst danach um 1 dB und mehr "
+              "ab; in 80 Prüffällen kam die Warnung immer zuerst "
+              "(Selbsttest, Gegenproben 53 und 60). Die Prüfung ist "
+              "vorsichtig: bei zwei Lochkreisen kann sie deutlich vor einer "
+              "echten Abweichung warnen. Für diesen Bereich den 3D-Löser "
+              "verwenden.",
     },
     "lbl_bem_dia": {
         "en": "BEM: body Ø [mm]",

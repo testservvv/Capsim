@@ -424,6 +424,16 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise(stand):
     #    48 Löchern auf einem Kreis (390 Hz) lag über dem Einsatz.
     # d) Vollständigkeit über alle 114 Fälle steht im README (knappster
     #    Fall 0,95 dB an der Warnfrequenz); hier die tragenden Stichproben.
+    # NACHTRAG (Gegenprobe 60): mit dem Makroelement weicht 2D bei Loch-
+    #    kreisen später ab; die Ursache ist die Formanpassung der Membran,
+    #    nicht mehr der Film. Neu vermessen (80 Lochkreis-Fälle, beide
+    #    Kapseln, 20/25/38/65 µm, ein und zwei Kreise): die Warnung kommt
+    #    weiterhin in ALLEN vor dem 1-dB-Einsatz, knappster Abstand Faktor
+    #    1,32; ohne die Lochkreis-Prüfung blieben 8 Fälle (½", 65 µm)
+    #    unentdeckt. Die Stichprobe c) ist deshalb jetzt der 65-µm-Fall —
+    #    beim alten Fall (25 µm) reicht die lokale Grenze inzwischen.
+    #    Die Darstellungsspanne Band/Liniensenke (Kern der Prüfung) misst
+    #    weiterhin das Gaußband, also mit _RING_MAKRO = False.
     if _HAS_SCIPY:
         pA53 = dict(
             architecture="single", membrane_resonance_hz=2100.0,
@@ -523,8 +533,9 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise(stand):
             (f"Tiefton: Grenze == rein viskose Form "
              f"({l12_53['f_hom']:.0f} vs. {f12v53:.0f} Hz)")
 
-        # c) Lochkreis: steife Kapsel, 48 Löcher auf einem Kreis (0.67·a)
-        qR53 = _pat53(pB53, 48, ring=0.67)
+        # c) Lochkreis: steife Kapsel, 65 µm, 48 Löcher auf einem Kreis
+        #    (0.67·a)
+        qR53 = _pat53(pB53, 48, ring=0.67, air_gap=65e-6)
         with warnings.catch_warnings(record=True) as recR53:
             warnings.simplefilter("always")
             cR53 = MicrophoneCapsule(squeeze_model="2d", **qR53)
@@ -533,34 +544,48 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise(stand):
             and limR53["f_limit"] < limR53["f_hom"], \
             (f"Lochkreis: Darstellungsgrenze {limR53['f_ring']:.0f} Hz vor "
              f"der lokalen Grenze {limR53['f_hom']:.0f} Hz")
-        stand.wert("f_grenze_lochkreis", limR53["f_limit"], "Hz",
-                   "Darstellungsgrenze, 48 Löcher auf 0.67·a")
-        stand.wert("f_hom_lochkreis", limR53["f_hom"], "Hz",
-                   "lokale Grenze, 48 Löcher auf 0.67·a")
+        stand.wert("f_grenze_lochkreis_65um", limR53["f_limit"], "Hz",
+                   "Darstellungsgrenze, 48 Löcher auf 0.67·a, 65 µm")
+        stand.wert("f_hom_lochkreis_65um", limR53["f_hom"], "Hz",
+                   "lokale Grenze, 48 Löcher auf 0.67·a, 65 µm")
         assert any("Lochkreis-Darstellung" in str(r.message)
                    for r in recR53), "der Lochkreis-Fall muss warnen"
         assert "Lochkreis-Darstellung" in cR53.summary(), \
             "summary() muss die Ursache nennen"
-        fR53 = np.array([limR53["f_limit"], limR53["f_hom"]])
+        # Mehrabweichung zwischen Lochkreis-Grenze und lokaler Grenze: an
+        # der Warnfrequenz unter 1 dB, VOR der lokalen Grenze darüber —
+        # ohne die Lochkreis-Prüfung käme die Warnung zu spät (die
+        # Mehrabweichung ist nahe der Resonanz nicht monoton, deshalb das
+        # Raster statt zweier Punkte)
+        fR53 = np.geomspace(limR53["f_limit"], limR53["f_hom"], 16)
         dR48, _ = _dev53(qR53, fR53)
-        dR96, _ = _dev53(_pat53(pB53, 96), fR53)
+        dR96, _ = _dev53(_pat53(pB53, 96, air_gap=65e-6), fR53)
         eR53 = np.abs(dR48) - np.abs(dR96)
-        assert eR53[0] < 1.0 < eR53[1], \
-            (f"Lochkreis: Mehrabweichung an der neuen Grenze unter, an "
-             f"der alten lokalen Grenze über 1 dB ({np.round(eR53, 2)})")
+        assert eR53[0] < 1.0 < np.max(eR53), \
+            (f"Lochkreis: Mehrabweichung an der Warnfrequenz unter, vor der "
+             f"lokalen Grenze über 1 dB ({eR53[0]:.2f}, höchstens "
+             f"{np.max(eR53):.2f} dB)")
+        eR53 = np.array([eR53[0], np.max(eR53)])
         # ... die Darstellung ist die Ursache, nicht der Filmwiderstand:
         #     bei erzwungener Form (steife Membran, Phasenmethode wie
-        #     Gegenprobe 52) stimmt er auf 3 %
+        #     Gegenprobe 52) stimmt er auf 3 % (mit dem Makroelement auf
+        #     0.1 %, Gegenprobe 60)
         def _rr53(q):
+            # ohne Folienverlust (s. Gegenprobe 60)
             q = dict(q, membrane_resonance_hz=300e3)
             q.pop("membrane_tension", None)
             ph = {}
-            for sm in ("2d", "3d"):
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    cc = MicrophoneCapsule(squeeze_model=sm, **q)
-                ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
-                                  / cc.transfer_function([20.0])[0])
+            Q0 = MicrophoneCapsule._Q_MEMBRANE_INTERNAL
+            MicrophoneCapsule._Q_MEMBRANE_INTERNAL = 1e12
+            try:
+                for sm in ("2d", "3d"):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        cc = MicrophoneCapsule(squeeze_model=sm, **q)
+                    ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
+                                      / cc.transfer_function([20.0])[0])
+            finally:
+                MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q0
             return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
         rrR53 = _rr53(qR53)
         assert abs(rrR53 - 1.0) < 0.03, \
@@ -575,6 +600,7 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise(stand):
         ffL53 = np.logspace(np.log10(20.0), np.log10(20e3), 64)
         pfL, prL = cL53._source_pressures(2 * np.pi * ffL53, np.array([0.0]))
         qL53 = []
+        cL53._RING_MAKRO = False              # die Spanne gilt dem Gaußband
         keepL = cL53._fld_dens_th
         for dens in (keepL, cL53._fld_dens_th_line):
             cL53._fld_dens_th = dens

@@ -806,3 +806,298 @@ def test_gp37_randumgehung_geschlossene_form():
         print(f"Randumgehung: Filmimpedanz == (12μ/πh³)·(u²/2 − u³/3 + "
               f"u⁴/16) über a_bp/a_mem = 0.70…1.00 ({worst37:.0e}); "
               f"Grenzfall u = 1 == 11μ/(4πh³) ({rel37e:+.0e})  OK")
+
+
+def _exakt60(n, R, r, rand, n_fein=60):
+    """Unabhängige Referenz zu Gegenprobe 60: statischer Reynolds-Film
+    (K = 1) auf der Kreisplatte a = 1 mit n äquipotentialen Löchern
+    (p = 0) vom Radius r auf dem Kreis R, Quelle s = 1 − ρ² nur über dem
+    Film (über den Löchern direkt ins Loch), Rand dicht oder belüftet
+    (p = 0). Gelöst über die GANZE Platte in der log-Ebene ζ = ln z auf
+    dem Halbsektor [0, π/n] (Spiegelsymmetrie), um das Loch verdichtetes
+    Tensorgitter, Shortley–Weller am Lochrand — andere Diskretisierung
+    und anderer Schnitt als das Makroelement. R = ∫p·s dA/(∫s dA)²."""
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.linalg import spsolve
+
+    def gitter(a, b, lo, hi, h, h_max):
+        pts, x = [a], a
+        while x - h > lo + 0.5 * h:
+            h = min(1.12 * h, h_max)
+            x -= h
+            pts.append(x)
+        pts, x, h0 = pts[::-1], a, (b - a) / max(int(np.ceil((b - a) / h)), 1)
+        pts += list(np.linspace(a, b, max(int(round((b - a) / h0)), 1) + 1)[1:])
+        x, h = b, h0
+        while x + h < hi - 0.5 * h:
+            h = min(1.12 * h, h_max)
+            x += h
+            pts.append(x)
+        return np.unique(np.array([lo] + pts + [hi]))
+
+    t_lo, t_hi = np.log(R - r), np.log(min(R + r, 1.0))
+    y_hw = min(np.arcsin(r / R), np.pi / n)
+    h = min(t_hi - t_lo, 2 * y_hw) / n_fein
+    X = gitter(t_lo, t_hi, np.log(1e-4), 0.0, h, 2.0 / n_fein)
+    Yg = gitter(0.0, y_hw, 0.0, np.pi / n, h, 2.0 / n_fein)
+    Nx, Ny = X.size, Yg.size
+    rho = np.exp(X)[:, None] * np.ones((1, Ny))
+    loch = ((rho * np.cos(Yg) - R) ** 2 + (rho * np.sin(Yg)) ** 2) < r * r
+    unb = ~loch
+    if rand == "belüftet":
+        unb[-1, :] = False
+    idx = -np.ones((Nx, Ny), int)
+    idx[unb] = np.arange(unb.sum())
+    f = (1.0 - rho**2) * rho**2                    # Quelle in ζ (dA = ρ² dζ)
+    rows, cols, vals, b = [], [], [], np.zeros(unb.sum())
+
+    def schnitt(i, j, ii, jj):
+        if ii != i:                                # Linie y = Yg[j]
+            s2 = r * r - (R * np.sin(Yg[j])) ** 2
+            q = [np.log(v) for v in (R * np.cos(Yg[j]) - np.sqrt(max(s2, 0)),
+                                     R * np.cos(Yg[j]) + np.sqrt(max(s2, 0)))
+                 if v > 0 and s2 >= 0]
+            q = [abs(v - X[i]) for v in q if min(X[i], X[ii]) <= v <= max(X[i], X[ii])]
+        else:                                      # Kreis ρ = e^X[i]
+            c = (rho[i, 0] ** 2 + R * R - r * r) / (2 * rho[i, 0] * R)
+            q = ([abs(np.arccos(c) - Yg[j])] if abs(c) <= 1
+                 and min(Yg[j], Yg[jj]) <= np.arccos(c) <= max(Yg[j], Yg[jj])
+                 else [])
+        return min(q) if q else None
+
+    for i in range(Nx):
+        for j in range(Ny):
+            if not unb[i, j]:
+                continue
+            k = idx[i, j]
+            b[k] = f[i, j]
+            dg = 0.0
+            for achse in ("x", "y"):
+                if achse == "x":
+                    nb = [(i - 1 if i > 0 else 1, j), (i + 1 if i < Nx - 1 else Nx - 2, j)]
+                    hh = [abs(X[a] - X[i]) for a, _ in nb]
+                else:
+                    nb = [(i, j - 1 if j > 0 else 1), (i, j + 1 if j < Ny - 1 else Ny - 2)]
+                    hh = [abs(Yg[c] - Yg[j]) for _, c in nb]
+                for m, (a, c) in enumerate(nb):
+                    if loch[a, c]:
+                        s_ = schnitt(i, j, a, c)
+                        if s_ is not None:
+                            hh[m] = max(s_, 1e-4 * hh[m])
+                for (a, c), hm in zip(nb, hh):
+                    w = 2.0 / (hm * (hh[0] + hh[1]))
+                    dg += w
+                    if unb[a, c]:
+                        rows.append(k)
+                        cols.append(idx[a, c])
+                        vals.append(-w)
+            rows.append(k)
+            cols.append(k)
+            vals.append(dg)
+    p = spsolve(csr_matrix((vals, (rows, cols)), shape=(b.size, b.size)).tocsc(), b)
+    wx = np.zeros(Nx)
+    wx[:-1] += 0.5 * np.diff(X)
+    wx[1:] += 0.5 * np.diff(X)
+    wy = np.zeros(Ny)
+    wy[:-1] += 0.5 * np.diff(Yg)
+    wy[1:] += 0.5 * np.diff(Yg)
+    W = np.outer(wx, wy)
+    P = np.zeros((Nx, Ny))
+    P[unb] = p
+    Q = float(np.sum((1.0 - rho**2) * rho**2 * W))   # inkl. Lochflächen
+    return float(np.sum(P * f * W)) / (2 * n * Q**2)
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+def test_gp60_lochkreis_als_makroelement(stand):
+    """Gegenprobe 60: Lochkreise im 2D-Feld als exakte Makroelemente."""
+    # Das 2D-Feld verschmierte jeden Lochkreis zu einem Gaußband und gab
+    # jeder Bohrung die Škvor-Zelle in Serie. Für große Löcher (B&K 4134:
+    # r = 0.14·a) überschätzte das den Filmwiderstand um bis zu 60 %
+    # (Gegenproben 52, 58, 59). Zwei Zwischenstufen sind verworfen:
+    # die Liniensenke mit dem Zusammenlaufwiderstand ln(R/(n·r))/(2πK)
+    # trifft kleine Löcher auf 0.6 %, wird aber negativ, sobald n·r > R,
+    # weil große, äquipotentiale Löcher das Feld zwischen innen und außen
+    # kurzschließen (Dipolanteil); ein exakter Dreipol (innen, außen, Loch)
+    # behebt das, verliert aber die Quellen im Band (Druckbögen zwischen
+    # den Löchern, Lochfläche ohne Film) — ±3 %.
+    # MAKROELEMENT (s. _lochband_makro): je Lochkreis rechnet eine kleine
+    # statische Sektorlösung in der log-Ebene (Laplace bleibt konform
+    # invariant) die vollständige Kopplung zwischen den FV-Zellen des
+    # Bandes, den Nachbarzellen innen und außen und dem Lochknoten; Mittel
+    # über die FILMfläche der Zelle gegen eine darüber gleichverteilte
+    # Quelle, beides reziprok. Im Feld skaliert es mit K(ω); Speicherung
+    # und Membranquelle der Zellen laufen über die Filmfläche, die Membran
+    # über den Mündungen pumpt in den Lochknoten.
+    # a) STATISCH EXAKT: der Filmwiderstand des 2D-Zweitors (ω → 0, dünne
+    #    Platte, a_bp = a_mem, Rand dicht) gegen eine unabhängige Lösung
+    #    derselben Reynolds-Gleichung über die ganze Platte (_exakt60) —
+    #    auf 0.5 %; das Gaußband lag bis 70 % daneben.
+    # b) MITTELLOCH gegen die geschlossene Form auf 0.1 %.
+    # c) Reziprok (det T = 1) auch mit Bändern, Mittelloch, Ringschlitz
+    #    aus überlappenden Löchern und Freistich.
+    # d) Gegen 3D bei erzwungener Form (Phasenmethode wie Gegenprobe 52):
+    #    Lochkreise mit kleinen Löchern auf 1 % (vorher bis 4 %), große
+    #    Mündungen (B&K-Originalgeometrie) auf 3 %; dort liegt 3D 1–3 %
+    #    ÜBER der exakten Lösung (Stand-Werte).
+    #    VORSICHT bei dieser Methode: der Folienverlust ist im 2D ein
+    #    fester Widerstand ω0·M/Q, im 3D wächst er mit ω. Mit der
+    #    erzwungenen Form (f_res = 300 kHz) bläht das den 2D-Wert bei 1 kHz
+    #    300-fach auf; bei Nickelfolie sind das bis 8 % des Filmwiderstands
+    #    (3D/2D 0.94 statt 1.02, beim 40-µm-Spalt 0.49 statt 1.03). Der
+    #    Vergleich schaltet ihn deshalb ab (wie jetzt auch 52 und 53).
+    if not _HAS_SCIPY:
+        return
+    fa60 = np.array([2.0 * np.pi * 0.01])
+
+    def _z60(R, r, a, n=6, makro=True, **kw):
+        q = dict(membrane_material={"rho": 8900.0, "E": 221e9, "nu": 0.31},
+                 membrane_resonance_hz=300e3, membrane_diameter=2 * a,
+                 membrane_thickness=5e-6, air_gap=18.6e-6,
+                 backplate_diameter=2 * a, backplate_thickness=1e-6,
+                 bias_voltage=1.0, architecture="single", n_through_holes=n,
+                 through_hole_diameter=2 * r, through_hole_pcd=2 * R,
+                 n_blind_holes=0, rear_network_enabled=True, delay_length=0.0,
+                 cavity_length=5e-3, n_cavity_holes=0, fabric_front_rayl=0.0,
+                 fabric_rear_rayl=0.0, include_diffraction=False,
+                 squeeze_model="2d")
+        q.update(kw)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            c = MicrophoneCapsule(**q)
+        c._RING_MAKRO = makro
+        T = c._gap_field_2port(fa60)
+        K0 = c.h_gap ** 3 / (12.0 * MU_AIR)
+        return complex((T[0, 1] / T[1, 1])[0]).real * K0, c
+
+    # a) Lochkreise gegen die unabhängige Lösung
+    faelle60 = (("B&K-Originalgeometrie", 6, 1.70e-3, 0.50e-3, 3.6e-3),
+                ("4134 Tab. I", 6, 2.032e-3, 0.508e-3, 3.607e-3),
+                ("große Löcher r = 0.15·a", 6, 1.80e-3, 0.54e-3, 3.6e-3),
+                ("24 kleine Löcher bei 0.33·a", 24, 1.188e-3, 0.149e-3,
+                 3.6e-3))
+    worst60, alt60 = 0.0, {}
+    for nm, n, R, r, a in faelle60:
+        ex = _exakt60(n, R / a, r / a, "dicht")
+        z_m, _ = _z60(R, r, a, n=n)
+        z_a, _ = _z60(R, r, a, n=n, makro=False)
+        worst60 = max(worst60, abs(z_m / ex - 1.0))
+        alt60[nm] = z_a / ex
+        assert abs(z_m / ex - 1.0) < 5e-3, \
+            (f"{nm}: Makroelement muss die exakte Lösung treffen "
+             f"({z_m / ex:.4f})")
+    stand.wert("makro_gegen_exakt_max", worst60, "",
+               "größte Abweichung 2D (Makro) gegen exakt, statisch")
+    stand.wert("gaussband_gegen_exakt_bk", alt60["B&K-Originalgeometrie"],
+               "", "Gaußband + Škvor / exakt, B&K-Originalgeometrie")
+
+    # b) Mittelloch: −∇²p = 1 − ρ², p(r) = 0, p'(1) = 0
+    for r_m in (0.2e-3, 0.5e-3, 1.0e-3):
+        a = 3.6e-3
+        z_m, c_m = _z60(0.0, r_m, a, n=1)
+        u = r_m / a
+        rr = np.linspace(u, 1.0, 200001)
+        pp = (np.log(rr / u) / 4.0 - (rr**2 - u**2) / 4.0
+              + (rr**4 - u**4) / 16.0)
+        E = _trapz(pp * (1.0 - rr**2) * 2.0 * np.pi * rr, rr)
+        ex_m = E / (np.pi / 2.0) ** 2
+        assert abs(z_m / ex_m - 1.0) < 1e-3, \
+            (f"Mittelloch r/a = {u:.3f}: Makroelement gegen die geschlossene "
+             f"Form ({z_m / ex_m:.5f})")
+
+    # c) Reziprozität mit Bändern
+    om60 = 2.0 * np.pi * np.geomspace(20.0, 20e3, 40)
+    for q60 in (dict(through_hole_rings=[(12, 2 * 4.763e-3),
+                                         (6, 2 * 2.375e-3), (1, 0.0)],
+                     backplate_diameter=2 * 6.617e-3,
+                     membrane_diameter=2 * 8.89e-3,
+                     through_hole_diameter=2 * 4.763e-4,
+                     ring_vent_width=1.473e-3, ring_vent_length=3.556e-4),
+                dict(DEB_KWARGS, **DEB_CLEARANCE),
+                dict(n_through_holes=48,
+                     through_hole_rings=[(48, 2 * 0.33 * 5.5e-3)],
+                     through_hole_diameter=2 * 0.161e-3,
+                     backplate_diameter=11e-3, membrane_diameter=12e-3)):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            c60 = MicrophoneCapsule(**{**dict(
+                architecture="single", membrane_resonance_hz=8000.0,
+                air_gap=25e-6, bias_voltage=1.0), **q60,
+                "squeeze_model": "2d"})
+        assert c60._fld_bands, "Lochkreise müssen als Bänder laufen"
+        T60 = c60._gap_field_2port(om60)
+        det60 = T60[0, 0] * T60[1, 1] - T60[0, 1] * T60[1, 0]
+        assert np.max(np.abs(det60 - 1.0)) < 1e-9, \
+            f"Zweitor mit Makroelement muss reziprok sein ({det60}"
+
+    # d) gegen 3D bei erzwungener Form
+    def _rr60(q, Q=1e12):
+        q = dict(q, membrane_resonance_hz=300e3)
+        q.pop("membrane_tension", None)
+        ph = {}
+        Q0 = MicrophoneCapsule._Q_MEMBRANE_INTERNAL
+        MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q
+        try:
+            for sm in ("2d", "3d"):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    cc = MicrophoneCapsule(**{**q, "squeeze_model": sm})
+                ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
+                                  / cc.transfer_function([20.0])[0])
+        finally:
+            MicrophoneCapsule._Q_MEMBRANE_INTERNAL = Q0
+        return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
+
+    # ½"-Kapsel der Gegenprobe 53; 48 Löcher auf 0.33·a überlappen zum
+    # geschlossenen Ringschlitz (Zellen ohne Film am Lochknoten)
+    b1 = dict(architecture="single", membrane_diameter=12.0e-3,
+              membrane_thickness=5e-6, air_gap=25e-6,
+              backplate_diameter=11.0e-3, backplate_thickness=1.5e-3,
+              bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+              delay_length=0.0, cavity_length=4.0e-3,
+              cavity_wall_thickness=1.0e-3, n_cavity_holes=0,
+              fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+              body_diameter=14e-3)
+    A60 = 48 * np.pi * (0.35e-3 * 5.5 / 11.95) ** 2
+    for n, ring in ((6, 0.67), (48, 0.33)):
+        rr60 = _rr60(dict(b1, n_through_holes=n,
+                          through_hole_rings=[(n, ring * 11.0e-3)],
+                          through_hole_diameter=2 * np.sqrt(A60 / (n * np.pi))))
+        assert abs(rr60 - 1.0) < 0.01, \
+            (f"{n} Löcher auf {ring}·a: Filmwiderstand 3D/2D bei erzwungener "
+             f"Form ({rr60:.3f})")
+    a_bk = 3.6e-3
+    bk60 = dict(membrane_material={"rho": 8900.0, "E": 221e9, "nu": 0.31},
+                membrane_diameter=2 * a_bk, membrane_thickness=5e-6,
+                air_gap=18.6e-6, backplate_diameter=2 * a_bk,
+                backplate_thickness=1e-6, bias_voltage=1.0,
+                architecture="single", n_through_holes=6,
+                through_hole_pcd=3.4e-3, n_blind_holes=0,
+                rear_network_enabled=True, delay_length=0.0,
+                cavity_length=131e-9 / (np.pi * a_bk**2), n_cavity_holes=0,
+                fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+                include_diffraction=False)
+    r3d60 = {}
+    for r60 in (0.5e-3, 0.6e-3):
+        r3d60[r60] = _rr60(dict(bk60, through_hole_diameter=2 * r60))
+    assert abs(r3d60[0.5e-3] - 1.0) < 0.03, \
+        (f"B&K-Originalgeometrie: Filmwiderstand 3D/2D bei erzwungener "
+         f"Form ({r3d60[0.5e-3]:.3f})")
+    # ... und mit Folienverlust (Q = 100) verfälscht die Methode
+    r_q60 = _rr60(dict(bk60, through_hole_diameter=1.0e-3), Q=100.0)
+    assert r_q60 < r3d60[0.5e-3] - 0.05, \
+        (f"Folienverlust muss das Verhältnis bei Nickelfolie sichtbar "
+         f"senken ({r3d60[0.5e-3]:.3f} -> {r_q60:.3f})")
+    stand.wert("r3d_zu_exakt_bk", r3d60[0.5e-3], "",
+               "3D/2D(= exakt), B&K-Geometrie r/a 0.139, erzwungene Form")
+    stand.wert("r3d_zu_exakt_gross", r3d60[0.6e-3], "",
+               "3D/2D(= exakt), r/a 0.167")
+    stand.wert("r3d_zu_2d_mit_folienverlust", r_q60, "",
+               "dasselbe mit Q = 100 (Artefakt der Methode)")
+    print(f"Lochkreis als Makroelement: statisch gegen die unabhängige "
+          f"Lösung auf {100 * worst60:.2f} % (Gaußband B&K "
+          f"{alt60['B&K-Originalgeometrie']:.2f}-fach), Mittelloch auf "
+          f"0.1 %, reziprok; gegen 3D bei erzwungener Form auf 1 %, große "
+          f"Mündungen: 3D/exakt {r3d60[0.5e-3]:.3f} / {r3d60[0.6e-3]:.3f} "
+          f"(r/a 0.14/0.17; mit Folienverlust scheinbar {r_q60:.3f})  OK")
