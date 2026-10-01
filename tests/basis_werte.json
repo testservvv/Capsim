@@ -583,7 +583,7 @@
   "art": "stand"
  },
  "gp59.rms_2d_gegen_fem": {
-  "wert": 1.8040133640668796,
+  "wert": 1.8034204292602953,
   "einheit": "dB",
   "text": "2D gegen COMSOL-FEM, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -597,7 +597,7 @@
   "art": "stand"
  },
  "gp59.rms_3d_gegen_fem": {
-  "wert": 0.09880547656175825,
+  "wert": 0.09940965991374137,
   "einheit": "dB",
   "text": "3D gegen COMSOL-FEM, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -606,7 +606,7 @@
   "toleranz": 0.05
  },
  "gp59.rms_3d_gegen_messung": {
-  "wert": 0.30588141389933904,
+  "wert": 0.3058814138985738,
   "einheit": "dB",
   "text": "3D gegen B&K-Messmittel, 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -620,7 +620,7 @@
   "art": "stand"
  },
  "gp59.widerstand_3d_zu_fem": {
-  "wert": 1.1281672196437222,
+  "wert": 1.1281672196431438,
   "einheit": "",
   "text": "Re Z 3D / FEM, Mittel 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",

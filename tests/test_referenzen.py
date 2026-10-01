@@ -548,13 +548,16 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     # −1.2 dB); dass das 2D-Modell ihn trifft, ist das Zusammentreffen
     # dieser Abweichung mit der Überschätzung am Lochkreis.
     # Die COMSOL-Daten stehen unter COMSOLs Lizenz und liegen nicht im
-    # Repo: Export aus dem Anwendungsmodell (Empfindlichkeit, „Equivalent
-    # Acoustic Resistance") nach tests/extern/ (README).
+    # Repo: Export aus dem Anwendungsmodell (Empfindlichkeit mit offener
+    # Belüftung und den Messkurven, Empfindlichkeit mit abgeschirmter
+    # Belüftung, „Equivalent Acoustic Resistance") nach tests/extern/
+    # (README).
     if not _HAS_SCIPY:
         return
-    d_s = _EXTERN / "comsol_4134_sens.txt"
+    d_s = _EXTERN / "comsol_4134_sens.txt"         # Modell (vent exposed)
+    d_u = _EXTERN / "comsol_4134_unexposed.txt"    # + drei Messkurven
     d_r = _EXTERN / "comsol_4134_resis.txt"
-    if not (d_s.is_file() and d_r.is_file()):
+    if not (d_s.is_file() and d_u.is_file() and d_r.is_file()):
         pytest.skip("COMSOL-Referenzdaten fehlen (tests/extern/, s. README)")
 
     def _lies(p):
@@ -562,10 +565,18 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
                          if z.strip() and not z.startswith("%")], float)
     sens = _lies(d_s).reshape(4, -1, 2)
     f = sens[0, :, 0]
-    fem, mittel, unten, oben = sens[:, :, 1]
+    fem_offen, mittel, unten, oben = sens[:, :, 1]
+    unexp = _lies(d_u)
     res = _lies(d_r)
-    assert np.allclose(res[:, 0], f), "Frequenzraster beider Dateien"
+    assert np.allclose(res[:, 0], f) and np.allclose(unexp[:, 0], f), \
+        "Frequenzraster der Dateien"
+    # Referenz ist die FEM mit abgeschirmter Belüftung (vent unexposed):
+    # Capsim rechnet die Rückseite geschlossen. Die Belüftung wirkt nur im
+    # tiefsten Bass; ab 1 kHz müssen beide Fälle zusammenfallen.
+    fem = unexp[:, 1]
     sel = f >= 1000.0
+    assert np.max(np.abs(fem[sel] - fem_offen[sel])) < 0.01, \
+        "FEM: Belüftung offen/abgeschirmt muss ab 1 kHz gleich sein"
     fs = f[sel]
     om = 2.0 * np.pi * fs
     f_norm = np.array([f[np.argmin(np.abs(f - 250.0))]])  # wie COMSOL: 251 Hz

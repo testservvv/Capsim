@@ -1864,7 +1864,8 @@ gerechneten Ergebnis des COMSOL-Anwendungsmodells (volle thermoviskose
 FEM auf B&Ks Originalgeometrie, 200 V) und den drei B&K-Messkurven
 desselben Modells (heutige 4134) steht erstmals eine Referenz zur
 Verfügung, die Geometrie und Physik zugleich festlegt. Capsim rechnet
-dieselbe Konfiguration (Maße s. o., 200 V, Rückseite geschlossen):
+dieselbe Konfiguration (Maße s. o., 200 V, Rückseite geschlossen; FEM
+mit abgeschirmter Belüftung):
 
 | auf 251 Hz bezogen | 10 kHz | 14,1 kHz | 17,8 kHz | 20 kHz | RMS 1–20 kHz gegen FEM | gegen Messmittel |
 |---|---|---|---|---|---|---|
@@ -1894,10 +1895,14 @@ und liegen nicht im Repo. Gegenprobe 59 liest sie aus `tests/extern/`
 (von git ignoriert) und überspringt sich ohne sie. Erzeugen im
 COMSOL-Anwendungsmodell `bk_4134_microphone` (Acoustics Module,
 Electroacoustic Transducers): unter *Results* die Empfindlichkeit
-(Modell und die drei Messkurven) und „Equivalent Acoustic Resistance"
-über *Add Plot Data to Export* als Text exportieren und als
-`tests/extern/comsol_4134_sens.txt` bzw. `comsol_4134_resis.txt`
-ablegen.
+(Modell mit offener Belüftung und die drei Messkurven), die
+Empfindlichkeit mit abgeschirmter Belüftung („vent unexposed", die
+Referenz — Capsim rechnet die Rückseite geschlossen) und „Equivalent
+Acoustic Resistance" über *Add Plot Data to Export* als Text
+exportieren und als `tests/extern/comsol_4134_sens.txt`,
+`comsol_4134_unexposed.txt` bzw. `comsol_4134_resis.txt` ablegen. Ab
+1 kHz unterscheiden sich offene und abgeschirmte Belüftung um höchstens
+0,0013 dB (die Gegenprobe prüft das).
 
 ## Verlustmechanismen (vollständig erfasst)
 
