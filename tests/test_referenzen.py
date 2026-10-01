@@ -28,61 +28,43 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
     # Verankert wird DREIERLEI, mit unterschiedlichem Anspruch:
     # a) TIEFTON: bis 300 Hz < 1 dB — die quasistatische Nachgiebigkeit.
     # b) GÜTE: die Resonanzüberhöhung ist die eigentliche Dämpfungsprobe
-    #    und wird auf < 1 dB getroffen. Das ist die Kernaussage.
-    # c) RESONANZLAGE: bekannter Restfehler, als SPERRKLINKE (Abstand zur
-    #    FEM) festgeschrieben, damit er nur besser werden kann. Das Modell liegt
-    #    13 % zu tief, weil der Lochzweig zu viel akustische Masse trägt
-    #    (gemessen an der Antiresonanz Lochmasse/Spaltnachgiebigkeit:
-    #    3203 Hz gegen 3500 Hz in der FEM, also Faktor 1.19 in der Masse).
-    #    DIE URSACHE IST INZWISCHEN GEKLÄRT, und es ist KEIN
-    #    Massenüberschuss. Der Reihe nach ausgeschlossen:
-    #      * Zell-Engstelle: ihr Reaktivanteil ist exakt die kinetische
-    #        Energie der Schmierfilmströmung, und sowohl die wirbelfreie
-    #        Lösung (+5…16 %) als auch die Stokes-Zelle (+20…56 %)
-    #        liefern MEHR, nicht weniger (Gegenprobe 36). Auch die
-    #        Literatur zeigt dorthin: Reynolds UNTERschätzt die Dämpfung.
-    #      * Mündungsmasse: selbst ihre völlige Streichung hebt die Kerbe
-    #        nur um 5.9 % — nötig wären 9.2 %, und negativ kann sie nicht
-    #        sein. Struktur geprüft: 1D und 2D setzen sie EINMAL an,
-    #        portseitig mit Fok-Faktor; die Filmseite deckt der Zellterm.
-    #      * Membranmasse und Rückkammervolumen: Empfindlichkeit der
-    #        Kerbe exakt NULL. Sie ist die reine Loch-Spalt-Antiresonanz.
-    #      * Spaltnachgiebigkeit: n_p = 1.30 (zwischen isotherm und
-    #        adiabat) erklärt höchstens 4 %.
-    #    Einziger starker Hebel ist der Lochradius (d ln f/d ln r =
-    #    +0.61) — ein direkt tabellierter Wert.
+    #    und wird auf < 1 dB getroffen.
+    # c) RESONANZLAGE und Verlauf: als SPERRKLINKEN (Abstand zur FEM,
+    #    2D und 3D), damit sie nur besser werden können.
     #
-    #    DER VERGLEICH SELBST WAR SCHIEF. Die FEM zeigt in diesem Band
-    #    ein DUBLETT (Minima 3500 und 4200 Hz, Maximum dazwischen bei
-    #    3860 Hz); der 2D-Pfad kann nur EINE Kerbe haben, weil er die
-    #    vier Bohrungen homogenisiert. Verglichen wurde also eine
-    #    Einzelkerbe mit der ersten von zweien. Der 3D-Feldlöser, der die
-    #    Löcher diskret auflöst, reproduziert das Dublett (3227/4025 Hz,
-    #    s. Prüfung unten) und trifft die FEM insgesamt besser
-    #    (RMS 3.16 gegen 3.41 dB über 10 Hz…5 kHz).
-    #    Gegenprobe 31 hält bereits fest, dass die Homogenisierung bei
-    #    12 Bohrungen am Ende ist — bei VIER ist sie weit darüber hinaus.
-    #    Die Schranke unten misst deshalb wesentlich die
-    #    Homogenisierungsgrenze, nicht einen Modellfehler der Physik.
-    #    KORREKTUR (Gegenprobe 48): das gilt für das DUBLETT, nicht für
-    #    die RESONANZLAGE. Der korrigierte 3D-Löser (vollständige,
-    #    äquipotentiale Mündungen) setzt die Resonanz auf 482 Hz — fast
-    #    genau wie 2D (477 Hz), beide 13 % unter der FEM (550 Hz). Ein
-    #    Fehler, den das diskret rechnende Modell GENAUSO macht, kann
-    #    keine Homogenisierungsgrenze sein; die Ursache der Resonanzlage
-    #    ist damit wieder offen. Das Dublett trifft der 3D-Löser jetzt
-    #    näher (3421/4127 gegen FEM 3500/4200 Hz mit konturtreuen
-    #    Mündungen, Gegenprobe 51; davor 3378/4127, 3336/4042,
-    #    ursprünglich 3227/4025).
-    #    NACHTRAG (Gegenprobe 51): mit konturtreuen Mündungen ist der
-    #    3D-Löser gitterkonvergent und legt die Resonanz auf 495 Hz — 4 %
-    #    über 2D, 10 % unter der FEM. Die diskreten Bohrungen erklären
-    #    damit rund ein Viertel der Verstimmung; der Rest bleibt offen.
-    #    NACHTRAG (Gegenprobe 60): auch dieses Viertel war die Lochkreis-
-    #    Darstellung des 2D-Felds. Mit dem Makroelement liegt 2D bei
-    #    497 Hz, gleichauf mit 3D (495 Hz); die verbleibenden 10 % zur FEM
-    #    teilen beide Modelle — Reynolds-Film gegen Navier–Stokes ist der
-    #    nächstliegende Kandidat, offen.
+    # GESCHICHTE DER RESONANZLAGE. Lange lag das Modell rund 10 % zu TIEF
+    # (2D 497, 3D 495 Hz gegen 550 Hz), und der Reihe nach wurden
+    # Zellterm (Gegenprobe 36), Mündungsmasse, Membranmasse,
+    # Spaltnachgiebigkeit, Homogenisierung (Gegenproben 48/51) und
+    # Lochkreis-Darstellung (Gegenprobe 60) ausgeschlossen oder behoben.
+    # AUFGEKLÄRT (Gegenprobe 67) — zweiteilig:
+    #  * PRÜFAUFBAU: der Klassen-Standard delay_length = 3 mm hängte
+    #    unbemerkt ein Laufzeitglied an (3.05 cm³, +39 % Rückvolumen); die
+    #    FEM-Kapsel hat keins, alle anderen Referenzproben setzen 0 schon
+    #    ausdrücklich. Ohne es lag das Modell 6 % zu HOCH (2D 584, 3D
+    #    581 Hz) und war um 1.1…1.3 dB zu schwach bedämpft — der
+    #    Volumenfehler hatte beides verdeckt.
+    #  * PHYSIK: zwischen Reynolds-Film und Bohrungsrohr fehlte die
+    #    Umlenkung selbst (Mündung Spalt → Bohrung, s. _muendung_spalt).
+    #    Bei h/a = 0.46 trägt sie 13 % des Widerstands und 7 % der Masse
+    #    des Lochpfads. Hergeleitet aus der instationären Stokes-Zelle,
+    #    nicht an der FEM abgeglichen.
+    #    Mit beiden: 2D 561, 3D 558 Hz (+2.0/+1.4 %), Überhöhung
+    #    +7.32/+7.18 dB gegen +6.74 dB, RMS über die sechs FEM-Punkte
+    #    0.43/0.23 dB (vorher 0.95/0.72 dB).
+    # REST: der Film ist noch um ~0.5 dB zu schwach bedämpft (die FEM
+    # rechnet thermoviskos, Gegenprobe 58), und das Dublett der vier
+    # Bohrungen (FEM 3500/4200 Hz) liegt im 3D-Löser bei 3350/4110 Hz —
+    # die Mündungsmasse hat es um 2 % gesenkt (vorher 3421/4127 Hz). Im
+    # Kerbenband trägt der Lochzweig damit 4…9 % zu viel Masse oder zu
+    # wenig Nachgiebigkeit. An der Mündung liegt das nicht: ihre Masse
+    # ist im Trägheitsgrenzfall die der Potentialströmung (Gegenprobe
+    # 67). Offen.
+    #
+    # DUBLETT. Die FEM zeigt im Kerbenband ZWEI Minima; der homogeni-
+    # sierende 2D-Pfad kann nur eines haben, der 3D-Feldlöser, der die
+    # vier Bohrungen diskret auflöst, zeigt beide (Prüfung d).
+    #
     # MEMBRAN (Gegenprobe 62): die Arbeit beschreibt die Membran mit
     # Spannung und Resonanz nach der MEMBRANformel (116.27 N/m ->
     # j01/(2πa)·√(T/ρt) = 1040 Hz); mit Biegesteife (λ = 0.0125) läge die
@@ -104,7 +86,8 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
             architecture="single", n_through_holes=4,
             through_hole_diameter=1.0e-3, through_hole_pcd=2 * 8.4853e-3,
             n_blind_holes=0, rear_network_enabled=True,
-            cavity_length=7.6e-3, n_cavity_holes=0, fabric_front_rayl=0.0,
+            cavity_length=7.6e-3, delay_length=0.0, n_cavity_holes=0,
+            fabric_front_rayl=0.0,
             fabric_rear_rayl=0.0, include_diffraction=False,
             squeeze_model="2d")
         a32 = 20.0 * np.log10(np.abs(c32.transfer_function(f32)))
@@ -122,17 +105,16 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
         assert abs(peak32 - 6.74) < 1.0, \
             (f"Resonanzüberhöhung muss die FEM treffen — das ist die "
              f"Dämpfungsprobe ({peak32:+.2f} statt +6.74 dB)")
-        # c) Resonanzlage: dokumentierter Restfehler als Sperrklinke
+        # c) Resonanzlage und Verlauf gegen die FEM als Sperrklinken
         det32 = fpk32 / 550.0
         stand.sperrklinke("verstimmung_2d", abs(det32 - 1.0), "",
                           "|f_Res(2D)/550 Hz − 1| gegen die FEM",
                           besser="kleiner", toleranz=0.01)
-        # ... und die Homogenisierung erklärt davon nur einen kleinen Teil:
-        # der diskret rechnende 3D-Löser (konturtreue Mündungen, auf grobem
-        # und feinem Gitter 495 Hz; ohne Konturkorrektur wanderte er mit
-        # dem Gitter, 482…488 Hz) liegt 4 % über 2D, aber 10 % unter der
-        # FEM — rund ein Viertel des Abstands kommt von den diskreten
-        # Bohrungen, der Rest bleibt offen (Korrektur Gegenprobe 48/51)
+        rms32 = float(np.sqrt(np.mean((a32 - a32_ref)[1:] ** 2)))
+        stand.sperrklinke("rms_fem_2d", rms32, "dB",
+                          "RMS 2D gegen die sechs FEM-Punkte 200…2000 Hz",
+                          besser="kleiner", toleranz=0.05)
+        # ... und der diskret rechnende 3D-Löser (konturtreue Mündungen)
         c32_3d = MicrophoneCapsule(**{**dict(
             membrane_material={"rho": 1944.0, "E": 4.0e9, "nu": 0.35},
             membrane_resonance_hz=1040.0, membrane_diameter=36.0e-3,
@@ -142,7 +124,8 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
             architecture="single", n_through_holes=4,
             through_hole_diameter=1.0e-3, through_hole_pcd=2 * 8.4853e-3,
             n_blind_holes=0, rear_network_enabled=True,
-            cavity_length=7.6e-3, n_cavity_holes=0, fabric_front_rayl=0.0,
+            cavity_length=7.6e-3, delay_length=0.0, n_cavity_holes=0,
+            fabric_front_rayl=0.0,
             fabric_rear_rayl=0.0, include_diffraction=False),
             "squeeze_model": "3d"})
         fs32_3 = np.linspace(400.0, 600.0, 81)
@@ -160,7 +143,12 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
                           besser="kleiner", toleranz=0.01)
         stand.wert("f_res_3d_zu_2d", fpk32_3 / fpk32, "",
                    "Resonanzlage 3D/2D (Anteil der diskreten Bohrungen)")
-        anteil32 = (fpk32_3 - fpk32) / (550.0 - fpk32)
+        a32_3 = 20.0 * np.log10(np.abs(c32_3d.transfer_function(f32)))
+        rms32_3 = float(np.sqrt(np.mean(((a32_3 - a32_3[0])
+                                         - a32_ref)[1:] ** 2)))
+        stand.sperrklinke("rms_fem_3d", rms32_3, "dB",
+                          "RMS 3D gegen die sechs FEM-Punkte 200…2000 Hz",
+                          besser="kleiner", toleranz=0.05)
         # d) DUBLETT: die FEM hat im Kerbenband ZWEI Minima (3500 und
         #    4200 Hz). Das ist ein Effekt der vier DISKRETEN Bohrungen —
         #    der homogenisierende 2D-Pfad kann prinzipiell nur eines
@@ -177,6 +165,7 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
                 through_hole_diameter=1.0e-3,
                 through_hole_pcd=2 * 8.4853e-3, n_blind_holes=0,
                 rear_network_enabled=True, cavity_length=7.6e-3,
+                delay_length=0.0,
                 n_cavity_holes=0, fabric_front_rayl=0.0,
                 fabric_rear_rayl=0.0, include_diffraction=False),
                 "squeeze_model": sm})
@@ -197,9 +186,9 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
               f"(Güte getroffen); Dublett der vier Bohrungen: 2D "
               f"{len(m2_32)} Minimum, 3D {np.round(m3_32).astype(int)} Hz "
               f"gegen FEM 3500/4200; Lage {fpk32:.0f} gegen 550 Hz "
-              f"({100 * (det32 - 1):+.0f} %, 3D {fpk32_3:.0f} Hz — Anteil der "
-              f"diskreten Bohrungen {100 * anteil32:.0f} %, den Rest teilen "
-              f"beide Modelle, offen)  OK")
+              f"({100 * (det32 - 1):+.1f} %, 3D {fpk32_3:.0f} Hz, "
+              f"{100 * (fpk32_3 / 550.0 - 1):+.1f} %); RMS gegen die FEM "
+              f"2D {rms32:.2f} dB, 3D {rms32_3:.2f} dB  OK")
 
 
 # Zuckerwar, JASA 64, 1278 (1978): B&K 4134 und 4146 — Tab. I (Geometrie),

@@ -383,7 +383,9 @@ def test_gp34_modenabhangiger_quelldruck(stand):
     #    Zweigresonanz bleibt als Strukturaussage daneben stehen.
     # Prüfling und Referenz sind die der Gegenprobe 32, eine reine Membran
     # (Spannung und Resonanz nach der Membranformel) — ohne Randschicht
-    # der Folie (Gegenprobe 62).
+    # der Folie (Gegenprobe 62) und seit Gegenprobe 67 wie dort ohne
+    # Laufzeitglied (der Klassen-Standard delay_length = 3 mm hing bis
+    # dahin unbemerkt an, +39 % Rückvolumen).
     MicrophoneCapsule._RANDSCHICHT = False
     if _HAS_SCIPY:
         from scipy.special import j0 as _j0_34
@@ -397,7 +399,8 @@ def test_gp34_modenabhangiger_quelldruck(stand):
             architecture="single", n_through_holes=4,
             through_hole_diameter=1.0e-3, through_hole_pcd=2 * 8.4853e-3,
             n_blind_holes=0, rear_network_enabled=True,
-            cavity_length=7.6e-3, n_cavity_holes=0, fabric_front_rayl=0.0,
+            cavity_length=7.6e-3, delay_length=0.0, n_cavity_holes=0,
+            fabric_front_rayl=0.0,
             fabric_rear_rayl=0.0, include_diffraction=False,
             squeeze_model="2d")
         f34 = np.array([1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 7000.0,

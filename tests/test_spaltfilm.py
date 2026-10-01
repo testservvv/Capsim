@@ -491,7 +491,13 @@ def test_gp31_filmdampfung_genau_einmal():
         om31 = 2.0 * np.pi * np.array([20.0, 200.0])
         T31 = c31._backplate_gap_abcd(om31, outside_to_membrane=False,
                                       polarized=True)
-        z_rel = np.real(T31[0, 1] / T31[1, 1]) / c31.R_A_gap_front
+        # Film = Škvor plus die Spalt-Mündung an den Bohrungen (Gegenprobe
+        # 67; bei diesem dichten Raster, q = 0.21, rund 8 %)
+        dZ31 = c31._muendung_spalt(
+            om31, c31.r_th, c31.h_gap_front,
+            c31._q_zelle(c31.n_th + c31.n_bh, c31.r_th)) / c31.n_th
+        z_rel = (np.real(T31[0, 1] / T31[1, 1])
+                 / (c31.R_A_gap_front + dZ31.real))
         assert np.all(np.abs(z_rel - 1.0) < 5e-3), \
             (f"Zweitor MUSS den Škvor-Widerstand bereits enthalten "
              f"(Verhältnis {np.round(z_rel, 4)})")
@@ -522,7 +528,7 @@ def test_gp31_filmdampfung_genau_einmal():
         assert abs(dev31[12]) > 1.0, \
             ("bei 12 Bohrungen ist die Homogenisierung am Ende — die "
              "Abweichung gehört dokumentiert, nicht wegkalibriert")
-        print(f"Filmdämpfung einmal: Zweitor trägt Škvor exakt "
+        print(f"Filmdämpfung einmal: Zweitor trägt Škvor + Mündung exakt "
               f"({np.max(np.abs(z_rel - 1.0)):.1e}), Membranimpedanz nur "
               f"noch Materialdämpfung; Druckempfänger 2D vs. 3D bei 1 kHz "
               f"{dev31[48]:+.2f}/{dev31[96]:+.2f} dB bei 48/96 Bohrungen "
@@ -655,6 +661,14 @@ def test_gp36_reaktivanteil_der_zell_engstelle():
     # damit KEIN Massenüberschuss sein: eine Korrektur würde die
     # Antiresonanz weiter nach unten schieben. Das widerlegt den
     # ursprünglichen Verdacht aus Gegenprobe 32.
+    # NACHTRAG (Gegenprobe 67): die Korrektur steht inzwischen im Modell —
+    # nicht als Zellformel, sondern als Mündung zwischen Film und Bohrung
+    # aus der instationären Stokes-Zelle (der PDE-Löser liegt dafür doch in
+    # der Suite, tests/stokes_zelle.py, mit grobem Gitter in Sekunden), mit
+    # exaktem Grenzfall h → 0. Sie erhöht Widerstand UND Masse und senkt
+    # die Resonanz — richtig, seit klar ist, dass das Modell in Gegenprobe
+    # 32 wegen eines Volumenfehlers im Prüfaufbau zu TIEF lag und ohne ihn
+    # 6 % zu hoch.
     #
     # STOKES-ZELLE GEPRÜFT UND VERWORFEN. Homentcovschi/Murray/Miles,
     # Microfluid Nanofluid 9, 865–879 (2010), lösen dieselbe Zelle in
@@ -954,8 +968,12 @@ def test_gp60_lochkreis_als_makroelement(stand):
     #    hysteretische Verlust und fällt aus dem Phasenverhältnis heraus.
     # Die Probe gilt dem FILM; ihre Referenzen setzen die Quelle als
     # Parabel 1 − ρ² bis a_mem an. Sie läuft deshalb ohne die Randschicht
-    # der Folie (die die Form um 2·√(D/T)/a staucht, Gegenprobe 62).
+    # der Folie (die die Form um 2·√(D/T)/a staucht, Gegenprobe 62) und
+    # ohne die Spalt-Mündung (Gegenprobe 67): die exakte Lösung ist der
+    # reine Reynolds-Film, und 2D wie 3D setzen die Mündung gleich an die
+    # Lochknoten.
     MicrophoneCapsule._RANDSCHICHT = False
+    MicrophoneCapsule._MUENDUNG = False
     if not _HAS_SCIPY:
         return
     fa60 = np.array([2.0 * np.pi * 0.01])
@@ -1098,3 +1116,132 @@ def test_gp60_lochkreis_als_makroelement(stand):
           f"0.1 %, reziprok; gegen 3D bei erzwungener Form auf 1 %, große "
           f"Mündungen: 3D/exakt {r3d60[0.5e-3]:.3f} / {r3d60[0.6e-3]:.3f} "
           f"(r/a 0.14/0.17)  OK")
+
+
+@pytest.mark.slow
+def test_gp67_muendung_spaltfilm_bohrung():
+    """Gegenprobe 67: Mündung Spaltfilm → Bohrung (Dreitor)."""
+    # Reynolds-Film (bis an den Lochrand, dort Lochdruck) und Zwikker–
+    # Kosten-Rohr (voll entwickelt ab der Plattenoberfläche) sind je für
+    # sich exakt — die Umlenkung zwischen beiden trug bis hier keines. Bis
+    # Gegenprobe 66 galt, die Škvor-/Zell-Ausbreitung decke die filmseitige
+    # Mündung ab. Für dünne Spalte stimmt das; bei der FEM-Kapsel der
+    # Gegenprobe 32 (h/a = 0.46) fehlten dem Lochpfad 13 % Widerstand und
+    # 7 % Masse, und die Resonanz lag nach behobenem Volumenfehler 6 % zu
+    # hoch. Die Korrektur (s. _muendung_spalt) stammt aus der instationären
+    # Stokes-Gleichung in der Lochzelle (stokes_zelle.py) — kein Abgleich
+    # mit der FEM. Verankert wird hier die ganze Kette:
+    # a) der ebene Gegenlöser an einer EXAKTEN Lösung (Hasimoto-Schlitz),
+    # b) der Dünnspalt-Grenzwert der Tabelle an der ebenen Eckkonstante,
+    # c) die Dreitor-Form an Zellen, die nicht zu ihrer Bestimmung dienten
+    #    — sie gilt bis auf Rundung, weil die Schmierfilmlösung mit gleich-
+    #    förmigem Quetschen im Ring eine EXAKTE Stokes-Lösung ist (für
+    #    u_r ∝ R_c²/r − r verschwindet der radiale Zähigkeitsterm, u_z
+    #    hängt nicht von r ab): Abweichungen entstehen nur an der Ecke,
+    #    und deren Antwort hängt nur von den Strömen ab,
+    # d) die Gitterkonvergenz der Zelle,
+    # e) das Modell gegen Direktlösungen ZWISCHEN den Tabellenstützstellen,
+    # f) der Škvor-Grenzfall: relativ zum Film verschwindet die Korrektur
+    #    linear mit h/a (die Bedingung, an der Homentcovschi/Murray/Miles
+    #    scheiterten, Gegenprobe 36),
+    # g) der Trägheitsgrenzfall: für a/δ → ∞ laufen die Massenlängen gegen
+    #    die der POTENTIALSTRÖMUNG (dieselbe Zelle mit μ = 0, Wände ohne
+    #    Haftung) — die Mündungsmasse ist die kinetische Energie der
+    #    wirbelfreien Umlenkung, keine Fortschreibung der Zähigkeit.
+    if not _HAS_SCIPY:
+        return
+    from stokes_eben import ecke, hasimoto
+    from stokes_zelle import dreitor, loese_zelle
+    # a) ebener Löser gegen Hasimoto (1958): Δp·h²/(μq') = 32/π für die
+    #    dünne Wand; die Wanddicke wird linear auf null extrapoliert
+    has1, has2 = hasimoto(0.01), hasimoto(0.02)
+    has0 = 2.0 * has1 - has2
+    assert abs(has0 / (32.0 / np.pi) - 1.0) < 0.01, \
+        (f"ebener Löser muss Hasimotos Schlitz treffen ({has0:.4f} gegen "
+         f"32/π = {32.0 / np.pi:.4f})")
+    # b) Eckkonstante der ebenen Umlenkung gegen den Dünnspalt-Grenzwert
+    #    der Tabelle (lineare Extrapolation der beiden dünnsten Zeilen)
+    ecke67 = ecke()
+    C67 = MicrophoneCapsule
+    C67._muendung_spalt(np.array([1.0]), 1e-3, 1e-5)      # Tabelle laden
+    c_ff = C67._MUENDUNG_ARR[:2, 0, 0]                     # c_ff^R, a/δ = 0.3
+    ha = np.array(C67._MUENDUNG_H_A[:2])
+    lim67 = c_ff[0] - ha[0] * (c_ff[1] - c_ff[0]) / (ha[1] - ha[0])
+    assert abs(lim67 / ecke67 - 1.0) < 0.01, \
+        (f"Dünnspalt-Grenzwert der Zelle ({lim67:.4f}) muss die ebene "
+         f"Eckkonstante treffen ({ecke67:.4f})")
+    # c) Dreitor-Form: aus drei Zellen bestimmt, an zwei weiteren geprüft
+    a67, ha67, ad67 = 0.5e-3, 0.45, 8.0
+    z67, _, om67 = dreitor(ha67, ad67, fein=1.0, a=a67)
+    worst_c = 0.0
+    for Rca in (2.0, 20.0):
+        s = loese_zelle(a67, ha67 * a67, Rca * a67, 4.0 * a67, om67, fein=1.0)
+        q = 1.0 / Rca**2
+        pred = ((1 - q)**2 * z67[0] + 2 * q * (1 - q) * z67[1]
+                + q**2 * z67[2])
+        worst_c = max(worst_c, abs(pred / (s["Z"] - s["Z_ref"]) - 1.0))
+    assert worst_c < 2e-3, \
+        f"Dreitor-Form muss fremde Zellen vorhersagen ({worst_c:.1e})"
+    # d) Gitterkonvergenz der Zelle (q = 0.04)
+    dz_g = []
+    for fein in (1.0, 1.5):
+        s = loese_zelle(a67, ha67 * a67, 5.0 * a67, 4.0 * a67, om67,
+                        fein=fein)
+        dz_g.append(s["Z"] - s["Z_ref"])
+    gitter67 = abs(dz_g[0] / dz_g[1] - 1.0)
+    assert gitter67 < 3e-3, f"Zelle gitterabhängig ({gitter67:.1e})"
+    # e) Modell gegen Direktlösung zwischen den Stützstellen (h/a und a/δ
+    #    je in der logarithmischen Mitte bzw. im Übergang zäh → träge)
+    worst_e = 0.0
+    for ha_e, ad_e, q_e in ((0.25, 5.7, 0.04), (0.85, 3.0, 0.1),
+                            (0.03, 0.55, 0.01), (0.45, 5.7, 0.04)):
+        om_e = 2.0 * MU_AIR / (RHO0 * (a67 / ad_e)**2)
+        s = loese_zelle(a67, ha_e * a67, a67 / np.sqrt(q_e), 4.0 * a67, om_e,
+                        fein=1.0)
+        m = C67._muendung_spalt(np.array([om_e]), a67, ha_e * a67, q_e)[0]
+        worst_e = max(worst_e, abs(m / (s["Z"] - s["Z_ref"]) - 1.0))
+    assert worst_e < 0.02, \
+        f"Tabelle muss die Direktlösung treffen ({100 * worst_e:.2f} %)"
+    # f) Škvor-Grenzfall: ΔZ/Z_Film = c·h/(2a·B(q)) → 0 linear in h/a
+    q_f = 0.01
+    B_f = q_f / 2 - q_f**2 / 8 - np.log(q_f) / 4 - 3.0 / 8.0
+    om_f = np.array([2.0 * np.pi * 100.0])
+    rel = []
+    for h_f in (5e-6, 10e-6):
+        al = 0.5 * h_f * np.sqrt(1j * om_f * RHO0 / MU_AIR)
+        K = h_f / (1j * om_f * RHO0) * (1.0 - np.tanh(al) / al)
+        rel.append(abs(C67._muendung_spalt(om_f, a67, h_f, q_f)[0]
+                       / (B_f / (np.pi * K[0]))))
+    assert rel[1] < 0.01 and abs(rel[1] / rel[0] - 2.0) < 0.02, \
+        (f"Korrektur muss relativ zum Film linear in h/a verschwinden "
+         f"({rel[0]:.4f}, {rel[1]:.4f} bei h/a = 0.01/0.02)")
+    # g) Trägheitsgrenzfall gegen die Potentialströmung (μ = 0); die
+    #    Tabelle endet bei a/δ = 128, der Grenzschichtrest dort ~1 %
+    om_g = 2.0 * np.pi * 1000.0
+    q_g, dM_g = [], []
+    for Rca in (3.0, 5.0, 10.0):
+        s = loese_zelle(a67, ha67 * a67, Rca * a67, 4.0 * a67, om_g,
+                        fein=1.0, mu=0.0)
+        q_g.append(1.0 / Rca**2)
+        dM_g.append(((s["Z"] - s["Z_ref"]) / (1j * om_g)).real)
+    q_g = np.array(q_g)
+    m_g = np.linalg.solve(np.c_[(1 - q_g)**2, 2 * q_g * (1 - q_g), q_g**2],
+                          np.array(dM_g))
+    c_pot = np.array([m_g[0] / (RHO0 / (2.0 * np.pi * a67)),
+                      m_g[1] * ha67 / (RHO0 / np.pi / a67),
+                      m_g[2] / (RHO0 / (np.pi * a67))])
+    i_g = C67._MUENDUNG_H_A.index(ha67)
+    c_tab = C67._MUENDUNG_ARR[i_g, 1::2, -1]              # c^X bei a/δ = 128
+    traeg67 = float(np.max(np.abs(c_tab / c_pot - 1.0)))
+    assert traeg67 < 0.02, \
+        (f"Massenlängen müssen gegen die Potentialströmung laufen "
+         f"(Tabelle {np.round(c_tab, 3)} gegen {np.round(c_pot, 3)})")
+    print(f"Mündung Spalt → Bohrung: ebener Löser gegen Hasimoto "
+          f"{has0:.3f} (32/π = {32 / np.pi:.3f}), Eckkonstante "
+          f"{ecke67:.4f} gegen Dünnspalt-Grenzwert der Zelle {lim67:.4f}; "
+          f"Dreitor sagt fremde Zellen auf {worst_c:.0e} voraus, Gitter "
+          f"{gitter67:.0e}; Modell gegen Direktlösung zwischen den "
+          f"Stützstellen {100 * worst_e:.2f} %; relativ zum Film "
+          f"{100 * rel[0]:.2f}/{100 * rel[1]:.2f} % bei h/a = 0.01/0.02 "
+          f"(Škvor-Grenzfall exakt); Massenlängen bei a/δ = 128 auf "
+          f"{100 * traeg67:.1f} % an der Potentialströmung  OK")

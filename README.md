@@ -10,7 +10,7 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 | `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung); `python microphone_capsule.py` startet den Selbsttest |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
 | `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
-| `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures, `stand.py` und `basis_werte.json` die Stand-Werte und Sperrklinken |
+| `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures, `stand.py` und `basis_werte.json` die Stand-Werte und Sperrklinken, `stokes_zelle.py` und `stokes_eben.py` die Referenzlöser der Spalt-Mündung (Gegenprobe 67) |
 
 ## Sprache / Language
 
@@ -246,9 +246,9 @@ Markierungen: `slow` (über etwa 10 s), `feld3d` (3D-Feldlöser), `bem`
 Klassenschalter wie `MicrophoneCapsule._MASS_EXACT` werden nach jedem
 Test zurückgesetzt, auch wenn er scheitert.
 
-Laufzeit auf 4 Kernen: alle Gegenproben etwa 1 Minute, die schnelle
-Stufe (alle bis auf die vier `slow`-Proben 32, 41, 43 und 57) etwa
-30 s. Vor Gegenprobe 57 (LU-Zerlegung des 3D-Lösers) waren es knapp
+Laufzeit auf 4 Kernen: alle Gegenproben etwa 3 Minuten, die schnelle
+Stufe ohne die `slow`-Proben (32, 41, 43, 57, 60, 64, 66b und 67)
+gut 2 Minuten (gemessen in einer Cloud-Sitzung). Vor Gegenprobe 57 (LU-Zerlegung des 3D-Lösers) waren es knapp
 3 Minuten. Die Gegenproben 22, 23 und 48 sind
 in unabhängige Teilprüfungen aufgeteilt (22a–e, 23a–f, 48a–g3), die
 parallel laufen; einzeln aufgerufen sind die meisten Teile in Sekunden
@@ -282,8 +282,8 @@ ersten beiden sind `assert`s.
   eigenen alten Wert festhielt; sie zeigt ihre Wirkung als Liste.
 
 Sonderfall **Sperrklinke** (`stand.sperrklinke(...)`): ein bekannter
-Restfehler, der nur kleiner werden darf. Das sind die Resonanzlage
-gegen die FEM (Gegenprobe 32, 2D und 3D), die Amplitude des 2D-Modells
+Restfehler, der nur kleiner werden darf. Das sind Resonanzlage und
+Verlauf gegen die FEM (Gegenprobe 32, 2D und 3D), die Amplitude des 2D-Modells
 gegen Zuckerwars 4146 (38), die Restlücke der modenweisen Anregung
 (34), der Off-Axis-Rest gegen Fig. 6 (41, RMS und 14 kHz), die
 Obergrenze der Aktuatorlast (52), der Abstand des 2D- und des
@@ -334,42 +334,50 @@ Schreiben.
 1. **Lochkreise: 2D gelöst, Rest im 3D-Löser (Gegenproben 38, 52, 58,
    59, 60).** Das 2D-Feld rechnet Lochkreise seit Gegenprobe 60 als
    exaktes Makroelement: statisch auf 0,22 % gegen eine unabhängige
-   Lösung, gegen die COMSOL-FEM der 4134 0,31 dB RMS
-   (`gp59.rms_2d_gegen_fem_makro`, vorher 1,80 dB; seit Gegenprobe 65
-   ohne die verdeckende Strahlungslast), Re Z 6 % unter der
-   FEM (`gp59.widerstand_2d_zu_fem`, vorher 61 % darüber). Offen bleibt:
+   Lösung, gegen die COMSOL-FEM der 4134 0,17 dB RMS
+   (`gp59.rms_2d_gegen_fem_makro`; vor der Spalt-Mündung, Gegenprobe
+   67, 0,31 dB, vor dem Makroelement 1,80 dB), Re Z 2 % unter der FEM
+   (`gp59.widerstand_2d_zu_fem`, vorher 6 % darunter, vor dem
+   Makroelement 61 % darüber). Offen bleibt:
    - **Mittelloch im 3D-Löser:** ein Loch auf der Polarachse des
      3D-Gitters überschätzt dessen Filmwiderstand um 5–54 % (r/a =
      0,06…0,28; das 2D-Makroelement trifft die geschlossene Form auf
      0,05 %). Betroffen ist die 4146 (3D/2D 1,09 bei erzwungener Form).
      Große Mündungen abseits der Achse trifft 3D auf 1–3 %.
+   - **3D gegen die COMSOL-FEM der 4134:** 0,11 dB RMS
+     (`gp59.rms_3d_gegen_fem`, vor Gegenprobe 67 0,07 dB), Re Z
+     3D/FEM 1,18 (vorher 1,12). Die Spalt-Mündung erhöht den
+     Filmwiderstand um rund 5 %, und den überschätzt 3D am Lochkreis
+     schon (Gegenprobe 52: 3D/2D 1,04). Gegen das B&K-Messmittel liegt
+     3D dagegen besser: 0,21 statt 0,36 dB. Die Sperrklinke ist nicht
+     neu festgelegt (Basis 0,066 dB, Toleranz 0,05 dB).
    - **Zuckerwars 4134 von 1978** war stärker gedämpft als heutige 4134
      (20 kHz: −3,1 gegen −1,2 dB); 2D und 3D liegen gleichermaßen
-     darüber (2,2 bzw. 1,7 dB RMS, `gp38.rms_2d_4134_db`). Warum, bleibt
+     darüber (2,0 bzw. 1,6 dB RMS, `gp38.rms_2d_4134_db`; vor
+     Gegenprobe 67 2,2/1,7 dB). Warum, bleibt
      offen (Tabelle I weicht von B&Ks Geometrie ab: Spalt 20,77 statt
-     18,6 µm, Lochkreis 2,03 statt 1,70 mm). Am 4146 liegen 2D 0,87
-     und 3D 0,73 dB daneben (`gp38.rms_2d_4146_db`, mit Gegenprobe 65
-     neu festgelegt, s. Punkt 9).
+     18,6 µm, Lochkreis 2,03 statt 1,70 mm). Am 4146 liegen 2D 0,70
+     und 3D 0,90 dB daneben (`gp38.rms_2d_4146_db`; vor Gegenprobe 67
+     0,87/0,73 dB — die Spalt-Mündung bringt 2D näher und 3D weiter
+     weg, s. Punkt 9).
 
-2. **Resonanzlage gegen die FEM (Gegenprobe 32).** 2D 500 Hz, 3D
-   497 Hz gegen 550 Hz (`gp32.verstimmung_2d` 0,091,
-   `gp32.verstimmung_3d` 0,095; mit der Strahlungslast im Druckgang bis
-   Gegenprobe 65 waren es 497 und 495 Hz). Bis Gegenprobe 59 lag 2D bei 478 Hz,
-   und der Abstand zu 3D wurde den diskreten Bohrungen zugeschrieben;
-   mit dem Makroelement (Gegenprobe 60) liegen beide gleichauf — es war
-   die Lochkreis-Darstellung. Die 10 % zur FEM teilen beide Modelle; der
-   nächstliegende Kandidat ist Reynolds-Film gegen Navier–Stokes. Untersucht wurde
-   bisher der Lochzweig an seiner Antiresonanz (Kerbe 3203 gegen
-   3500 Hz): kein Massenüberschuss der Zelle (wirbelfreie und
-   Stokes-Zelle liefern mehr, nicht weniger), die Mündungsmasse hebt
-   die Kerbe ganz gestrichen nur um 5,9 % (nötig 9,2 %), Membranmasse
-   und Rückvolumen wirken auf die Kerbe gar nicht, die
-   Spaltnachgiebigkeit höchstens 4 %. Einziger starker Hebel ist der
-   Lochradius (d ln f/d ln r = +0,61), ein direkt tabellierter Wert.
-   Für die Resonanzlage selbst ist die Ursache offen.
-   Getroffen werden Tiefton, Güte (2D +7,11 gegen +6,74 dB; mit dem
-   Gaußband +6,44) und das Dublett der vier Bohrungen (3D 3406/4127 Hz
-   gegen 3500/4200 Hz).
+2. **Resonanzlage gegen die FEM (Gegenprobe 32): aufgeklärt, Rest
+   offen.** Die 10 % Abstand waren zum größten Teil ein Fehler im
+   Prüfaufbau: der Klassen-Standard `delay_length = 3e-3` hängte
+   unbemerkt ein Laufzeitglied an (+39 % Rückvolumen; die FEM-Kapsel hat
+   keins). Ohne es lag das Modell 6 % zu hoch (2D 584, 3D 581 Hz) und
+   war 1,1–1,3 dB zu schwach bedämpft. Den Rest trägt die Spalt-Mündung
+   (Gegenprobe 67): 2D 561, 3D 558 Hz (`gp32.verstimmung_2d` 0,021,
+   `gp32.verstimmung_3d` 0,014; vorher 0,091/0,095), Überhöhung
+   +7,32/+7,18 gegen +6,74 dB, RMS gegen die sechs FEM-Punkte 0,42/0,23
+   dB (`gp32.rms_fem_2d`, `gp32.rms_fem_3d`; vorher 0,95/0,72 dB).
+   Offen: der Film ist um rund 0,5 dB zu schwach bedämpft, und das
+   Dublett der vier Bohrungen (FEM 3500/4200 Hz) liegt im 3D-Löser bei
+   3350/4110 Hz — mit der Mündungsmasse 2 % tiefer als vorher
+   (3421/4127 Hz). Die Mündungsmasse selbst ist im Trägheitsgrenzfall
+   die der Potentialströmung (Gegenprobe 67); im Kerbenband fehlt also
+   anderswo Nachgiebigkeit, oder es ist Masse zu viel. Dasselbe Band
+   zeigt Gegenprobe 34 (Punkt 4).
 
 3. **Kolben- statt Modenkonvention im 1D-Pfad (Gegenproben 8, 29).**
    Der 1D-Pfad rechnet den Filmwiderstand für gleichförmigen
@@ -385,16 +393,20 @@ Schreiben.
    stimmen.
 
 4. **Modenweise Anregung bei streifendem Einfall (Gegenprobe 34).**
-   Gegen COMSOL oberhalb 5 kHz 13,5 dB mit uniformer Anregung, 6,6 dB
+   Gegen COMSOL oberhalb 5 kHz 13,4 dB mit uniformer Anregung, 6,5 dB
    mit drei Moden (`gp34.restluecke_3_moden`; mit dem Gaußband 14,1 und
-   7,3 dB). Die Reihe über 1…5 Moden (8,3/7,2/6,6/6,1/5,7 dB) flacht ab;
-   mehr Moden allein schließen die Lücke nicht.
+   7,3 dB). Seit Gegenprobe 67 ohne das versehentliche Laufzeitglied
+   und mit der Spalt-Mündung; mit dem Volumenfix allein wären es 5,5 dB
+   — die Mündungsmasse verschlechtert dieses Band, wie das Dublett in
+   Punkt 2. Die Reihe über 1…5 Moden (8,2/7,1/6,5/6,0/5,6 dB) flacht
+   ab; mehr Moden allein schließen die Lücke nicht.
 
 5. **Richtwirkung gegen Grinnip (Gegenproben 41, 43).** Auf Achse trifft
    der BEM-Frontfaktor Grinnips Rechnung auf 1,0 dB RMS; gegen die
    Messung (9–15 kHz) sind es 4,0 dB, Grinnips eigene Rechnung 3,1 dB —
-   beide liegen darüber. Bei 90° bleiben mit einer Mode 3,9 dB RMS
-   (`gp41.rest_90grad_rms`), bei 14 kHz 4,9 dB (`gp41.rest_90grad_14k`);
+   beide liegen darüber. Bei 90° bleiben mit einer Mode 3,5 dB RMS
+   (`gp41.rest_90grad_rms`), bei 14 kHz 4,3 dB (`gp41.rest_90grad_14k`;
+   vor Gegenprobe 67 3,9/4,9 dB);
    modenweise 2,4 dB (90°) und 1,7 dB (180°) gegen Grinnips Rechnung,
    3,2 dB gegen die Messung bei 90°.
 
@@ -430,8 +442,10 @@ Schreiben.
    als ungefährer Ersatz; ohne sie liegen 2D/3D gegen Fig. 6 bei
    2,17/1,71 dB (vorher 2,11/1,67), gegen das Messmittel bei 0,61/0,36 dB
    (vorher 0,56/0,32), und die Sperrklinke 2D gegen die 4146 ist neu
-   festgelegt (0,63 → 0,87 dB; 3D 0,744 → 0,734 dB). Gegenprobe 52 d
-   grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,6 dB);
+   festgelegt (0,63 → 0,87 dB; 3D 0,744 → 0,734 dB). Seit der
+   Spalt-Mündung (Gegenprobe 67): Fig. 6 2,01/1,56 dB, Messmittel
+   0,46/0,21 dB, 4146 2D 0,70 dB. Gegenprobe 52 d
+   grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,5 dB);
    eine hergeleitete Aktuatorlast (Abstand, Schlitzgeometrie) fehlt.
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
@@ -465,6 +479,15 @@ Schreiben.
   Ab 1 % Abweichung der Grundfrequenz gegen die Platte warnt das Modell
   (ohne Pfosten λ ≈ 0,06), ab einer Randschicht über ein Viertel der
   Membranbreite bricht es ab.
+- **Spalt-Mündung (Gegenprobe 67):** an allen MEMBRANseitigen
+  Mündungen (Durchgangs-, Sack-, Stufenbohrung; 1D, 2D, 3D). Die
+  Mündungen in den membranlosen K67-Zwischenspalt und in den
+  K103-Spacer tragen sie noch nicht (dort Škvor-Halbzelle bzw.
+  Flanschmasse wie bisher). Gerechnet für die von der Membran
+  getriebene Zelle; strömt Luft bei ruhender Membran von hinten durch
+  die Löcher, ist der Fehler von der Ordnung q·ΔZ (q
+  Lochflächenanteil). Die Stufenbohrung trägt sie wie den Zellterm in
+  beiden Zweigen der Senkung. Über h/a = 2 geklemmt.
 - **Höhere Membranmoden (`membrane_modes`):** die elektrostatische
   Feder-Erweichung wird nicht auf sie übertragen, und ihre
   Filmdämpfung wird gleich der Grundmode gesetzt (konservativ).
@@ -524,7 +547,7 @@ Messungen der realen Kapsel.
 - Die Zahlen in den Abschnitten unten sind Schnappschüsse; den
   aktuellen Stand nennen die Basis und der Bericht am Ende jedes
   Testlaufs.
-- `microphone_capsule.py` hat rund 7000 Zeilen; eine Aufteilung in
+- `microphone_capsule.py` hat rund 8600 Zeilen; eine Aufteilung in
   Module (Spaltfilm, 3D-Löser, BEM, Elektrostatik) steht aus.
 
 ## Beispielprojekte
@@ -769,6 +792,9 @@ und der 3D-Feldlöser (Filmfeld) führten sie ohnehin nie; der **1D-Pfad**
 tat es noch und ist jetzt auf dieselbe Konvention gebracht. Wirkung nur
 im 1D-Pfad: bei ungestuften Bohrungen bis ~1 dB im Hochton, bei der
 gestuften K67 ~0,1 dB; Voreinstellung (2D) und 3D bleiben unberührt.
+Was weder Film noch Rohr trägt, ist die Umlenkung zwischen beiden; sie
+steht seit Gegenprobe 67 als eigene Mündung im Modell, mit dem
+Dünnspalt-Grenzfall, in dem die Aussage hier exakt wird.
 
 ### Mehrmoden-Membran (`membrane_modes`, Gegenprobe 28)
 
@@ -992,11 +1018,10 @@ außen:
   Resonanzüberhöhung (+6,4 gegen +6,7 dB). Das **Dublett** der FEM im
   Kerbenband (3500/4200 Hz) kann der homogenisierende 2D-Pfad
   prinzipiell nicht haben; der 3D-Löser zeigt es (3406/4127 Hz).
-  **Offen** bleibt die Resonanzlage: 2D liegt 13 % unter der FEM
-  (478 gegen 550 Hz), der gitterkonvergente 3D-Löser mit konturtreuen
-  Mündungen 10 % (495 Hz). Die diskreten Bohrungen erklären also rund
-  ein Viertel der Verstimmung, der Rest ist keine Homogenisierung
-  (Gegenproben 48, 51).
+  Die Resonanzlage lag lange 10–13 % zu tief; das war ein Fehler im
+  Prüfaufbau (ein versehentliches Laufzeitglied) plus die fehlende
+  Spalt-Mündung. Seit Gegenprobe 67: 2D 561, 3D 558 Hz gegen 550 Hz
+  (s. „Offene Punkte" 2).
 * **Messung (Gegenprobe 38):** Zuckerwar, JASA 64, 1278 (1978), B&K
   4134 und 4146 — Tabelle I vollständig, Tabelle II die Ersatzelemente,
   Fig. 6/7 Amplitude **und** Phase gegen Messwerte. M und C_M treffen
@@ -1828,12 +1853,17 @@ Randschlitz (wirksam 15 µm statt 0,838 mm; 4134 0,28 dB, 4146
 **Keine fehlende Filmphysik.** Gegen die volle thermoviskose FEM der
 Gegenprobe 32 (Navier–Stokes statt Reynolds, vier Löcher auf einem
 Kreis) liegt die 3D-Überhöhung nur 0,23 dB über der FEM, rund 3 % zu
-wenig Dämpfung. Beide Feldmodelle führen im Film ohnehin die volle
+wenig Dämpfung. *(Nachtrag Gegenprobe 67: dieser Vergleich litt am
+versehentlichen Laufzeitglied im Prüfaufbau; ohne es und mit der
+Spalt-Mündung sind es +0,44 dB.)* Beide Feldmodelle führen im Film ohnehin die volle
 Dünnschicht-Physik (viskose Trägheit, polytrope Kompressibilität mit
 thermischer Relaxation). Nur abgeschätzt, nicht eigens gerechnet:
 Gasverdünnung wirkt in die falsche Richtung (Knudsen-Zahl 0,003,
 Schlupf senkt die Dämpfung); Eintrittsverluste an Löchern und Schlitz
-sind bei Mündungsradien vom 25-Fachen des Spalts klein.
+sind bei Mündungsradien vom 25-Fachen des Spalts klein. *(Seit
+Gegenprobe 67 für die Löcher gerechnet: die Spalt-Mündung erhöht den
+Filmwiderstand der 4134 um rund 5 %. Die Randschlitz-Mündung ist eine
+andere Geometrie und nicht gerechnet.)*
 
 **Der Aktuator scheidet aus** (belegt): nach B&Ks Microphone Handbook
 (BE 1447, Abschn. 2.7) steht die perforierte Aktuatorplatte 0,4–0,8 mm
@@ -2429,14 +2459,80 @@ Punkte“ 9).
   angezeigte Optionen, Diagrammtitel und Spurnamen — ist ein fester Text
   der anderen Sprache.
 
+### Mündung Spaltfilm → Bohrung (Gegenprobe 67)
+
+**Was fehlte.** Der Reynolds-Film (Škvor-Zelle, Makroelement,
+3D-Filmgitter) führt die Strömung bis an den Lochrand und setzt dort den
+Lochdruck; das Zwikker–Kosten-Rohr beginnt voll entwickelt an der
+Plattenoberfläche. Beides ist für sich exakt — die **Umlenkung**
+dazwischen trug keines. Vor der Kante verliert der Film auf einer
+Strecke ~h die Schmierfilmform, hinter ihr ist das Rohr auf ~a nicht
+entwickelt, und die Membran über der Öffnung drückt unmittelbar in die
+Bohrung. Die bisherige Annahme, die Škvor-Ausbreitung decke die
+filmseitige Mündung ab (Gegenprobe 28), ist der Dünnspalt-Grenzfall.
+Bei der FEM-Kapsel der Gegenprobe 32 (h/a = 0,46) fehlten dem Lochpfad
+13 % Widerstand und 7 % Masse.
+
+**Referenzlöser** (`tests/stokes_zelle.py`): linearisierte,
+inkompressible, instationäre Stokes-Gleichung in der axialsymmetrischen
+Lochzelle (Spalt über der Zelle, Bohrung darunter, Membran gleichförmig
+bewegt), MAC-Gitter von der Ecke aus geometrisch gestuft. Film und Rohr
+werden auf **demselben** Gitter abgezogen; so bleibt nur der Gitterfehler
+der Ecke (< 0,2 % von ΔZ). Kein Abgleich mit der FEM.
+
+**Dreitor.** Die Ecke koppelt Filmzufluss, Membranfluss über der Öffnung
+und Rohrstrom; für eine Zelle mit Lochflächenanteil q gilt
+ΔZ = (1−q)²·z_ff + 2q(1−q)·z_fm + q²·z_mm. Das ist bis auf Rundung
+exakt (aus drei Zellen bestimmt, sagt es fremde auf 10⁻⁹ voraus), weil
+die Schmierfilmlösung mit gleichförmigem Quetschen im Ring selbst eine
+exakte Stokes-Lösung ist: Abweichungen entstehen nur an der Ecke.
+Jedes Element steht als **Widerstands- und Massen-Zusatzlänge** auf
+einem Belag des Modells — z_ff in Spalthöhen auf dem Filmbelag am
+Lochrand, z_fm und z_mm auf dem Rohrbelag. Getrennt wie 3π/16 und 0,85
+am Rohrende, und aus demselben Grund: viskose und träge Umlenkung sind
+verschiedene Strömungen; die getrennten Längen laufen über die Frequenz
+glatt. Tabelliert über h/a = 0,01…2 und a/δ = 0,3…128, kubisch
+interpoliert (gegen Direktlösungen zwischen den Stützstellen höchstens
+1,2 %). `python tests/stokes_zelle.py` rechnet die Tabelle zeichengleich
+neu.
+
+**Grenzfälle, geprüft:**
+- **Dünnspalt:** die Film-Zusatzlänge läuft gegen 0,637·h — die
+  Eckkonstante der *ebenen* Umlenkung, unabhängig mit einem kartesischen
+  Löser gerechnet (`tests/stokes_eben.py`), der vorher Hasimotos exakten
+  Schlitz (32μq'/πh²) auf 0,5 % trifft. Relativ zum Film verschwindet die
+  Korrektur linear mit h/a (0,40/0,81 % bei h/a = 0,01/0,02): der
+  Škvor-Grenzfall bleibt exakt. Genau daran scheiterte die Stokes-Zelle
+  von Homentcovschi/Murray/Miles (Gegenprobe 36).
+- **Trägheit:** für a/δ → ∞ laufen die Massenlängen gegen die der
+  Potentialströmung (dieselbe Zelle mit μ = 0) — die Mündungsmasse ist
+  die kinetische Energie der wirbelfreien Umlenkung.
+
+**Wirkung.** An allen membranseitigen Mündungen, in 1D, 2D und 3D an
+derselben Stelle (in Serie zum Lochzweig). Gegenprobe 32: Resonanz 2D
+584 → 561 Hz, 3D 581 → 558 Hz gegen die FEM bei 550 Hz, Überhöhung
++8,04 → +7,32 bzw. +7,87 → +7,18 dB gegen +6,74 dB, RMS gegen die
+FEM 0,95 → 0,42 bzw. 0,72 → 0,23 dB. Gegen Messungen: B&K-Messmittel
+3D 0,36 → 0,21 dB, 2D 0,61 → 0,46 dB; Zuckerwar 4134 2D 2,17 → 2,01 dB,
+4146 2D 0,87 → 0,70 dB. Schlechter: 4146 3D (0,73 → 0,90 dB), 3D gegen
+die COMSOL-FEM der 4134 (0,07 → 0,11 dB) und im Kerbenband der FEM-Kapsel
+das Dublett und die streifende Anregung (s. „Offene Punkte" 1, 2, 4).
+
+**Prüfaufbau.** Gegenprobe 32 und 34 rechneten bis hier mit dem
+Klassen-Standard `delay_length = 3e-3`, also mit einem Laufzeitglied,
+das die FEM-Kapsel nicht hat (+39 % Rückvolumen). Es verdeckte, dass
+das Modell ohne die Mündung 6 % zu hoch und zu schwach bedämpft lag.
+
 ## Verlustmechanismen (vollständig erfasst)
 
 Neben Zwikker–Kosten-Rohrreibung und Škvor-Spaltfilm rechnet das
 Modell: **viskose Mündungswiderstände** (Sampson/Roscoe-Kriechströmung,
 Weissberg-Zusatzlänge 3πr/16 je Mündung, thermoviskos ausgewertet —
 bei kurzen engen Bohrungen vergleichbar mit dem Rohrwiderstand selbst;
-nur an Mündungen in große Volumina, im Spaltfilm deckt die
-Škvor-/Zell-Ausbreitung die Zuströmung ab), **Sacklöcher/Senkungen als
+nur an Mündungen in große Volumina), die **Spalt-Mündung** an jeder
+Öffnung in den Membranfilm (Umlenkung Film → Bohrung als Dreitor aus
+der instationären Stokes-Zelle, Widerstand und Masse, Gegenprobe 67),
+**Sacklöcher/Senkungen als
 endseitig geschlossene thermoviskose Leitungsstubs** (verteilte
 Reibung, LF-Grenzfall R/3, Nachgiebigkeit isotherm→adiabatisch mit
 Relaxationsdämpfung, λ/4-Verhalten) und die **laterale Trägheit der
