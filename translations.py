@@ -1033,6 +1033,7 @@ TR = {
         "en": "in the rear end face",
         "de": "in der hinteren Stirnfläche",
     },
+    "exp_hint": {"en": "Note", "de": "Hinweis"},
     "warn_sphere_flat": {
         "en": "**Body model 'sphere' for a single-diaphragm capsule.** The "
               "sphere puts the diaphragm on a curved cap and underestimates "
