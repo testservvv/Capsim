@@ -211,9 +211,12 @@ TR = {
               "The 3D field solver carries them too: its membrane grid "
               "starts at the post edge, and the innermost face — radius 0 "
               "without a post, so silently the axis condition — becomes "
-              "the clamped wall (Gegenprobe 47). LIMIT: the ring factor is "
-              "derived for the TENSION part only — a bending-stiff plate "
-              "is rejected.",
+              "the clamped wall (Gegenprobe 47). The bending stiffness of "
+              "the foil acts at both clamps as a boundary layer of width "
+              "√(D/T), i.e. as clamps moved inwards by that width "
+              "(Gegenprobe 62). LIMIT: a foil whose boundary layer takes "
+              "up more than a quarter of the membrane width is a plate, "
+              "not a membrane, and is rejected.",
         "de": "Durchmesser einer MITTENTERMINIERUNG — Kontaktstift "
               "oder Bolzen, der die Membranmitte festlegt. 0 "
               "(Voreinstellung) = klassische randgespannte "
@@ -242,9 +245,13 @@ TR = {
               "Pfostenrand, und die innerste Fläche — ohne "
               "Pfosten mit Radius 0, also stillschweigend die "
               "Achsenbedingung — wird zur eingespannten Wand "
-              "(Gegenprobe 47). GRENZE: der Ringfaktor gilt nur "
-              "für den VORSPANNUNGSANTEIL — eine biegesteife "
-              "Platte wird abgewiesen.",
+              "(Gegenprobe 47). Die Biegesteifigkeit der Folie "
+              "wirkt an beiden Einspannungen als Randschicht der "
+              "Breite √(D/T), also wie um diese Breite nach innen "
+              "versetzte Ränder (Gegenprobe 62). GRENZE: eine Folie, "
+              "deren Randschicht mehr als ein Viertel der "
+              "Membranbreite einnimmt, ist eine Platte, keine "
+              "Membran, und wird abgewiesen.",
     },
     "lbl_modal_source": {
         "en": "Mode-dependent source pressure",

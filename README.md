@@ -313,7 +313,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 97 Werte aus 29 Gegenproben, davon 9 Sperrklinken.
+Die Basis umfasst 100 Werte aus 30 Gegenproben, davon 9 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -405,20 +405,6 @@ Schreiben.
    der Freistich irgendeine Zelle berührt (Lochkreise rechnet das
    Makroelement seit Gegenprobe 60 örtlich). Kein Beispielprojekt ist
    betroffen; richtig wäre der Anteil der Löcher im Freistich.
-8. **Randschicht verschiebt die Membranresonanz (Gegenprobe 61).**
-   Eine eingespannte Folie mit Biegesteifigkeit ist am Rand eine
-   Platte: in einer Randschicht der Breite √(D/T) biegt sie sich in die
-   Einspannung. Das hebt die Grundfrequenz um den Faktor ≈ 1 + λ,
-   λ = √(D/(T a²)) (`gp61.frequenzfaktor_pet_45` 1,0038). Die
-   „exakte Modalfrequenz“ der Kette addiert den Biegeanteil
-   quadratisch (Platten-Eigenwert 10,2158) und erfasst davon nur
-   λ²-Terme: bei vorgegebener Vorspannung liegt die Resonanz deshalb
-   0,4–0,65 % zu tief (B&K 4134 COMSOL-Geometrie: Faktor 1,00036 statt
-   1,00646; Zuckerwar 4146: 1,00012 statt 1,00374). Kapseln mit
-   vorgegebener Resonanz betrifft das nicht. Die Lösung liegt bereit
-   (`_platten_verduennung` liefert ω/ω_T exakt), umgestellt ist noch
-   nicht — es verschiebt die B&K-Kurven.
-
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
@@ -442,6 +428,13 @@ Schreiben.
   Bandes. Kreise mit teilerfremden Lochzahlen und nicht abgeklungenen
   Harmonischen werden getrennt, wenn das gemeinsame Sektorgitter zu
   groß würde (Debenham).
+- **Folie als Membran mit Randschicht (Gegenprobe 62):** die
+  Biegesteifigkeit wirkt als um √(D/T) versetzte Einspannung. Die
+  Plattendispersion im Innern (ω² um k²·D/T höher; an der Grundmode
+  ≈ z₁²λ²/2, B&K-Nickel 1·10⁻⁴, höhere Moden mehr) ist nicht gerechnet.
+  Ab 1 % Abweichung der Grundfrequenz gegen die Platte warnt das Modell
+  (ohne Pfosten λ ≈ 0,06), ab einer Randschicht über ein Viertel der
+  Membranbreite bricht es ab.
 - **Höhere Membranmoden (`membrane_modes`):** die elektrostatische
   Feder-Erweichung wird nicht auf sie übertragen, und ihre
   Filmdämpfung wird gleich der Grundmode gesetzt (konservativ).
@@ -978,6 +971,11 @@ außen:
   analytisch (< 0,2 %), der Frequenzgang des 4134 liegt 0,3 dB RMS neben
   der Messung. Beim 4146 bleibt die Streuung der Škvor-Zellregel
   q = n·r²/a_bp² als dokumentierter Rest (Schranke 1,6 dB RMS).
+* **Membranmodell der Referenzen (Gegenprobe 62):** FEM, COMSOL-Modell
+  der 4134 und Zuckerwars Tabelle II rechnen die Folie als reine
+  Membran; verglichen wird dort ohne Randschicht. Gemessene Prüflinge
+  bekommen die Vakuumresonanz vorgegeben, weil ihre Spannung aus ihr
+  zurückgerechnet ist.
 
 ### Modenweise Anregung (Gegenproben 33, 34, 42, 43)
 
@@ -1124,8 +1122,9 @@ unabhängigen Methoden:
 | Gegentakt, volle Elektrode | Ā = j₀₁²/4 = 1,4458 geschlossen |
 | Nachgiebigkeit 0,5 → 0,999·U_PI | 1,08 → 10,9 × (divergiert) |
 
-Die kleinen Restabstände zu Warren sind die Biegesteife der Folie
-(0,1 % der Spannung), die Warrens reine Membran nicht hat.
+Die Probe rechnet wie Warren eine reine Membran. Mit der Randschicht
+der Folie (Gegenprobe 62) gilt Warrens Ā für den wirksamen Radius
+a − √(D/T) (0,7892; mit a gerechnet 0,7998).
 
 **Wirkung:** der Pull-in sinkt um 1,3…2,5 % — bei der K67 von 74,4 auf
 **72,6 V** (Arbeitspunkt bei 60 V: w₀ = 11,7 µm, C₀ = 50,3 pF,
@@ -1567,7 +1566,9 @@ exakt die Kette.
 zurück. Die liegt mit dem Kolbenfaktor 4/3 der statischen Form 1,9 % zu
 hoch (23,4 statt 23,0 kHz), die Spannung damit 3,75 %. Jetzt nimmt der
 3D-Löser die physikalische Spannung, über die exakte Modalfrequenz
-(Vorspannung plus Biegeanteil der Folie).
+(Vorspannung plus Biegeanteil der Folie). Seit Gegenprobe 62 ist das
+die Vorspannung selbst: die Biegung steckt in der Randschicht, in Kette
+und Feld gleich.
 
 Ergebnis an der B&K: **−0,003 dB** im Tiefton. Im Vergleich mit der
 Messung (auf 250 Hz normiert) fällt der konstante Faktor heraus; die
@@ -1669,6 +1670,10 @@ altem und neuem Faktor und den Hochtongrenzwert der Modenreihe über
 400 Moden für Vollkreis und Ring (ρ = 0,1). Der alte Wert bleibt über
 den Klassenschalter `_MASS_EXACT` für Vergleiche erreichbar;
 Gegenprobe 54 stellt damit ihre historische Zerlegung nach.
+NACHTRAG (Gegenprobe 62): z₁ und g sind jetzt die der wirksamen
+Membran (Randschicht); die Kette trifft deren Eigenwert exakt, gegen
+die Platte unter Zug bleibt die Plattendispersion. „f_res vorgeben"
+und „Spannung vorgeben" sind seither ohne Rest dieselbe Kapsel.
 
 ### Wiederverwendung der 3D-Lösung (Gegenprobe 56)
 
@@ -2117,8 +2122,91 @@ um 20 kHz) liegt 2D jetzt 0,28 statt 0,26 dB RMS neben der COMSOL-FEM,
 höchstens 0,1 %.
 
 **Nebenbefund:** dieselbe Randschicht hebt die Grundfrequenz um den
-Faktor ≈ 1 + λ, den die „exakte Modalfrequenz" der Kette nicht enthält
-(„Offene Punkte" 8).
+Faktor ≈ 1 + λ, den die „exakte Modalfrequenz" der Kette nicht enthielt
+— umgesetzt in Gegenprobe 62.
+
+### Randschicht der Folie (Gegenprobe 62)
+
+Eine eingespannte Folie ist eine Platte unter Zug, D·∇⁴w − T·∇²w = p,
+mit w = w' = 0 am Rand. Für λ = √(D/(T a²)) ≪ 1 ist sie im Innern
+Membran; nur in einer Randschicht der Breite ℓ = √(D/T) biegt sie sich
+in die Einspannung. Außerhalb der Schicht erfüllt die Membranlösung
+w = ℓ·∂w/∂r, verschwindet also um ℓ vor dem Rand. In erster Ordnung ist
+die Folie eine **Membran mit dem wirksamen Radius a − ℓ** (am Pfosten
+r_i + ℓ).
+
+**Was fehlte.** Bis Gegenprobe 61 stand die Biegung als parallele
+Plattenfeder C_B = πa⁶/(192D) in der Kette (C_T/C_B = 24λ²), und die
+„exakte Modalfrequenz" addierte Membran- und Platten-Eigenwert
+quadratisch — beides Terme der Ordnung λ². Die Randschicht ist ein Term
+der Ordnung λ: sie senkt die statische Nachgiebigkeit um ≈ 4λ und hebt
+die Grundfrequenz um ≈ λ. Bei der B&K-Nickelfolie (5 µm, 3162 N/m,
+λ = 0,0061) sind das −2,4 % und +0,61 %, im Tiefton −0,15 dB. Bei
+vorgegebener Resonanz — so sind die meisten Kapseln beschrieben —
+bleibt die Resonanz, und die Nachgiebigkeit sinkt um ≈ 2λ (PET 6 µm:
+λ = 0,001…0,007).
+
+**Umsetzung.** `_wirk_membran` liefert die wirksame Membran in der
+Bezugsgröße a_mem: statische Form (Parabel bzw. Ringform zwischen den
+wirksamen Rändern, `_form`), ihre Momente, den Nachgiebigkeitsfaktor,
+die Eigenwerte und Modenintegrale. Kette, Moden, Quellprojektion,
+Elektrostatik, exakter Arbeitspunkt und 2D-Feld rechnen damit. Der
+3D-Löser spannt seine Membranfelder an denselben Rändern ein: endet das
+Gitter dort (Ring außerhalb der Elektrode), exakt; liegt die
+Einspannung im Elektrodengitter oder am Pfosten, als Schnittzelle mit
+Elementgewicht (exakt für stückweise lineare Auslenkung) und
+logarithmischem Leitwert (exakt für die radiale Laplace-Lösung) — am
+Pfosten 10–20-mal genauer als die frühere Halbzelle vor der Wand. Bei
+vorgegebener Resonanz ist die Spannung die, deren wirksame Membran
+f_res trifft (Fixpunkt, weil ℓ von T abhängt). Die „exakte
+Modalfrequenz" in `summary()` ist jetzt der Eigenwert der Platte unter
+Zug (`_platten_verduennung`); die Kette liegt um die Plattendispersion
+im Innern darunter (B&K −0,01 %). Der Klassenschalter `_RANDSCHICHT`
+schaltet die Randschicht für Vergleiche mit reinen Membranmodellen ab.
+
+**Gegenprobe 62:**
+
+| Prüfung | Ergebnis |
+|---|---|
+| Statik gegen eine unabhängige Lösung der Plattengleichung (Kreis, Ring) | 10⁻⁷…10⁻⁶ (die Randschicht selbst: −2,4 % bei B&K) |
+| unabhängige Lösung gegen die geschlossene Form 1 − 4λ(I₀/I₁ − 2λ) | < 10⁻⁶ |
+| Frequenz gegen den exakten Eigenwert der Platte | Rest = Plattendispersion ≈ −z₁²λ²/2 (B&K −1,1·10⁻⁴) |
+| Form über der Elektrode gegen die Platte | 5·10⁻⁵ (ohne Randschicht 8·10⁻³) |
+| 3D-Membranfeld gegen die Kette (Gitterende, Schnittzelle, Pfosten) | ≤ 2·10⁻⁴ |
+| Randschicht verschiebt 2D und 3D gleich | auf 0,002 dB |
+| Warren mit a − ℓ | Ā = 0,7892 (mit a: 0,7998) |
+| Gatter | Warnung ab 1 % gegen die Platte, Abbruch ab ℓ > ¼ Membranbreite |
+
+**Referenzen ohne Biegesteifigkeit.** Die COMSOL-FEM der 4134 rechnet
+die Folie mit dem Membraninterface („Model the diaphragm using the
+Membrane interface … add an initial stress equal to the membrane
+tension", Modelldokumentation), Šimonová/Honzík geben Spannung und
+Resonanz nach der Membranformel (1040 Hz aus 116,27 N/m; mit Biegung
+wären es 1053 Hz), und Zuckerwars Tabelle II ist sein Membranmodell.
+Gegen diese Modelle rechnet Capsim ohne Randschicht (Gegenproben 32,
+34, 38 a, 59 a/c). Die Filmproben 37 und 60 setzen die Parabel bis
+a_mem an und laufen ebenfalls ohne.
+
+**Gemessene Prüflinge.** Zuckerwar bestimmt die Spannung aus der
+gemessenen ersten Vakuumresonanz mit der Membranformel (NASA-Bericht
+PGSTR-PH77-48, 1977, Gl. 2-34: T = 6,825·a²·f_R1²·ρt); Grinnip gibt die
+Vakuumresonanz direkt an (3500 Hz). Solche Spannungen sind
+membranäquivalent, die Randschicht steckt schon darin. Gegen Messungen
+bekommt der Prüfling deshalb die Resonanz vorgegeben (`_messpruefling`
+in `tests/test_referenzen.py`, Gegenproben 38, 41, 43, 58, 59 b);
+mit der Spannung zählte das Modell die Randschicht doppelt (Resonanz
+0,6 % zu hoch). Gegen die Messungen ändert die Wahl wenig, weniger als
+die Ableseunsicherheit, und sie hat die Wahl nicht bestimmt: 4134
+2,13 → 2,11 dB RMS (2D), 4146 0,64 → 0,63 dB, B&K-Messmittel 3D
+0,33 → 0,32 dB.
+
+**Was es verändert hat.** Bei vorgegebener Resonanz wenig: K67 im
+Tiefton −0,002 dB, die Niere bei 1 kHz −28,1 → −27,8 dB (2D), die
+interne Resonanz der Debenham-Kapsel −1,8 %; die übrigen Stand-Werte
+meist unter 1 %, größere relative Änderungen nur bei kleinen
+Beträgen (2D − 3D bei 16 Löchern 0,10 → 0,06 dB). Bei vorgegebener
+Spannung hebt sich die Resonanz um ≈ λ und der Tiefton sinkt um ≈ 4λ
+(B&K −0,15 dB, `gp62.bk_tiefton_db`).
 
 ## Verlustmechanismen (vollständig erfasst)
 

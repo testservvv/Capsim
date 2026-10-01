@@ -622,12 +622,12 @@ def test_gp41_bem_frontfaktor_der_flachen_stirnflache(stand):
     if _HAS_SCIPY:
         g41 = dict(
             membrane_material={"rho": 1630.0, "E": 4.9e9, "nu": 0.37},
-            membrane_resonance_hz=None, membrane_diameter=2 * 1.0945e-2,
+            # Tab. 1 gibt die Vakuumresonanz f_vak = 3500 Hz (Gl. 56/57:
+            # c_s = 2π f_vak a / j01); sie ist die Angabe. Eine daraus
+            # zurückgerechnete Spannung wäre membranäquivalent und zählte
+            # die Randschicht der Folie doppelt (Gegenprobe 62).
+            membrane_resonance_hz=3500.0, membrane_diameter=2 * 1.0945e-2,
             membrane_thickness=2.4e-6,
-            # T aus c_s = 2π f_vak a / j01 (Tab. 1, Gl. 56/57)
-            membrane_tension=(1630.0 * 2.4e-6
-                              * (2 * np.pi * 3500.0 * 1.0945e-2
-                                 / 2.404825557695773) ** 2),
             air_gap=5.08e-5, backplate_diameter=2 * 1.1e-2,
             backplate_thickness=7.62e-4, bias_voltage=73.5,
             architecture="single",
@@ -779,11 +779,9 @@ def test_gp43_modenfaktoren_aus_demselben_korper():
     if _HAS_SCIPY:
         g43 = dict(
             membrane_material={"rho": 1630.0, "E": 4.9e9, "nu": 0.37},
-            membrane_resonance_hz=None, membrane_diameter=2 * 1.0945e-2,
+            # f_vak vorgegeben wie in Gegenprobe 41 (Randschicht, 62)
+            membrane_resonance_hz=3500.0, membrane_diameter=2 * 1.0945e-2,
             membrane_thickness=2.4e-6,
-            membrane_tension=(1630.0 * 2.4e-6
-                              * (2 * np.pi * 3500.0 * 1.0945e-2
-                                 / 2.404825557695773) ** 2),
             air_gap=5.08e-5, backplate_diameter=2 * 1.1e-2,
             backplate_thickness=7.62e-4, bias_voltage=73.5,
             architecture="single",

@@ -504,9 +504,10 @@ def test_gp47_ringmembran_im_3d_feldloser(stand):
             "ohne Pfosten bitgleich das alte Filmgitter"
         assert ga["sigma"] == c47a.mat_rho * c47a.t_mem, \
             "die Flächendichte des Felds ist ρ·t"
-        assert ga["T_mem"] == ga["sigma"] * (
-            2.0 * np.pi * c47a.f_res * c47a.a_mem
-            / 2.404825557695773) ** 2, \
+        # (Radius der wirksamen Membran, Randschicht √(D/T), Gegenprobe 62)
+        assert abs(ga["T_mem"] / (ga["sigma"] * (
+            2.0 * np.pi * c47a.f_res * c47a._a_w
+            / 2.404825557695773) ** 2) - 1.0) < 1e-12, \
             "ohne Pfosten muss die Spannung aus j01 = 2.4048 kommen"
 
         # b/c/d) reines Membranfeld gegen die geschlossene Ringlösung
@@ -523,10 +524,12 @@ def test_gp47_ringmembran_im_3d_feldloser(stand):
                    & (cc >= ow) & (cc < ow + NM7))
             Lm = _coo47((vv[msk].real, (rr[msk] - ow, cc[msk] - ow)),
                         shape=(NM7, NM7)).tocsc()
-            rhs = np.repeat(gg["A_m"], Np7)
+            rhs = np.repeat(gg["A_mw"], Np7)        # bewegte Fläche
             w = _spsolve47(Lm, rhs)
-            r_a = gg["r_m"][-1] + 0.5 * gg["drm"][-1]
-            r_i = gg["r_m"][0] - 0.5 * gg["dr"]
+            # Einspannungen der WIRKSAMEN Membran (Randschicht √(D/T),
+            # Gegenprobe 62); ohne Randschicht Gitterrand und Pfostenwand
+            r_a = cap._a_w
+            r_i = cap._r_iw
             C_ex = (np.pi * r_a**4
                     * _ring_compliance_factor(r_i / r_a) / (8.0 * gg["T_mem"]))
             wr = w.reshape(gg["Nr_m"], Np7)[:, 0]
@@ -548,10 +551,23 @@ def test_gp47_ringmembran_im_3d_feldloser(stand):
                  f"({rr47[0][0]:.1e})")
             assert rr47[2][0] < 1e-3, \
                 f"auf feinem Gitter erst recht ({rr47[2][0]:.1e})"
-            # zweite Ordnung: jede Halbierung von dr muss den Fehler
-            # mindestens dritteln (theoretisch vierteln)
+            # zweite Ordnung: der Fehler muss mit dem Gitter fallen und
+            # unter der quadratischen Schranke 6e-3·(60/N)² bleiben.
+            # Ohne Pfosten liegt die Einspannung eine halbe Zelle hinter
+            # der letzten Zellmitte, und jede Halbierung von dr drittelt
+            # den Fehler mindestens (theoretisch viertelt). Am Pfosten
+            # liegt die WIRKSAME Einspannung (Randschicht, Gegenprobe 62)
+            # irgendwo zwischen zwei Zellmitten — Schnittzelle mit Element-
+            # gewichten, Fehler 10–20-mal kleiner als mit der früheren
+            # Halbzelle an der Pfostenwand, aber noch nicht im asymptoti-
+            # schen Bereich der logarithmischen Ringlösung.
+            for k47, n47 in enumerate((60, 120, 240)):
+                assert rr47[k47][0] < 6e-3 * (60.0 / n47) ** 2, \
+                    (f"Pfosten {d47 * 1e3:.1f} mm: zweite Ordnung "
+                     f"({[f'{x[0]:.1e}' for x in rr47]})")
             for k47 in (0, 1):
-                assert rr47[k47][0] > 3.0 * rr47[k47 + 1][0], \
+                assert rr47[k47][0] > (3.0 if d47 == 0.0 else 1.0) \
+                        * rr47[k47 + 1][0], \
                     (f"Pfosten {d47 * 1e3:.1f} mm: der Fehler muss mit dem "
                      f"Gitter fallen ({[f'{x[0]:.1e}' for x in rr47]})")
             assert rr47[2][1] < 3e-3, \
@@ -697,17 +713,28 @@ def test_gp50_3d_gitter_grob_fein():
             (f"ohne Konturkorrektur muss grob sichtbar daneben liegen "
              f"({e_c50o:+.2f} dB)")
 
-        # c) Membranrand exakt bei a_mem, Fläche exakt — grob, fein und
-        #    a_bp = a_mem (kein Überstand)
+        # c) Membranrand exakt an der Einspannung, Fläche exakt — grob,
+        #    fein und a_bp = a_mem (kein Überstand). Eingespannt ist die
+        #    WIRKSAME Membran, um die Randschicht √(D/T) vor a_mem
+        #    (Gegenprobe 62). Mit Überstand endet das Gitter dort; ohne
+        #    liegt die Einspannung im Elektrodengitter, und die Randzelle
+        #    ist eine Schnittzelle (Elementgewicht, Fläche bis auf O(dr)).
         for cc50 in (c50, f50, MicrophoneCapsule(
                 squeeze_model="3d", **dict(p50, backplate_diameter=25.4e-3))):
             gg50 = cc50._g3d
-            edge50 = gg50["r_m"][-1] + 0.5 * gg50["drm"][-1]
-            S50 = float(np.sum(gg50["A_m"])) * gg50["Np"]
-            assert abs(edge50 / cc50.a_mem - 1.0) < 1e-12, \
-                f"Einspannung muss bei a_mem liegen ({edge50 * 1e3:.4f} mm)"
-            assert abs(S50 / (np.pi * cc50.a_mem**2) - 1.0) < 1e-12, \
-                "Membranfläche des Gitters muss π·a_mem² sein"
+            S50 = float(np.sum(gg50["A_mw"])) * gg50["Np"]
+            assert gg50["a_c"] == cc50._a_w, "Einspannung bei a_mem − √(D/T)"
+            if gg50["Nr_m"] > gg50["Nr"]:
+                edge50 = gg50["r_m"][-1] + 0.5 * gg50["drm"][-1]
+                assert abs(edge50 / cc50._a_w - 1.0) < 1e-12, \
+                    (f"das Gitter muss an der Einspannung enden "
+                     f"({edge50 * 1e3:.4f} mm)")
+                assert abs(S50 / (np.pi * cc50._a_w**2) - 1.0) < 1e-12, \
+                    "Membranfläche des Gitters muss π·(a − ℓ)² sein"
+            else:
+                assert abs(S50 / (np.pi * cc50._a_w**2) - 1.0) \
+                    < 2.0 * gg50["dr"] / cc50.a_mem, \
+                    "bewegte Fläche bis auf die Schnittzelle π·(a − ℓ)²"
         # ... und der lochfreie Kolben-Grenzfall (steife Membran, nur
         # Randspalt; mit und ohne Mittenpfosten) konvergiert jetzt glatt
         st50 = dict(p50, membrane_resonance_hz=50.0e3,
@@ -960,7 +987,9 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
             # Folienverlust hysteretisch auf der Spannung (Gegenprobe 61)
             T = g["T_mem"] * (1.0 + 1j * g["eta_mem"])
             sig = g["sigma"]
-            a, b = c.a_mem, c.a_bp
+            # eingespannt am Rand der WIRKSAMEN Membran (Randschicht
+            # √(D/T), Gegenprobe 62)
+            a, b = c._a_w, c.a_bp
             Mb = int(round(M * b / a))
             r = np.concatenate([np.linspace(0.0, b, Mb + 1),
                                 np.linspace(b, a, M - Mb + 1)[1:]])
@@ -1070,8 +1099,9 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
         Cb52 += (cw52.h_gap / (GAMMA / (1 + (GAMMA - 1) * np.tanh(at20)
                                         / at20) * P_ATM)).real \
             * np.pi * cw52.a_bp ** 2
-        Cm52 = np.pi * cw52.a_mem ** 4 / (8 * cw52._g3d["T_mem"])
-        u52 = (cw52.a_bp / cw52.a_mem) ** 2
+        # wirksame Membran (Randschicht √(D/T), Gegenprobe 62)
+        Cm52 = np.pi * cw52._a_w ** 4 / (8 * cw52._g3d["T_mem"])
+        u52 = (cw52.a_bp / cw52._a_w) ** 2
         V_ex52 = u52 * (2 - u52) * Cm52 / (1 + Cm52 / Cb52)
         e_ex52 = abs(abs(cw52._solve_3d(om20, weight="volume")[0][0])
                      / V_ex52 - 1)
@@ -1206,8 +1236,10 @@ def test_gp54_statischer_versatz_2d_3d_aufgeklart():
                                         architecture=arch54, **kw54)
                 r54 = np.linspace(c54.r_post, c54.a_mem, 20001)
                 u54 = (r54 / c54.a_mem) ** 2
-                psi54 = np.maximum(_ring_static_shape(
-                    np.minimum(u54, 1.0), c54.u_post), 0.0) / c54._phi_max
+                # statische Form der wirksamen Membran (Randschicht,
+                # Gegenprobe 62)
+                psi54 = np.maximum(c54._form(np.minimum(u54, 1.0)),
+                                   0.0) / c54._phi_max
                 V54 = np.trapezoid(c54._output_weight_3d(r54) * psi54
                                    * 2 * np.pi * r54, r54)
                 assert abs(V54 / c54.S_eff_mem - 1.0) < 2e-3, \
@@ -1278,7 +1310,8 @@ def test_gp54_statischer_versatz_2d_3d_aufgeklart():
                 d54[(oe54, te54, me54)] = float(
                     20 * np.log10(abs(h2_54 / h3_54)))
             cbk54 = MicrophoneCapsule(squeeze_model="2d", **bk54)
-            ubk54 = (cbk54.a_bp / cbk54.a_mem) ** 2
+            # (Fläche der wirksamen Membran, Randschicht, Gegenprobe 62)
+            ubk54 = (cbk54.a_bp / cbk54._a_w) ** 2
             fin54 = -20 * np.log10(ubk54 * (2 - ubk54))
             old54, out54, both54, now54 = (
                 d54[(False, False, False)], d54[(True, False, False)],

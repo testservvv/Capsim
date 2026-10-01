@@ -150,9 +150,9 @@ def _ring_compliance_factor(rho):
     return 1.0 - rho**4 + (1.0 - rho**2) ** 2 / np.log(rho)
 
 
-def _platten_verduennung(z, D, T, rho_s, a, ri=0.0):
+def _platten_verduennung(z, D, T, rho_s, a, ri=0.0, nur_f=False):
     """Biegeanteil einer Membranmode mit Vorspannung (Folienverlust,
-    Gegenprobe 61).
+    Gegenprobe 61; exakte Frequenz, Gegenprobe 62).
 
     Die Folie ist eine eingespannte Platte unter Zug:
 
@@ -167,8 +167,9 @@ def _platten_verduennung(z, D, T, rho_s, a, ri=0.0):
     Rückgabe (q, f): q = ∂ln ω²/∂ln D ist der Anteil der Biegeenergie an
     der Formänderungsenergie (Rayleigh), f = ω/ω_T. Für λ = √(D/(T a²))
     ≪ 1 gilt ohne Pfosten q ≈ λ + z²λ² (Randschicht der Breite λ·a an
-    der Einspannung plus Krümmung im Innern) und f ≈ 1 + λ. None, wenn
-    keine Nullstelle gefunden wird.
+    der Einspannung plus Krümmung im Innern) und f ≈ 1 + λ. Mit
+    ``nur_f`` nur f (eine statt drei Nullstellen). None, wenn keine
+    Nullstelle gefunden wird.
     """
     from scipy.optimize import brentq
     from scipy.special import ive, jv, kve, yv
@@ -206,6 +207,9 @@ def _platten_verduennung(z, D, T, rho_s, a, ri=0.0):
                               xtol=1e-15, rtol=1e-15)
         return None
 
+    if nur_f:
+        x0 = wurzel(D)
+        return None if x0 is None else float(np.sqrt(x0))
     eps = 1e-2
     x0, xp, xm = wurzel(D), wurzel(D * (1 + eps)), wurzel(D * (1 - eps))
     if x0 is None or xp is None or xm is None:
@@ -876,6 +880,19 @@ class MicrophoneCapsule:
     # parameters. Abschaltbar nur für den Vergleich.
     _MASS_EXACT = True
 
+    # RANDSCHICHT DER FOLIE (Gegenprobe 62): die eingespannte Folie ist am
+    # Rand eine Platte unter Zug und biegt sich in einer Randschicht der
+    # Breite ℓ = √(D/T) in die Einspannung. In erster Ordnung wirkt das wie
+    # eine um ℓ nach innen versetzte Einspannung (am Pfosten nach außen):
+    # Kette, Moden, statische Form und 3D-Feld rechnen die Membran mit dem
+    # wirksamen Radius a − ℓ (s. _wirk_membran). Abschaltbar für den
+    # Vergleich mit Referenzen, die die Folie als reine Membran rechnen
+    # (COMSOL-Membraninterface, Zuckerwar 1978, Warren 1975).
+    _RANDSCHICHT = True
+    # Ab dieser relativen Abweichung der Grundfrequenz gegen die exakte
+    # Platte unter Zug warnt das Modell (λ ≈ 0.06 ohne Pfosten).
+    _RAND_GRENZE = 0.01
+
     # Homogenisierungsgrenze der 1D/2D-Modelle (Gegenproben 48/53):
     # kritische lokale Kennzahl über dem größten lochfreien Bereich
     # (Radius ρ), das Verhältnis der Filmkraft zur Membransteifigkeit auf
@@ -1456,36 +1473,71 @@ class MicrophoneCapsule:
         self.S_mem = np.pi * a**2                 # Membranfläche [m^2]
         self.S_bp = np.pi * self.a_bp**2          # Backplate-Fläche [m^2]
         rho_s = self.mat_rho * t                  # Flächendichte [kg/m^2]
+        self.sigma_mem = rho_s
+        # Biegesteifigkeit der Folie (eingespannte Platte):
+        #        D = E * t^3 / (12 * (1 - nu^2))      [N*m]
+        D_plate = self.mat_E * t**3 / (12.0 * (1.0 - self.mat_nu**2))
+        self._D_plate = D_plate
+
+        # ------------------------------------------------------------------
+        # RANDSCHICHT UND WIRKSAME MEMBRAN (Gegenprobe 62)
+        # Die Folie ist eine Platte unter Zug, D·∇⁴w − T·∇²w = p, eingespannt
+        # mit w = w' = 0. Für λ = √(D/(T a²)) ≪ 1 ist sie im Innern eine
+        # Membran; nur in einer Randschicht der Breite ℓ = √(D/T) biegt sie
+        # sich in die Einspannung. Die Membranlösung außerhalb der Schicht
+        # erfüllt am Rand w = ℓ·∂w/∂r, verschwindet also um ℓ VOR dem Rand:
+        # in erster Ordnung ist die Folie eine Membran mit dem wirksamen
+        # Radius a − ℓ (am Pfosten r_i + ℓ), s. _wirk_membran. Das trifft
+        # die exakte statische Nachgiebigkeit der Platte,
+        #     C = πa⁴/(8T)·[1 − 4λ·(I0(1/λ)/I1(1/λ) − 2λ)],
+        # für die B&K-Nickelfolie (λ = 6.3·10⁻³, −2.5 %) auf 6·10⁻⁷ und ihre
+        # Grundfrequenz (+0.65 %) auf 1.2·10⁻⁴; der Rest ist die Platten-
+        # dispersion im Innern, ≈ z1²λ²/2, die nicht gerechnet wird. Bis
+        # Gegenprobe 61 stand die Biegung als parallele Plattenfeder
+        # C_B = πa⁶/(192D) in der Kette — ein Effekt der Ordnung λ², die
+        # Randschicht ist einer der Ordnung λ und fehlte ganz.
+        # Form, Momente, Moden, Ringfaktor, Statik und 3D-Feld rechnen mit
+        # der wirksamen Membran, ausgedrückt in der Bezugsgröße a_mem
+        # (u = (r/a_mem)², S_mem). Bei vorgegebener Resonanz ist T die
+        # Spannung, deren wirksame Membran f_res trifft — ein Fixpunkt,
+        # weil ℓ von T abhängt (Kontraktion ≈ λ, wenige Schritte).
+        # ------------------------------------------------------------------
+        z1_geo = (self._J0_ZEROS[0] if self.r_post <= 0.0
+                  else float(self._ring_eigen(self.rho_post, 1)["z"][0]))
+        self._z1_geo = z1_geo
+        if self.f_res_user is not None:
+            w0 = 2.0 * np.pi * float(self.f_res_user)
+            T_m = rho_s * (w0 * a / z1_geo) ** 2
+            for _ in range(60):
+                T_n = rho_s * (w0 * a / self._wirk_membran(T_m)["z1"]) ** 2
+                fertig = abs(T_n / T_m - 1.0) < 1e-14
+                T_m = T_n
+                if fertig:
+                    break
+        else:
+            T_m = self.tension
+        self._T_mech = float(T_m)
+        W = self._wirk_membran(self._T_mech)
+        self._wirk = W
+        self._ell = W["ell"]
+        self._a_w, self._r_iw = W["a_w"], W["r_iw"]
+        self._u_w, self._u_iw = W["u_w"], W["u_iw"]
+        self._rho_w = W["rho_w"]
+        self._ring_mode_cache = None
 
         # ------------------------------------------------------------------
         # STATISCHE FORM, KOLBENFAKTOR UND WIRKSAME FLÄCHE
         # Alles Folgende hängt an EINER Funktion: dem statischen Profil
-        # φ(u) über u = (r/a)² (s. _ring_static_shape). Ohne Mitten-
-        # terminierung ist das die Parabel 1−u und alle Momente sind die
-        # bekannten Zahlen; mit Mittenterminierung dieselben Formeln,
-        # nur andere Momente. Die Normierung ist φ_max = 1, damit w0 die
-        # MAXIMALE Auslenkung bleibt (bei einer Ringmembran liegt sie
-        # nicht in der Mitte, sondern bei r/a ≈ 0.33…0.46).
+        # φ(u) über u = (r/a)² (s. _form). Ohne Mittenterminierung ist das
+        # die Parabel 1 − u/u_w (u_w = ((a−ℓ)/a)², ohne Randschicht 1) und
+        # alle Momente sind bekannte Zahlen; mit Mittenterminierung
+        # dieselben Formeln, nur andere Momente. Die Normierung ist
+        # φ_max = 1, damit w0 die MAXIMALE Auslenkung bleibt (bei einer
+        # Ringmembran liegt sie nicht in der Mitte, sondern bei r/a ≈
+        # 0.33…0.46).
         # ------------------------------------------------------------------
-        if self.u_post <= 0.0:
-            # Parabel: die Momente sind exakt bekannt — keine Quadratur,
-            # damit der Bestand BITGLEICH bleibt.
-            self._phi_max, self._phi_umax = 1.0, 0.0
-            m1, m2 = 0.5, 1.0 / 3.0
-        else:
-            # Maximum in geschlossener Form: dφ/du = −1 − (1−u_i)/(u·ln u_i)
-            self._phi_umax = float(np.clip(
-                -(1.0 - self.u_post) / np.log(self.u_post),
-                self.u_post, 1.0))
-            self._phi_max = float(_ring_static_shape(self._phi_umax,
-                                                     self.u_post))
-            # Momente per Gauss–Legendre (glatter Integrand auf [u_i, 1])
-            _xq, _wq = np.polynomial.legendre.leggauss(512)
-            _uq = 0.5 * (1.0 + self.u_post) + 0.5 * (1.0 - self.u_post) * _xq
-            _wq = 0.5 * (1.0 - self.u_post) * _wq
-            _pq = _ring_static_shape(_uq, self.u_post) / self._phi_max
-            m1 = float(np.dot(_wq, _pq))
-            m2 = float(np.dot(_wq, _pq**2))
+        self._phi_umax, self._phi_max = W["phi_umax"], W["phi_max"]
+        m1, m2 = W["m1"], W["m2"]
         self._phi_m1, self._phi_m2 = m1, m2
         # wirksame Fläche: Volumenverschiebung je Maximalauslenkung
         self.S_eff_mem = self.S_mem * m1
@@ -1496,19 +1548,18 @@ class MicrophoneCapsule:
         # nimmt die statische Nachgiebigkeit C_T = S·a²·g/(8T) (exakt, s.
         # unten) und wählt die Masse so, dass auch die Grundresonanz der
         # Membran exakt ist, ω1² = z1²·T/(rho_s·a²):
-        #     μ = 8/(z1²·g)      (ohne Pfosten 8/j01² = 1.3833).
-        # Der Rayleigh-Wert der statischen Form, <φ²>/<φ>² (Parabel 4/3,
-        # Ring ρ = 0.1: 1.242), ist eine obere Schranke der Frequenz: mit
-        # ihm lag die Resonanz 1.9 % zu hoch, oder — bei vorgegebener
-        # Resonanz — die statische Nachgiebigkeit 3.75 % zu hoch
-        # (+0.32 dB, Gegenprobe 55). Die Modenmasse der J0-Form allein,
-        # j01²/4 = 1.446, wäre ebenso falsch: sie gehört zur Moden-
-        # Nachgiebigkeit 32/j01⁴ = 95.7 % der statischen. Die Biege-
-        # steifigkeit der Folie trägt Promille und steckt in C_A_phys; ihr
-        # Eigenwert wird nicht eigens getroffen.
+        #     μ = 8/(z1²·g)      (ohne Pfosten und Randschicht 8/j01²
+        #                         = 1.3833).
+        # z1 und g sind die der wirksamen Membran in der Bezugsgröße a_mem
+        # (s. _wirk_membran, _ring_modes). Der Rayleigh-Wert der statischen
+        # Form, <φ²>/<φ>² (Parabel 4/3, Ring ρ = 0.1: 1.242), ist eine
+        # obere Schranke der Frequenz: mit ihm lag die Resonanz 1.9 % zu
+        # hoch, oder — bei vorgegebener Resonanz — die statische Nach-
+        # giebigkeit 3.75 % zu hoch (+0.32 dB, Gegenprobe 55). Die Moden-
+        # masse der J0-Form allein, j01²/4 = 1.446, wäre ebenso falsch: sie
+        # gehört zur Modennachgiebigkeit 32/j01⁴ = 95.7 % der statischen.
         # ------------------------------------------------------------------
-        self.sigma_mem = rho_s
-        self._ring_g = _ring_compliance_factor(self.rho_post)
+        self._ring_g = W["g"]
         self._mass_factor_rayleigh = m2 / m1**2
         _z1 = float(self._ring_modes()["z"][0])
         self._piston_factor = (8.0 / (_z1 ** 2 * self._ring_g)
@@ -1517,59 +1568,57 @@ class MicrophoneCapsule:
         self.M_A_mem = self._piston_factor * rho_s / self.S_mem
 
         # ------------------------------------------------------------------
-        # AKUSTISCHE NACHGIEBIGKEIT DER MEMBRAN
-        # 1) Anteil der Vorspannung T [N/m] (Beranek):
-        #        C_T = pi * a^4 / (8 * T)             [m^5/N = m^3/Pa]
-        #    (statische Durchbiegung w0 = p*a^2/(4T), Volumen = p*pi*a^4/(8T))
-        #    MIT MITTENTERMINIERUNG kommt der geschlossene Ringfaktor
-        #        g(ρ) = 1 − ρ⁴ + (1−ρ²)²/ln ρ
-        #    dazu (s. _ring_compliance_factor) — bei ρ = 0.05 sind das
-        #    schon 33 % weniger Nachgiebigkeit.
-        # 2) Anteil der Biegesteifigkeit der Folie (eingespannte Platte):
-        #        D   = E * t^3 / (12 * (1 - nu^2))    [N*m]
-        #        C_B = pi * a^6 / (192 * D)
-        # Beide Federn wirken parallel (Steifigkeiten addieren sich):
-        #        1/C_phys = 1/C_T + 1/C_B
+        # AKUSTISCHE NACHGIEBIGKEIT DER MEMBRAN (Vorspannung T [N/m],
+        # Beranek):
+        #        C_T = pi * a^4 / (8 * T) · g         [m^5/N = m^3/Pa]
+        # (statische Durchbiegung w0 = p*a^2/(4T), Volumen = p*pi*a^4/(8T)).
+        # g fasst Mittenterminierung und Randschicht zusammen: g =
+        # u_w²·g(ρ_w) mit dem geschlossenen Ringfaktor g(ρ) = 1 − ρ⁴ +
+        # (1−ρ²)²/ln ρ der wirksamen Ringmembran (s. _ring_compliance_
+        # factor; bei ρ = 0.05 schon 33 % weniger Nachgiebigkeit) und
+        # u_w² = ((a−ℓ)/a)⁴ ≈ 1 − 4λ der Randschicht. Die Biegesteifigkeit
+        # steckt damit vollständig in der Randschicht; im Innern ist die
+        # statische Form eine Parabel, ∇⁴w = 0.
+        # Bei vorgegebener Resonanz gilt das für die Vorspannung des
+        # Parameters (Diagnose f_res_from_tension) mit DEREN Randschicht.
         # ------------------------------------------------------------------
-        C_T = np.pi * a**4 / (8.0 * self.tension) * self._ring_g
-        D_plate = self.mat_E * t**3 / (12.0 * (1.0 - self.mat_nu**2))
-        C_B = np.pi * a**6 / (192.0 * D_plate)
-        self.C_A_phys = 1.0 / (1.0 / C_T + 1.0 / C_B)
-        # GRENZE, dokumentiert: der Ringfaktor gilt für die VORSPANNUNG.
-        # Die Biegesteifigkeit einer eingespannten Ringplatte hat einen
-        # anderen Formfaktor, der hier nicht gerechnet wird. Bei Folien-
-        # membranen trägt sie Promille — wird sie relevant, ist das ein
-        # Fehler und keine Feinheit.
-        if self.r_post > 0.0 and C_T > 0.02 * C_B:
-            raise ValueError(
-                "Mittenterminierung: die Biegesteifigkeit der Folie trägt "
-                f"{100.0 * C_T / (C_T + C_B):.1f} % der Gesamtsteifigkeit. "
-                "Der Ringfaktor ist nur für den VORSPANNUNGSANTEIL "
-                "hergeleitet — für eine so steife Platte gilt er nicht."
-            )
+        W_T = W if self.f_res_user is None else self._wirk_membran(self.tension)
+        self.C_A_phys = np.pi * a**4 * W_T["g"] / (8.0 * self.tension)
+        if W_T is W:
+            mu_T = self._piston_factor
+        else:
+            mu_T = (8.0 / (W_T["z1"] ** 2 * W_T["g"]) if self._MASS_EXACT
+                    else W_T["m2"] / W_T["m1"] ** 2)
 
         # Aus Vorspannung/Steifigkeit resultierende Resonanz (Diagnose):
         self.f_res_from_tension = 1.0 / (
-            2.0 * np.pi * np.sqrt(self.M_A_mem * self.C_A_phys)
+            2.0 * np.pi * np.sqrt(mu_T * rho_s / self.S_mem * self.C_A_phys)
         )
-        # EXAKTE Modalfrequenz der Grundmode (Diagnose): Membran-Eigenwert
-        # j01 = 2.40483 (mit Mittenterminierung der der RINGmembran, z_1 =
-        # 2.80 schon bei r_i/a = 1 %), für die Biegesteifigkeit der
-        # eingespannte Platten-Eigenwert lambda² = 10.2158; beide Anteile
-        # addieren sich in guter Näherung quadratisch. Mit dem Massenfaktor
-        # 8/(z1²·g) trifft f_res_from_tension den Vorspannungsanteil exakt
-        # (vorher, mit dem Rayleigh-Wert 4/3, lag er 1.9 % darüber); ein
-        # Unterschied bleibt nur über die Biegesteifigkeit.
-        f_T_ex = _z1 / (2.0 * np.pi * a) * np.sqrt(self.tension / rho_s)
-        f_B_ex = (10.2158 / (2.0 * np.pi * a**2)
-                  * np.sqrt(D_plate / rho_s))
-        self.f_res_modal_exact = float(np.hypot(f_T_ex, f_B_ex))
+        # EXAKTE Modalfrequenz der Grundmode (Diagnose): Eigenwert der
+        # eingespannten Platte unter Zug (s. _platten_verduennung), mit
+        # Mittenterminierung der der Ringplatte. Mit dem Massenfaktor
+        # 8/(z1²·g) trifft f_res_from_tension den Eigenwert der wirksamen
+        # Membran exakt; es bleibt die Plattendispersion im Innern
+        # (≈ z1²λ²/2, B&K-Nickel 1.2·10⁻⁴). Bis Gegenprobe 61 stand hier die
+        # quadratische Summe aus Membran- und Platten-Eigenwert (10.2158):
+        # sie erfasste nur λ²-Terme, die Resonanz lag bei vorgegebener
+        # Vorspannung 0.4…0.65 % zu tief.
+        f_T_ex = z1_geo / (2.0 * np.pi * a) * np.sqrt(self.tension / rho_s)
+        f_x = None
+        if _HAS_SCIPY:
+            try:
+                f_x = _platten_verduennung(z1_geo, D_plate, self.tension,
+                                           rho_s, a, self.r_post, nur_f=True)
+            except (ValueError, ArithmeticError):
+                f_x = None
+        self.f_res_modal_exact = float(
+            f_T_ex * (f_x if f_x is not None else W_T["z1"] / z1_geo))
 
         # Ist eine Soll-Resonanzfrequenz vorgegeben, wird die Nachgiebigkeit
         # so skaliert, dass f_res exakt getroffen wird (die Vorspannung
         # bleibt als Plausibilitäts-Referenz in summary() sichtbar). Mit
         # dem Massenfaktor 8/(z1²·g) ist das die statische Nachgiebigkeit
-        # der Membran, deren Grundresonanz f_res ist.
+        # der (wirksamen) Membran, deren Grundresonanz f_res ist.
         if self.f_res_user is not None:
             w0 = 2.0 * np.pi * float(self.f_res_user)
             self.C_A_mem = 1.0 / (w0**2 * self.M_A_mem)
@@ -1596,8 +1645,8 @@ class MicrophoneCapsule:
         r_c = r0 + (np.arange(N) + 0.5) * dr
         r_f = r0 + np.arange(N + 1) * dr
         self._fld_area = 2.0 * np.pi * r_c * dr           # Zellflächen [m^2]
-        self._fld_phi = _ring_static_shape(
-            np.minimum((r_c / self.a_mem) ** 2, 1.0), self.u_post)
+        self._fld_phi = self._form(
+            np.minimum((r_c / self.a_mem) ** 2, 1.0))
         self._fld_phi = np.maximum(self._fld_phi, 0.0) / self._phi_max
         self._fld_Sphi = float(np.sum(self._fld_phi * self._fld_area))
         # Geometriefaktor der lateralen Flächenleitwerte: Gface = 2*pi*r_f/dr*K
@@ -1676,10 +1725,10 @@ class MicrophoneCapsule:
         tot = p_th + p_bh
         scale = np.where(tot > 0.95, 0.95 / np.maximum(tot, 1e-30), 1.0)
         self._es_u = u_es
-        # Modenprofil an denselben Stützstellen (Parabel bzw. Ringform),
-        # normiert auf 1 — die dynamische Modenform der Kette.
-        self._es_phi = (_ring_static_shape(u_es, self.u_post)
-                        / self._phi_max)
+        # Modenprofil an denselben Stützstellen (Parabel bzw. Ringform der
+        # wirksamen Membran), normiert auf 1 — die dynamische Modenform der
+        # Kette.
+        self._es_phi = self._form(u_es) / self._phi_max
         self._es_c_solid = 1.0 - tot * scale
         self._es_c_blind = p_bh * scale
 
@@ -1799,9 +1848,31 @@ class MicrophoneCapsule:
         # verlustfrei). Bis Gegenprobe 60 stand hier R = √(M/C)/Q mit
         # Q = 100 als numerischer Boden, im 3D-Löser dagegen ein mit ω
         # wachsender Massenverlust — beides ohne physikalische Grundlage.
-        self._D_plate = D_plate
         self._folie_eta = self._folienverlust()
         self.eta_membrane = float(self._folie_eta[0])
+        # GÜLTIGKEIT DER RANDSCHICHT (Gegenprobe 62): die wirksame Membran
+        # gegen den exakten Eigenwert der Platte unter Zug bei derselben
+        # Spannung (aus _folienverlust). Der Rest ist die Plattendispersion
+        # im Innern, ≈ z1²λ²/2; über _RAND_GRENZE ist die Folie zu
+        # biegesteif für das Membranbild, und das soll man erfahren.
+        # Ohne Randschicht (_RANDSCHICHT = False, nur für Vergleiche mit
+        # reinen Membranmodellen) ist das die Membran gegen die Platte, also
+        # ≈ −λ — bewusst gewählt, deshalb ohne Warnung.
+        f_pl = float(self._platte_f[0])
+        self.rand_abweichung = (
+            float(self._wirk["z1"] / self._z1_geo / f_pl - 1.0)
+            if np.isfinite(f_pl) else 0.0)
+        if (self._RANDSCHICHT
+                and abs(self.rand_abweichung) > self._RAND_GRENZE):
+            lam_ph = np.sqrt(self._D_plate / self._T_mech) / self.a_mem
+            warnings.warn(
+                f"Biegesteife Folie: λ = √(D/(T·a²)) = {lam_ph:.3f}. Die "
+                f"Membran mit Randschicht "
+                f"(wirksamer Radius a − √(D/T)) verfehlt die Grundfrequenz "
+                f"der eingespannten Platte unter Zug um "
+                f"{100.0 * self.rand_abweichung:+.1f} %; Form, Moden und "
+                f"Nachgiebigkeit sind entsprechend unsicher.",
+                UserWarning, stacklevel=3)
 
         # ------------------------------------------------------------------
         # WANDLERKOEFFIZIENT UND RUHEKAPAZITÄT AM ARBEITSPUNKT
@@ -2425,7 +2496,9 @@ class MicrophoneCapsule:
     #
     #     T·(4/a²)·(u·w_u)_u = −p_es(u, w),        u = r²/a_mem²,
     #     p_es = (ε0U²/2)·[c_s/(h−w)² + c_b/(h+d_bh−w)²]   (Elektrode),
-    #     w(1) = 0;  Kreis: u·w_u = 0 bei u = 0;  Ring: w(u_i) = 0.
+    #     w(u_w) = 0;  Kreis: u·w_u = 0 bei u = 0;  Ring: w(u_iw) = 0
+    #     (wirksame Ränder der Folie, um die Randschicht √(D/T) versetzt,
+    #     Gegenprobe 62; ohne Randschicht u_w = 1, u_iw = u_i).
     #
     # In der Koordinate u ist der Operator an der Achse regulär und das
     # Finite-Volumen-System tridiagonal. T ist die Spannung, die die
@@ -2450,7 +2523,10 @@ class MicrophoneCapsule:
     def _static_setup(self):
         """Gitter, Porosität und Membranoperator der exakten Statik."""
         N = self._N_STATIC
-        u = np.linspace(self.u_post, 1.0, N + 1)
+        # Gebiet der WIRKSAMEN Membran (Randschicht, Gegenprobe 62): die
+        # Einspannungen liegen um ℓ = √(D/T) nach innen versetzt; ohne
+        # Randschicht bitgleich [u_post, 1].
+        u = np.linspace(self._u_iw, self._u_w, N + 1)
         du = u[1] - u[0]
         vol = np.full(u.size, du)
         vol[0] *= 0.5
@@ -2467,7 +2543,7 @@ class MicrophoneCapsule:
         L[1, :-1] -= g
         L[1, 1:] -= g
         # dynamische Modenform (die der Kette) auf demselben Gitter
-        psi = _ring_static_shape(u, self.u_post) / self._phi_max
+        psi = self._form(u) / self._phi_max
         self._st = dict(u=u, vol=vol, cs=cs, cb=cb, L=L, tension=tension,
                         ring=self.u_post > 0.0, psi=psi,
                         S=np.pi * self.a_mem**2)
@@ -2715,26 +2791,27 @@ class MicrophoneCapsule:
 
     def _membrane_tension_3d(self):
         """Membranspannung des 3D-Felds und der Homogenisierungsgrenze
-        [N/m] (Gegenprobe 54).
+        [N/m] (Gegenproben 54, 62).
 
-        Mit vorgegebener Resonanz ist es die Spannung, deren EXAKTE
-        Grundmode f_res trifft. Mit vorgegebener Vorspannung ist es die
-        physikalische, über die exakte Modalfrequenz (Vorspannung plus
-        Biegeanteil der Folie, s. f_res_modal_exact). Bis Gegenprobe 54
-        wurde sie auch dann aus der Resonanz der Kette zurückgerechnet.
-        Die lag mit dem Kolbenfaktor 4/3 der statischen Form 1,9 % zu
-        hoch, die Spannung also 3,75 % und die Nachgiebigkeit war
-        entsprechend zu klein (B&K 4134: −0,3 dB im Tiefton). Seit dem
-        Massenfaktor 8/(z1²·g) (Gegenprobe 55) trifft die Kette den
-        Vorspannungsanteil selbst exakt; beide Wege unterscheiden sich
-        nur noch über die Biegesteifigkeit der Folie (Promille).
+        Die physikalische Spannung _T_mech: mit vorgegebener Vorspannung
+        diese selbst, mit vorgegebener Resonanz die, deren wirksame
+        Membran (Randschicht, s. _wirk_membran) f_res trifft. Die Biege-
+        steifigkeit der Folie steckt seit Gegenprobe 62 in der um √(D/T)
+        versetzten Einspannung, in Kette und 3D-Feld gleich. Bis dahin
+        wurde die Spannung bei vorgegebener Vorspannung über die
+        „exakte Modalfrequenz" (Membran- und Platten-Eigenwert quadratisch
+        addiert) zurückgerechnet. Bis Gegenprobe 54 kam sie aus der
+        Resonanz der Kette; die lag mit dem Kolbenfaktor 4/3 der
+        statischen Form 1,9 % zu hoch, die Spannung also 3,75 % (B&K 4134:
+        −0,3 dB im Tiefton). Der Schalter _TENSION_EXACT_3D = False stellt
+        diesen Weg für Vergleiche nach (aus f_res der Kette über den
+        Eigenwert der wirksamen Membran).
         """
-        sigma = self.sigma_mem
+        if self.f_res_user is not None or self._TENSION_EXACT_3D:
+            return self._T_mech
         z1 = float(self._ring_modes()["z"][0])
-        f_t = (self.f_res_modal_exact
-               if self.f_res_user is None and self._TENSION_EXACT_3D
-               else self.f_res)
-        return sigma * (2.0 * np.pi * f_t * self.a_mem / z1) ** 2
+        return self.sigma_mem * (2.0 * np.pi * self.f_res * self.a_mem
+                                 / z1) ** 2
 
     def pullin_voltage(self, u_max=20000.0):
         """Maximal stabile Polarisationsspannung (Pull-in) — der Faltpunkt
@@ -3167,11 +3244,12 @@ class MicrophoneCapsule:
         else:
             Y_h = 0.0
         out = []
-        if self.r_post <= 0.0:
+        if self._r_iw <= 0.0:
+            # Modenradius ist der wirksame (Randschicht, Gegenprobe 62)
             for m in range(1, self.membrane_modes):
                 z_m = self._J0_ZEROS[m]
                 out.append(1.0 / (4.0 * np.pi
-                                  * (K_f + Y_h * self.a_mem**2 / z_m**2)))
+                                  * (K_f + Y_h * self._a_w**2 / z_m**2)))
             return out
         # RINGMEMBRAN: allgemein Z_m = (I2/I1²)/(S·(K_f·k_m² + Y_h)); für
         # die Vollmembran ist I2/I1² = z²/4 und das reduziert sich exakt
@@ -3369,17 +3447,24 @@ class MicrophoneCapsule:
         Feld hat keinen Biegeoperator; alle seine Formen tragen deshalb den
         Verlustfaktor der Grundmode (höhere Moden real etwas mehr, s. η_m).
 
-        Spannung T und Flächenmasse wie im 3D-Feld (_membrane_tension_3d).
+        Spannung T ist die physikalische der Membran (_T_mech: vorgegeben
+        oder die, deren wirksame Membran f_res trifft), die Eigenwerte die
+        der GEOMETRISCHEN Membran (Radius a, Pfosten r_i) — die Platten-
+        gleichung enthält die Randschicht selbst. Nebenbei fällt f = ω/ω_T
+        je Mode ab (_platte_f, Gültigkeit der Randschicht, Gegenprobe 62).
         Ohne Lösung der Eigenwertgleichung (sollte nicht vorkommen) die
-        Randschicht-Näherung λ + z²λ².
+        Randschicht-Näherung λ + z²λ² bzw. f = NaN.
         """
-        md = self._ring_modes()
-        z = np.asarray(md["z"], dtype=float)
-        T = self._membrane_tension_3d()
+        n = len(self._ring_modes()["z"])
+        z = (np.array(self._J0_ZEROS[:n], dtype=float) if self.r_post <= 0.0
+             else np.asarray(self._ring_eigen(self.rho_post, n)["z"],
+                             dtype=float))
+        T = self._T_mech
         a = self.a_mem
         D = self._D_plate
         lam = np.sqrt(D / (T * a * a))
         q = np.empty(z.size)
+        f = np.full(z.size, np.nan)
         for m, zm in enumerate(z):
             res = None
             if _HAS_SCIPY:
@@ -3389,6 +3474,9 @@ class MicrophoneCapsule:
                 except (ValueError, ArithmeticError):
                     res = None
             q[m] = res[0] if res is not None else lam + (zm * lam) ** 2
+            if res is not None:
+                f[m] = res[1]
+        self._platte_f = f
         return self.mat_eta * q
 
     def _membrane_impedance_passive(self, omega):
@@ -3471,12 +3559,14 @@ class MicrophoneCapsule:
             #       = 2[z·C1(z)·J0(u) − (2/π)·J0(uρ)] / ((z²−u²)·I1),
             # und der Zähler verschwindet bei u = z exakt mit dem Nenner
             # (Wronski) — die Singularität ist hebbar wie im Vollkreis.
+            # (wirksame Membran: Radius a_w, Pfosten r_iw, Integrale über
+            # S_w — Randschicht, Gegenprobe 62)
             md = self._ring_modes()
-            rho = self.rho_post
-            u = np.outer(omega / C_AIR * self.a_mem, np.sin(theta))
+            rho = self._rho_w
+            u = np.outer(omega / C_AIR * self._a_w, np.sin(theta))
             D = []
             for m in range(nm):
-                zm = md["z"][m]
+                zm = md["z_w"][m]
                 C1 = (_besselj(1, zm) * _bessely(0, zm * rho)
                       - _bessely(1, zm) * _besselj(0, zm * rho))
                 num = (zm * C1 * _besselj(0, u)
@@ -3487,10 +3577,11 @@ class MicrophoneCapsule:
                        / (2.0 * zm))
                 safe = np.where(np.abs(den) < 1e-9, 1.0, den)
                 Dm = np.where(np.abs(den) < 1e-9, lim, num / safe)
-                D.append((2.0 * Dm / md["I1"][m]).astype(complex))
+                D.append((2.0 * Dm / md["I1_w"][m]).astype(complex))
             rel = np.array(D)                      # absolut, wie unten
         else:
-            u = np.outer(omega / C_AIR * self.a_mem, np.sin(theta))
+            # bewegt wird die wirksame Membran (Randschicht, Gegenprobe 62)
+            u = np.outer(omega / C_AIR * self._a_w, np.sin(theta))
             D = []
             for m in range(nm):
                 den = z[m] ** 2 - u**2
@@ -3580,6 +3671,79 @@ class MicrophoneCapsule:
             return np.empty(0), np.empty(0)
         return u, wq / tot
 
+    def _wirk_membran(self, T):
+        """Wirksame Membran unter der Spannung T (Randschicht, Gegenprobe 62).
+
+        Die eingespannte Folie ist am Rand eine Platte unter Zug und biegt
+        sich in einer Randschicht der Breite ℓ = √(D/T) in die Einspannung
+        (w = w' = 0). Außerhalb der Schicht ist sie Membran; deren Lösung
+        erfüllt w = ℓ·∂w/∂n und verschwindet um ℓ vor dem Rand. In erster
+        Ordnung ist die Folie deshalb eine Membran mit dem wirksamen Radius
+        a_w = a − ℓ, am Pfosten r_iw = r_i + ℓ; die Volumenverschiebung in
+        der Schicht selbst ist von der Ordnung λ². Mit _RANDSCHICHT = False
+        ist ℓ = 0 und alles bitgleich die geometrische Membran.
+
+        Rückgabe in der Bezugsgröße a_mem (u = (r/a_mem)², S_mem):
+            ell, a_w, r_iw, u_w = (a_w/a)², u_iw = (r_iw/a)², rho_w = r_iw/a_w,
+            z1  — Grundeigenwert k1·a_mem (= z1(ρ_w)·a/a_w),
+            g   — Nachgiebigkeit relativ zu πa⁴/(8T) (= u_w²·g(ρ_w)),
+            phi_umax, phi_max, m1, m2 — Lage und Wert des Maximums der
+                  statischen Form und ihre Momente ∫φ du, ∫φ² du (φ_max = 1).
+        """
+        a = self.a_mem
+        # Das Gatter gilt der PHYSIKALISCHEN Folie, auch ohne Randschicht
+        ell_ph = float(np.sqrt(self._D_plate / T))
+        if not (np.isfinite(ell_ph) and ell_ph < 0.25 * (a - self.r_post)):
+            raise ValueError(
+                f"Biegesteife Folie: die Randschicht √(D/T) = "
+                f"{ell_ph * 1e6:.0f} µm nimmt mehr als ein Viertel der "
+                f"Membranbreite ein (T = {T:.4g} N/m) — das ist eine Platte, "
+                "keine Membran, und dafür ist das Modell nicht gebaut.")
+        ell = ell_ph if self._RANDSCHICHT else 0.0
+        a_w = a - ell
+        r_iw = self.r_post + ell if self.r_post > 0.0 else 0.0
+        u_w = (a_w / a) ** 2
+        u_iw = (r_iw / a) ** 2
+        rho_w = r_iw / a_w
+        if r_iw <= 0.0:
+            z1w = self._J0_ZEROS[0]
+            g_w = 1.0
+            # Parabel: die Momente sind exakt bekannt — keine Quadratur,
+            # damit der Bestand ohne Randschicht BITGLEICH bleibt.
+            phi_umax, phi_max = 0.0, 1.0
+            m1, m2 = 0.5 * u_w, u_w / 3.0
+        else:
+            z1w = float(self._ring_eigen(rho_w, 1)["z"][0])
+            g_w = _ring_compliance_factor(rho_w)
+            s_i = u_iw / u_w
+            # Maximum in geschlossener Form: dφ/ds = −1 − (1−s_i)/(s·ln s_i)
+            s_max = float(np.clip(-(1.0 - s_i) / np.log(s_i), s_i, 1.0))
+            phi_max = float(_ring_static_shape(s_max, s_i))
+            phi_umax = u_w * s_max
+            # Momente per Gauss–Legendre (glatter Integrand auf [s_i, 1])
+            _xq, _wq = np.polynomial.legendre.leggauss(512)
+            _sq = 0.5 * (1.0 + s_i) + 0.5 * (1.0 - s_i) * _xq
+            _wq = 0.5 * (1.0 - s_i) * _wq
+            _pq = _ring_static_shape(_sq, s_i) / phi_max
+            m1 = u_w * float(np.dot(_wq, _pq))
+            m2 = u_w * float(np.dot(_wq, _pq**2))
+        return dict(ell=ell, a_w=a_w, r_iw=r_iw, u_w=u_w, u_iw=u_iw,
+                    rho_w=rho_w, z1=z1w * (a / a_w), g=u_w**2 * g_w,
+                    phi_umax=phi_umax, phi_max=phi_max, m1=m1, m2=m2)
+
+    def _form(self, u):
+        """Statische Form der wirksamen Membran über u = (r/a_mem)²,
+        unnormiert (Maximum _phi_max), außerhalb [u_iw, u_w] null.
+
+        Die (Ring-)Form der Membran mit den wirksamen Rändern (s.
+        _ring_static_shape, _wirk_membran) in u/u_w. Ohne Randschicht ist
+        u_w = 1 und das bitgleich _ring_static_shape(u, u_post).
+        """
+        u = np.asarray(u, dtype=float)
+        if self._u_iw <= 0.0:
+            return np.maximum(1.0 - u / self._u_w, 0.0)
+        return _ring_static_shape(u / self._u_w, self._u_iw / self._u_w)
+
     def _ring_modes(self):
         """Eigenwerte und Modenintegrale der Membran (gecacht).
 
@@ -3616,12 +3780,19 @@ class MicrophoneCapsule:
         if cached is not None:
             return cached
         n = max(self.membrane_modes, len(self._J0_ZEROS))
-        if self.r_post <= 0.0:
+        if self._r_iw <= 0.0:
             z = np.array(self._J0_ZEROS[:n], dtype=float)
             j1z = _j1_mode(z)
-            self._ring_mode_cache = dict(z=z, I1=2.0 * j1z / z, I2=j1z**2)
+            md = dict(z=z, I1=2.0 * j1z / z, I2=j1z**2)
         else:
-            self._ring_mode_cache = self._ring_eigen(self.rho_post, n)
+            md = self._ring_eigen(self._rho_w, n)
+        # WIRKSAME Membran (Randschicht, Gegenprobe 62) in der Bezugsgröße
+        # a_mem: k·a_mem = z_w·a/a_w, die Integrale über S_mem statt S_w.
+        # Ohne Randschicht sind beide Faktoren exakt 1.
+        sc, uw = self.a_mem / self._a_w, self._u_w
+        self._ring_mode_cache = dict(
+            z=md["z"] * sc, I1=md["I1"] * uw, I2=md["I2"] * uw,
+            z_w=md["z"], I1_w=md["I1"], I2_w=md["I2"])
         return self._ring_mode_cache
 
     @staticmethod
@@ -3670,14 +3841,17 @@ class MicrophoneCapsule:
         beliebig: überall, wo das Gewicht auftritt, steht es in einem
         Quotienten mit seiner eigenen Summe.
         """
+        # Moden der WIRKSAMEN Membran (Randschicht, Gegenprobe 62): sie
+        # enden um ℓ = √(D/T) vor den Einspannungen; ohne Randschicht
+        # bitgleich die geometrischen.
         r = np.asarray(r, dtype=float)
-        if self.r_post <= 0.0:
-            x = self._J0_ZEROS[mode - 1] * np.clip(r / self.a_mem, 0.0, 1.0)
+        if self._r_iw <= 0.0:
+            x = self._J0_ZEROS[mode - 1] * np.clip(r / self._a_w, 0.0, 1.0)
             return _j0_mode(x)
-        z = self._ring_modes()["z"][mode - 1]
-        x = z * np.clip(r / self.a_mem, self.rho_post, 1.0)
-        return (_besselj(0, x) * _bessely(0, z * self.rho_post)
-                - _bessely(0, x) * _besselj(0, z * self.rho_post))
+        z = self._ring_modes()["z_w"][mode - 1]
+        x = z * np.clip(r / self._a_w, self._rho_w, 1.0)
+        return (_besselj(0, x) * _bessely(0, z * self._rho_w)
+                - _bessely(0, x) * _besselj(0, z * self._rho_w))
 
     def _diffraction_factors(self, omega, theta, mode=1):
         """Druckfaktoren an Membran und Rückeinlässen inkl. Beugung.
@@ -5118,7 +5292,9 @@ class MicrophoneCapsule:
         GITTER (Gegenprobe 50): _grid_3d_size — grob (Standard) oder fein
         (≥ 2 Zellen je kleinstem Mündungsradius); der Membranring außerhalb
         der Elektrode hat eine eigene Zellweite, damit die Einspannung auf
-        jedem Gitter exakt bei a_mem liegt.
+        jedem Gitter exakt liegt — seit Gegenprobe 62 an der wirksamen
+        Membran, um die Randschicht √(D/T) vor a_mem; liegt sie im
+        Elektrodengitter oder am Pfosten, als Schnittzelle.
         """
         Nr, Np_ = self._grid_3d_size()
         # MITTENTERMINIERUNG: beide Gitter beginnen am Pfostenrand r0.
@@ -5138,7 +5314,17 @@ class MicrophoneCapsule:
         # Nachgiebigkeit (∝ a⁴) sprang mit der Auflösung — bei der K67
         # zwischen 60 und 90 Radialzellen um 4 %. Ohne Überstand (a_bp
         # >= a_mem) endet die Membran am Elektrodenrand.
-        a_out = max(self.a_mem - self.a_bp, 0.0)
+        # RANDSCHICHT (Gegenprobe 62): die Einspannungen liegen bei der
+        # wirksamen Membran, um ℓ = √(D/T) nach innen (am Pfosten nach
+        # außen) versetzt — dieselbe Membran wie in der Kette. Liegt die
+        # äußere Einspannung über der Elektrode (a − ℓ <= a_bp), sitzt sie
+        # im Filmgitter: die letzte freie Zelle bekommt den wahren Abstand
+        # zur Einspannung (Shortley–Weller, mindestens eine Viertelzelle),
+        # dahinter liegende Zellen werden festgehalten. Ebenso am Pfosten.
+        # Ohne Randschicht (ℓ = 0) bitgleich der bisherige Stand.
+        a_c = self._a_w
+        rand = self._ell > 0.0
+        a_out = max(a_c - self.a_bp, 0.0)
         n_out = (max(1, int(round(a_out / dr)))
                  if a_out > 1e-9 * self.a_mem else 0)
         dr_o = a_out / n_out if n_out else dr
@@ -5146,9 +5332,42 @@ class MicrophoneCapsule:
         drm = np.concatenate([np.full(Nr, dr), np.full(n_out, dr_o)])
         r_m = np.concatenate([r_f, self.a_bp + (np.arange(n_out) + 0.5)
                               * dr_o])
+        # Freie Membranringe i_lo … i_hi; davor/dahinter festgehalten.
+        # d_aus/d_ein: Abstand der Randzellmitte zur Einspannung, None =
+        # bisherige Halbzelle (Ring außerhalb der Elektrode bzw. Pfosten
+        # ohne Randschicht).
+        i_lo, i_hi = 0, Nr_m - 1
+        d_aus = d_ein = None
+        if rand and n_out == 0:
+            d_c = a_c - r_f
+            i_hi = int(np.max(np.nonzero(d_c >= dr / self._SW_CAP)[0]))
+            d_aus = float(d_c[i_hi])
+        if rand and r0 > 0.0:
+            d_c = r_f - self._r_iw
+            i_lo = int(np.min(np.nonzero(d_c >= dr / self._SW_CAP)[0]))
+            d_ein = float(d_c[i_lo])
+        if i_hi <= i_lo:
+            raise ValueError(
+                "3D-Gitter: zwischen den wirksamen Einspannungen liegt "
+                "keine freie Membranzelle — das Gitter ist zu grob.")
         dphi = 2.0 * np.pi / Np_
         A_f = r_f * dr * dphi                       # Zellfläche je Ring
         A_m = r_m * drm * dphi
+        # BEWEGTE Membranfläche je Zelle (Randschicht, Gegenprobe 62): die
+        # Randzelle an einer Einspannung im Gitter ist eine Schnittzelle,
+        # sie reicht genau bis zur Einspannung (Masse, Antrieb, Erweichung,
+        # Filmkopplung, Ausgang); festgehaltene Zellen bewegen nichts.
+        # Ohne Randschicht bitgleich A_m bzw. A_f.
+        A_mw = A_m.copy()
+        if d_aus is not None:
+            rL, h_, d_ = r_m[i_hi], drm[i_hi], d_aus
+            A_mw[i_hi] = (rL * (h_ + d_) / 2.0 + (d_**2 - h_**2) / 6.0) * dphi
+        if d_ein is not None:
+            rF, h_, d_ = r_m[i_lo], drm[i_lo], d_ein
+            A_mw[i_lo] = (rF * (h_ + d_) / 2.0 + (h_**2 - d_**2) / 6.0) * dphi
+        A_mw[:i_lo] = 0.0
+        A_mw[i_hi + 1:] = 0.0
+        A_fw = A_mw[:Nr].copy()
         NF = Nr * Np_
         NM = Nr_m * Np_
         # Clearance-Ring auf DIESEM Gitter (fein: eigene Zellbreite)
@@ -5309,8 +5528,20 @@ class MicrophoneCapsule:
             # die Ringe die Breite dr_o: Fläche bei r_i + drm_i/2, Abstand
             # der Zellmitten r_{i+1} − r_i, Einspannung eine halbe
             # Randzelle hinter der letzten Mitte (= a_mem).
+            # RANDSCHICHT (Gegenprobe 62): Ringe außerhalb i_lo … i_hi
+            # liegen zwischen wirksamer und geometrischer Einspannung und
+            # werden festgehalten (großer Diagonaleintrag, w ≈ 0); die
+            # Randzellen bekommen den wahren Abstand d_aus/d_ein.
+            G_fix = Tfac * 1e10 * dphi
             for i in range(Nr_m):
-                if i < Nr_m - 1:
+                if i < i_lo or i > i_hi:
+                    for j in range(Np_):
+                        k1_ = base_off + i * Np_ + j
+                        rows.append(k1_)
+                        cols.append(k1_)
+                        vals.append(G_fix)
+                    continue
+                if i < i_hi:
                     G = (Tfac * (r_m[i] + 0.5 * drm[i]) * dphi
                          / (r_m[i + 1] - r_m[i]))
                     for j in range(Np_):
@@ -5321,16 +5552,18 @@ class MicrophoneCapsule:
                         vals.extend((-G, -G, G, G))
                 else:
                     G = (Tfac * (r_m[i] + 0.5 * drm[i]) * dphi
-                         / (0.5 * drm[i]))
+                         / (0.5 * drm[i]) if d_aus is None
+                         else Tfac * dphi / np.log(a_c / r_m[i]))
                     for j in range(Np_):                # geklemmter Rand
                         k1_ = base_off + i * Np_ + j
                         rows.append(k1_)
                         cols.append(k1_)
                         vals.append(G)
-                if i == 0 and q0 > 0.0:                 # Pfostenrand
-                    G = Tfac * q0 * dphi * 2.0
+                if i == i_lo and q0 > 0.0:              # Pfostenrand
+                    G = (Tfac * q0 * dphi * 2.0 if d_ein is None
+                         else Tfac * dphi / np.log(r_m[i] / self._r_iw))
                     for j in range(Np_):
-                        k1_ = base_off + j
+                        k1_ = base_off + i * Np_ + j
                         rows.append(k1_)
                         cols.append(k1_)
                         vals.append(G)
@@ -5357,7 +5590,7 @@ class MicrophoneCapsule:
                 k1_ = off_wf + i * Np_ + j
                 rows.append(k1_)
                 cols.append(k1_)
-                vals.append(-kappa[i] * A_m[i])
+                vals.append(-kappa[i] * A_mw[i])
         # Druckkopplung Membranzeilen (omega-unabhängig)
         if arch == "dual_diaphragm":
             # Frontmembran: -p_film0; Rückmembran: +p_film1
@@ -5365,10 +5598,10 @@ class MicrophoneCapsule:
                 for j in range(Np_):
                     rows.append(off_wf + i * Np_ + j)
                     cols.append(i * Np_ + j)
-                    vals.append(-A_f[i])
+                    vals.append(-A_fw[i])
                     rows.append(off_wr + i * Np_ + j)
                     cols.append(NF + i * Np_ + j)
-                    vals.append(+A_f[i])
+                    vals.append(+A_fw[i])
             # Außenseiten über die Sammelknoten (Strahlung + Gewebe) statt
             # direkt aus der Quelle — Vorzeichen wie beim bisherigen
             # Direktantrieb (rhs -A_m vorn / +A_m hinten). Grenzfall
@@ -5378,10 +5611,10 @@ class MicrophoneCapsule:
                 for j in range(Np_):
                     rows.append(off_wf + i * Np_ + j)
                     cols.append(off_n + 0)
-                    vals.append(+A_m[i])
+                    vals.append(+A_mw[i])
                     rows.append(off_wr + i * Np_ + j)
                     cols.append(off_n + 1)
-                    vals.append(-A_m[i])
+                    vals.append(-A_mw[i])
         elif arch == "dual":
             # Mittelmembran zwischen den Filmen, w positiv = nach VORN
             # (Film 0 liegt VOR der Membran und drückt sie nach hinten,
@@ -5392,10 +5625,10 @@ class MicrophoneCapsule:
                 for j in range(Np_):
                     rows.append(off_wf + i * Np_ + j)
                     cols.append(i * Np_ + j)
-                    vals.append(+A_f[i])
+                    vals.append(+A_fw[i])
                     rows.append(off_wf + i * Np_ + j)
                     cols.append(NF + i * Np_ + j)
-                    vals.append(-A_f[i])
+                    vals.append(-A_fw[i])
         else:                                        # single
             # Film hinter der Membran: -p_film0; Vorderseite sieht den
             # FRONTKNOTEN (Strahlung + Gewebe -> p_front): +p_node über die
@@ -5405,12 +5638,12 @@ class MicrophoneCapsule:
                 for j in range(Np_):
                     rows.append(off_wf + i * Np_ + j)
                     cols.append(i * Np_ + j)
-                    vals.append(-A_f[i])
+                    vals.append(-A_fw[i])
             for i in range(Nr_m):
                 for j in range(Np_):
                     rows.append(off_wf + i * Np_ + j)
                     cols.append(off_n + 0)
-                    vals.append(+A_m[i])
+                    vals.append(+A_mw[i])
 
         # ÄQUIPOTENTIALE MÜNDUNGEN (Gegenprobe 48). Über dem Lochquerschnitt
         # gibt es keinen Spaltfilm, sondern das offene Loch: der Druck ist
@@ -5559,7 +5792,8 @@ class MicrophoneCapsule:
 
         self._g3d = dict(
             Np=Np_, Nr=Nr, Nr_m=Nr_m, dr=dr, drm=drm, dphi=dphi,
-            r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, NF=NF, NM=NM, q0=q0,
+            r_f=r_f, r_m=r_m, A_f=A_f, A_m=A_m, A_fw=A_fw, A_mw=A_mw,
+            i_frei=(i_lo, i_hi), a_c=a_c, NF=NF, NM=NM, q0=q0,
             arch=arch, n_films=n_films, n_mem=n_mem, n_nodes=n_nodes,
             sigma=sigma, T_mem=T_mem, eta_mem=self.eta_membrane,
             kappa=kappa,
@@ -5694,7 +5928,9 @@ class MicrophoneCapsule:
         Np_, Nr, Nr_m = g["Np"], g["Nr"], g["Nr_m"]
         NF, NM = g["NF"], g["NM"]
         dr, dphi = g["dr"], g["dphi"]
-        r_f, A_f, A_m = g["r_f"], g["A_f"], g["A_m"]
+        r_f, A_f = g["r_f"], g["A_f"]
+        # bewegte Flächen (Schnittzellen an den Einspannungen, Gegenprobe 62)
+        A_fw, A_mw = g["A_fw"], g["A_mw"]
         omega = np.atleast_1d(np.asarray(omega, dtype=float))
         Xf = np.empty(omega.size, dtype=complex)
         Xr = np.empty_like(Xf)
@@ -5735,12 +5971,12 @@ class MicrophoneCapsule:
             raise ValueError("weight muss 'output' oder 'volume' sein.")
         # beide Gewichte je Lösung, damit der Speicher jede spätere
         # Anfrage bedienen kann
-        w_vol = -np.repeat(A_f, Np_)
+        w_vol = -np.repeat(A_fw, Np_)
         w_outs = {"volume": w_vol,
-                  "output": (-np.repeat(A_f * self._output_weight_3d(r_f),
+                  "output": (-np.repeat(A_fw * self._output_weight_3d(r_f),
                                         Np_)
                              if self._OUTPUT_EXACT_3D else w_vol)}
-        rhs_w = np.repeat(A_m, Np_)
+        rhs_w = np.repeat(A_mw, Np_)
         speicher = self._solve_3d_cache()
 
         def _two_port_stamp(rows, cols, vals, ca, offa, cb, offb,
@@ -5848,7 +6084,7 @@ class MicrophoneCapsule:
                 # Membranquelle im Filmring
                 rows += [off + idx_all]
                 cols += [mem_off + idx_all]
-                vals += [sgn * 1j * om * np.repeat(A_f, Np_)]
+                vals += [sgn * 1j * om * np.repeat(A_fw, Np_)]
                 # MEMBRANRING außerhalb der Platte (a_bp < r < a_mem,
                 # Gegenprobe 52): er liegt über dem tiefen Ringraum
                 # zwischen Plattenrand und Einspannung, dessen Druck der
@@ -5868,8 +6104,8 @@ class MicrophoneCapsule:
                     mw = mem_off + I_ * Np_ + J_
                     rows += [tgt, mw]
                     cols += [mw, tgt]
-                    vals += [sgn * 1j * om * A_m[I_].astype(complex),
-                             -sgn * A_m[I_].astype(complex)]
+                    vals += [sgn * 1j * om * A_mw[I_].astype(complex),
+                             -sgn * A_mw[I_].astype(complex)]
                 # Clearance-Ring als Schlitz-Stub (schmaler Ring)
                 if g["stub_cell"] is not None:
                     r_cst = 0.5 * self.clearance_ring_diameter
@@ -7764,7 +8000,8 @@ class MicrophoneCapsule:
                 _row(_t("  Nachgiebigkeitsfaktor g:",
                         "  compliance factor g:"),
                      f"{self._ring_g:9.4f} "
-                     + _t("(1 = Kreismembran)", "(1 = circular)")),
+                     + _t("(1 = Kreismembran ohne Randschicht)",
+                          "(1 = circular, no boundary layer)")),
                 _row(_t("  Eigenwert z_1 / Maximum:",
                         "  eigenvalue z_1 / maximum:"),
                      f"{float(_md['z'][0]):9.4f}"
@@ -7814,11 +8051,19 @@ class MicrophoneCapsule:
             _t(f"  (exakte Modalfrequenz:      {self.f_res_modal_exact:9.1f} "
                f"Hz — Abweichung der Kette "
                f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.2f} %, "
-               "nur über die Biegesteifigkeit)",
+               "Plattendispersion im Innern)",
                f"  (exact modal frequency:     {self.f_res_modal_exact:9.1f} "
                f"Hz — lumped model deviates "
                f"{100.0 * (self.f_res_from_tension / self.f_res_modal_exact - 1.0):+.2f} %, "
-               "via bending stiffness only)"),
+               "interior plate dispersion)"),
+            _row(_t("Randschicht √(D/T):", "Boundary layer √(D/T):"),
+                 f"{self._ell * 1e6:9.1f} µm "
+                 + _t(f"(λ = {self._ell / self.a_mem:.4f}, wirksamer Radius "
+                      f"{self._a_w * 1e3:.4f} mm, Spannung "
+                      f"{self._T_mech:.4g} N/m)",
+                      f"(λ = {self._ell / self.a_mem:.4f}, effective radius "
+                      f"{self._a_w * 1e3:.4f} mm, tension "
+                      f"{self._T_mech:.4g} N/m)")),
             _row(_t("Ruhekapazität C0 (je BP):", "Static capacitance C0/BP:"),
                  f"{self.C_elec_0 * 1e12:9.2f} pF"),
             _row(_t("Squeeze-Film-Widerst. R_gap:", "Squeeze-film res. "

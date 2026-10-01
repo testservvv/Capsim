@@ -189,7 +189,9 @@ def test_gp28_spaltmundung_mehrmoden_membran():
     assert abs(Z_hf28.imag / om_hf28[0] / M_eff28 - 1.0) < 1e-3, \
         (f"Massegrenzwert muss s_N/Σ(1/M_m) treffen "
          f"({Z_hf28.imag / om_hf28[0]:.3f} vs. {M_eff28:.3f})")
-    M_pist28 = c28_3.mat_rho * c28_3.t_mem / c28_3.S_mem
+    # Kolben der WIRKSAMEN Membranfläche S·u_w, u_w = ((a − √(D/T))/a)²:
+    # bewegt wird die Membran innerhalb der Randschicht (Gegenprobe 62)
+    M_pist28 = c28_3.mat_rho * c28_3.t_mem / (c28_3.S_mem * c28_3._u_w)
     rel28 = []
     for n28 in (1, 3, 5):
         cc28 = MicrophoneCapsule(membrane_modes=n28, **mk28)
@@ -301,8 +303,10 @@ def test_gp33_modengewicht_der_frontmittelung():
             f"Modengewichte müssen auf 1 normiert sein ({np.sum(w_33)})"
         r_33 = c33.R_body * np.sqrt(np.clip(1.0 - u_33**2, 0.0, None))
         worst_D33 = 0.0
+        # u = k·a mit dem Radius der WIRKSAMEN Membran: das Modengewicht
+        # ist J0(z01·r/(a − √(D/T))) (Randschicht, Gegenprobe 62)
         for u33 in (0.5, 1.0, 2.0, 3.0, 3.8317, 4.5, 5.0):
-            got = float(np.dot(w_33, _j0_33((u33 / c33.a_mem) * r_33)))
+            got = float(np.dot(w_33, _j0_33((u33 / c33._a_w) * r_33)))
             ref = (0.5 * z01_33 * _j1_33(z01_33) if abs(u33 - z01_33) < 1e-9
                    else z01_33**2 * _j0_33(u33) / (z01_33**2 - u33**2))
             worst_D33 = max(worst_D33, abs(got - ref))
@@ -377,6 +381,10 @@ def test_gp34_modenabhangiger_quelldruck(stand):
     #    inklusive innerer Umverteilung; die Reihe fällt seither monoton
     #    (1..5 Moden). Das wird jetzt GEPRÜFT statt behauptet — und die
     #    Zweigresonanz bleibt als Strukturaussage daneben stehen.
+    # Prüfling und Referenz sind die der Gegenprobe 32, eine reine Membran
+    # (Spannung und Resonanz nach der Membranformel) — ohne Randschicht
+    # der Folie (Gegenprobe 62).
+    MicrophoneCapsule._RANDSCHICHT = False
     if _HAS_SCIPY:
         from scipy.special import j0 as _j0_34
         z34 = MicrophoneCapsule._J0_ZEROS
@@ -410,7 +418,8 @@ def test_gp34_modenabhangiger_quelldruck(stand):
         om34 = 2.0 * np.pi * f34
         s34 = c34._modal_source_scale(
             om34, th34, c34._source_pressures_fundamental(om34, th34)[0])
-        u34 = om34 / C_AIR * c34.a_mem
+        # (u mit dem Radius der wirksamen Membran, Gegenprobe 62)
+        u34 = om34 / C_AIR * c34._a_w
         D34 = z34[0]**2 * _j0_34(u34) / (z34[0]**2 - u34**2)
         assert np.max(np.abs(s34[:, 0] - D34)) < 1e-12, \
             (f"Freifeld-Faktor muss exakt D_1(u) sein "
@@ -569,8 +578,10 @@ def test_gp39_pull_in_der_gegentakt_bauform():
     r39 = c39d.U_pullin / c39s.U_pullin
 
     def _abar39(cc):
-        # Spannung, die die statische Nachgiebigkeit trägt (s. _static_setup)
-        return (cc.U_pullin**2 * cc.a_mem**2 * EPS0
+        # Spannung, die die statische Nachgiebigkeit trägt (s. _static_
+        # setup), Radius der WIRKSAMEN Membran: eingespannt ist sie um die
+        # Randschicht √(D/T) vor dem Rand (Gegenprobe 62)
+        return (cc.U_pullin**2 * cc._a_w**2 * EPS0
                 / (2.0 * cc._st["tension"] * cc.h_gap**3))
 
     ad39, as39 = _abar39(c39d), _abar39(c39s)
@@ -780,6 +791,12 @@ def test_gp45_mittenterminierung_ringmembran():
     #    Gegenprobe 49 rechnet das Modell den exakten Arbeitspunkt und
     #    trifft beide Werte.
     # g) GATTER: 3D-Löser, zu großer Pfosten, biegesteife Platte.
+    #
+    # Alle Referenzen hier — Rayleigh, die geschlossenen Formen, Warren —
+    # rechnen die REINE Membran; die Probe läuft deshalb ohne Randschicht
+    # der Folie. Dass das Modell mit Randschicht dieselben Formeln auf die
+    # wirksame Membran (Radius a − √(D/T)) anwendet, prüft Gegenprobe 62.
+    MicrophoneCapsule._RANDSCHICHT = False
     if _HAS_SCIPY:
         # a) Grenzfall
         c45o = MicrophoneCapsule()
@@ -873,7 +890,8 @@ def test_gp45_mittenterminierung_ringmembran():
             cw45 = MicrophoneCapsule(
                 **dict(g45w, center_post_diameter=2.0 * rho45 * 13e-3))
             # T = die Spannung, die die statische Nachgiebigkeit trägt
-            # (inkl. der winzigen Biegesteife der Folie, hier 0.1 %)
+            # (reine Membran wie bei Warren; mit Randschicht gilt Ā für
+            # den wirksamen Radius, s. Gegenprobe 62)
             A45 = (cw45.U_pullin**2 * cw45.a_mem**2 * EPS0
                    / (2.0 * cw45._st["tension"] * cw45.h_gap**3))
             ab45w[rho45] = (A45, A45 / ref45 - 1.0)
@@ -948,7 +966,9 @@ def test_gp49_exakter_statischer_arbeitspunkt(stand):
         U49 = 0.8 * c49p.U_pullin
         c49 = MicrophoneCapsule(bias_voltage=U49, **g49)
         T49 = c49._st["tension"]
-        a49, h49 = c49.a_mem, c49.h_gap
+        # eingespannt am Rand der WIRKSAMEN Membran (Randschicht √(D/T),
+        # Gegenprobe 62)
+        a49, h49 = c49._a_w, c49.h_gap
         p49 = 0.5 * EPS0 * U49**2
 
         # a) Schießverfahren
@@ -967,7 +987,8 @@ def test_gp49_exakter_statischer_arbeitspunkt(stand):
                          1.02 * c49.w0_static, xtol=1e-16)
         shot49 = _shoot49(wc49)
         r_chk49 = a49 * np.array([0.0, 0.3, 0.6, 0.9])
-        w_fv49 = np.interp((r_chk49 / a49)**2, c49._st["u"], c49._w_static)
+        w_fv49 = np.interp((r_chk49 / c49.a_mem)**2, c49._st["u"],
+                           c49._w_static)
         w_sh49 = np.array([wc49] + list(shot49.sol(r_chk49[1:])[0]))
         dev_a49 = float(np.max(np.abs(w_fv49 - w_sh49)) / wc49)
         assert dev_a49 < 1e-4, \
@@ -1068,12 +1089,15 @@ def test_gp55_massenfaktor_8_z12_g_der():
     # 3.75 % zu hoch (+0.32 dB). Jetzt μ = 8/(z1²·g) (ohne Pfosten 8/j01²
     # = 1.383): Statik UND Grundresonanz exakt.
     # a) RESONANZ: bei vorgegebener Vorspannung trifft die Kette den
-    #    Membran-Eigenwert (Vollkreis und Ringmembran); es bleibt nur die
-    #    Biegesteifigkeit (Promille von Promille bei Folien).
+    #    Eigenwert der Membran (Vollkreis und Ringmembran) exakt — seit
+    #    Gegenprobe 62 den der WIRKSAMEN Membran, eingespannt um die
+    #    Randschicht √(D/T) vor den Rändern. Gegen die eingespannte Platte
+    #    unter Zug bleibt nur die Plattendispersion im Innern, ≈ z1²λ²/2.
     # b) STATIK: bei vorgegebener Resonanz ist C_A_mem die statische
     #    Nachgiebigkeit der Membran, deren exakte Grundmode f_res ist —
-    #    „f_res vorgeben" und „Spannung vorgeben" sind jetzt dieselbe
-    #    Kapsel.
+    #    „f_res vorgeben" und „Spannung vorgeben" sind dieselbe Kapsel
+    #    (seit Gegenprobe 62 ohne Rest: die Biegung steckt in der
+    #    Randschicht, auf beiden Wegen dieselbe).
     # c) GEGEN DAS 3D-FELD (volle Membran, keine Moden): ½"-Prüfling der
     #    Gegenprobe 48 über f_res vorgegeben, 20 Hz. Mit 4/3 lag 2D
     #    +0.12 dB über 3D, jetzt gleich.
@@ -1083,7 +1107,7 @@ def test_gp55_massenfaktor_8_z12_g_der():
     #    Zweig trägt dann exakt Modenmasse und -nachgiebigkeit. Mit 8/j01²
     #    konvergiert sie von oben auf 1, mit 4/3 lief sie auf 0.964, also
     #    unter die Kolbenmasse. Die Ringmembran geht auf die Ringfläche
-    #    S·(1 − ρ²).
+    #    S·(1 − ρ²). (Reine Membranmathematik, ohne Randschicht.)
     if _HAS_SCIPY:
         from scipy.special import jn_zeros as _jn_zeros55
         j01_55 = 2.404825557695773
@@ -1093,12 +1117,30 @@ def test_gp55_massenfaktor_8_z12_g_der():
         fr55 = {}
         for dp55 in (0.0, 1.0e-3, 3.0e-3):
             c55 = MicrophoneCapsule(center_post_diameter=dp55, **pT55)
-            fr55[dp55] = (c55.f_res / c55.f_res_modal_exact - 1.0,
-                          c55._piston_factor, c55._mass_factor_rayleigh)
-            assert abs(fr55[dp55][0]) < 1e-4, \
+            # wirksame Membran aus den Stoffwerten, unabhängig vom Modell
+            D55 = (c55.mat_E * c55.t_mem ** 3
+                   / (12.0 * (1.0 - c55.mat_nu ** 2)))
+            l55 = np.sqrt(D55 / 45.0)
+            aw55 = c55.a_mem - l55
+            z55w = (j01_55 if dp55 == 0.0 else MicrophoneCapsule._ring_eigen(
+                (0.5 * dp55 + l55) / aw55, 1)["z"][0])
+            f_w55 = z55w / (2.0 * np.pi * aw55) * np.sqrt(45.0 / c55.sigma_mem)
+            lam55 = l55 / c55.a_mem
+            fr55[dp55] = (c55.f_res / f_w55 - 1.0,
+                          c55._piston_factor, c55._mass_factor_rayleigh,
+                          c55.f_res / c55.f_res_modal_exact - 1.0,
+                          -0.5 * (z55w * lam55) ** 2)
+            assert abs(fr55[dp55][0]) < 1e-10, \
                 (f"a) Pfosten {dp55 * 1e3:.0f} mm: die Kette muss den "
-                 f"Membran-Eigenwert treffen ({fr55[dp55][0]:+.1e})")
-        assert fr55[0.0][1] == 8.0 / j01_55 ** 2, "a) ohne Pfosten 8/j01²"
+                 f"Eigenwert der wirksamen Membran treffen "
+                 f"({fr55[dp55][0]:+.1e})")
+            assert abs(fr55[dp55][3] / fr55[dp55][4] - 1.0) < 0.15, \
+                (f"a) Pfosten {dp55 * 1e3:.0f} mm: gegen die Platte bleibt "
+                 f"die Plattendispersion ({fr55[dp55][3]:+.2e} statt "
+                 f"{fr55[dp55][4]:+.2e})")
+        uw55 = ((25.4e-3 / 2 - l55) / (25.4e-3 / 2)) ** 2
+        assert abs(fr55[0.0][1] / (8.0 / (j01_55 ** 2 * uw55)) - 1.0) < 1e-12, \
+            "a) ohne Pfosten 8/j01² auf die wirksame Fläche S·u_w"
         assert all(v[1] > v[2] for v in fr55.values()), \
             "a) der Rayleigh-Wert ist eine obere Schranke der Frequenz"
         fbk55 = MicrophoneCapsule(
@@ -1109,8 +1151,10 @@ def test_gp55_massenfaktor_8_z12_g_der():
             n_through_holes=6, through_hole_diameter=2 * 5.080e-4,
             through_hole_pcd=2 * 2.032e-3, n_blind_holes=0)
         ebk55 = fbk55.f_res / fbk55.f_res_modal_exact - 1.0
-        assert abs(ebk55) < 1e-3, \
-            f"a) B&K-Nickelfolie: nur der Biegeanteil bleibt ({ebk55:+.1e})"
+        lbk55 = fbk55._ell / fbk55.a_mem
+        assert abs(ebk55 / (-0.5 * (j01_55 * lbk55) ** 2) - 1.0) < 0.15, \
+            (f"a) B&K-Nickelfolie: nur die Plattendispersion bleibt "
+             f"({ebk55:+.1e})")
         # b) f_res vorgegeben == dieselbe Membran über die Spannung
         pB55 = dict(
             architecture="single", membrane_resonance_hz=8000.0,
@@ -1124,25 +1168,18 @@ def test_gp55_massenfaktor_8_z12_g_der():
             body_diameter=14e-3, n_through_holes=48,
             through_hole_diameter=0.33e-3, squeeze_model="2d")
         cB55 = MicrophoneCapsule(**pB55)
-        TB55 = cB55._membrane_tension_3d()      # exakte Grundmode 8 kHz
+        TB55 = cB55._membrane_tension_3d()      # wirksame Grundmode 8 kHz
         cBt55 = MicrophoneCapsule(**dict(pB55, membrane_resonance_hz=None,
                                          membrane_tension=TB55))
-        #    Einziger Unterschied: die Kapsel mit vorgegebener Spannung
-        #    trägt zusätzlich die Biegesteifigkeit der Folie (C_T/C_B).
         eC55 = cB55.C_A_mem / cBt55.C_A_mem - 1.0
-        CT55 = (np.pi * cBt55.a_mem ** 4 * cBt55._ring_g / (8.0 * TB55))
-        bend55 = CT55 / cBt55.C_A_mem - 1.0
-        assert abs(eC55 - bend55) < 1e-9 and bend55 < 1e-3, \
-            (f"b) f_res vorgegeben und Spannung vorgegeben müssen bis auf "
-             f"die Biegesteifigkeit dieselbe Kapsel sein (C {eC55:+.2e}, "
-             f"Biegeanteil {bend55:+.2e})")
         ef55 = cBt55.f_res / 8000.0 - 1.0
-        assert abs(ef55 - 0.5 * bend55) < 1e-6, \
-            f"b) Resonanz bis auf die Biegung ({ef55:+.2e})"
+        assert abs(eC55) < 1e-10 and abs(ef55) < 1e-10, \
+            (f"b) f_res vorgegeben und Spannung vorgegeben müssen dieselbe "
+             f"Kapsel sein (C {eC55:+.1e}, f_res {ef55:+.1e})")
         f55 = np.array([20.0])
         eH55 = float(20 * np.log10(abs(cB55.transfer_function(f55)[0]
                                        / cBt55.transfer_function(f55)[0])))
-        assert abs(eH55) < 0.01, f"b) Ausgang gleich ({eH55:+.4f} dB)"
+        assert abs(eH55) < 1e-6, f"b) Ausgang gleich ({eH55:+.2e} dB)"
         # c) gegen das 3D-Feld, alter und neuer Massenfaktor
         dB55 = {}
         with warnings.catch_warnings():
@@ -1179,11 +1216,15 @@ def test_gp55_massenfaktor_8_z12_g_der():
                 cm55 = md55["I1"] ** 2 / (z55 ** 2 * md55["I2"])
                 mm55 = md55["I2"] / md55["I1"] ** 2
                 g55 = _ring_compliance_factor(rho55)
+            MicrophoneCapsule._RANDSCHICHT = False   # reine Membran
+            try:
+                mu_r55 = MicrophoneCapsule(
+                    center_post_diameter=2 * rho55 * 13e-3,
+                    membrane_diameter=26e-3)._mass_factor_rayleigh
+            finally:
+                MicrophoneCapsule._RANDSCHICHT = True
             for lab55, mu55 in (("8/(z1²g)", 8.0 / (z55[0] ** 2 * g55)),
-                                ("Rayleigh", MicrophoneCapsule(
-                                    center_post_diameter=2 * rho55 * 13e-3,
-                                    membrane_diameter=26e-3)
-                                 ._mass_factor_rayleigh)):
+                                ("Rayleigh", mu_r55)):
                 s55 = np.sum(cm55) / cm55[0]
                 inv55 = np.sum(mm55[0] / (mu55 * mm55))
                 lim55[(rho55, lab55)] = s55 / inv55 * (1.0 - rho55 ** 2)
@@ -1195,11 +1236,11 @@ def test_gp55_massenfaktor_8_z12_g_der():
             assert lim55[(rho55, "Rayleigh")] < 1.0, \
                 (f"d) ρ = {rho55}: mit dem Rayleigh-Wert lief sie darunter "
                  f"({lim55[(rho55, 'Rayleigh')]:.4f})")
-        print(f"Massenfaktor 8/(z1²g): Resonanz exakt (Kreis "
-              f"{fr55[0.0][0]:+.0e}, Pfosten 3 mm {fr55[3e-3][0]:+.0e}, B&K "
-              f"{ebk55:+.0e} über die Biegung; Rayleigh {fr55[0.0][2]:.4f} "
-              f"-> {fr55[0.0][1]:.4f}); f_res == Spannung (C {eC55:+.1e} "
-              f"= Biegeanteil der Folie); "
+        print(f"Massenfaktor 8/(z1²g): Resonanz der wirksamen Membran "
+              f"exakt (Kreis {fr55[0.0][0]:+.0e}, Pfosten 3 mm "
+              f"{fr55[3e-3][0]:+.0e}; gegen die Platte nur die Dispersion, "
+              f"B&K {ebk55:+.1e}; Rayleigh {fr55[0.0][2]:.4f} "
+              f"-> {fr55[0.0][1]:.4f}); f_res == Spannung (C {eC55:+.1e}); "
               f"½\" 2D/3D {dB55[False]:+.3f} -> {dB55[True]:+.3f} dB; "
               f"Modenreihe N = {N55} -> Kolben {lim55[(0.0, '8/(z1²g)')]:.4f} "
               f"(Rayleigh {lim55[(0.0, 'Rayleigh')]:.4f}), Ring ρ = 0.1 "
@@ -1357,3 +1398,284 @@ def test_gp61_folienverlust(stand):
           f"{dphi['2d'][0] * 1e3:.3f} / {dphi['3d'][0] * 1e3:.3f} mrad); "
           f"K67: Güte {1.0 / k67.eta_membrane:.0f}, Wirkung "
           f"{wirk['K67'][0]:.1e} dB (×10: {wirk['K67'][1]:.1e} dB)  OK")
+
+
+def _platte62(a, ri, D, T, N=20000):
+    """Unabhängige statische Lösung der eingespannten Platte unter Zug,
+    D·∇⁴w − T·∇²w = p (p = 1 Pa), w = w' = 0 am Rand und am Pfosten.
+
+    Einmal integriert (Schubkraft) für θ = w':
+        D·(θ'' + θ'/r − θ/r²) − T·θ = r/2 + C/r,
+    θ = 0 an beiden Rändern; C = 0 ohne Pfosten, mit Pfosten so, dass
+    ∫θ dr = 0 (w verschwindet an BEIDEN Rändern). Finite Differenzen
+    zweiter Ordnung auf N Intervallen. Rückgabe: Volumen je Pa, r, w(r)."""
+    from scipy.linalg import solve_banded
+    r = np.linspace(ri, a, N + 1)
+    h = r[1] - r[0]
+    rr = r[1:-1]
+    ab = np.zeros((3, rr.size))
+    ab[0, 1:] = (D * (1.0 / h**2 + 0.5 / (h * rr)))[:-1]
+    ab[1] = D * (-2.0 / h**2 - 1.0 / rr**2) - T
+    ab[2, :-1] = (D * (1.0 / h**2 - 0.5 / (h * rr)))[1:]
+
+    def _loes(rhs):
+        th = np.zeros(r.size)
+        th[1:-1] = solve_banded((1, 1), ab, rhs)
+        return th
+    th = _loes(0.5 * rr)
+    if ri > 0.0:
+        th1 = _loes(1.0 / rr)
+        th = th - np.trapezoid(th, r) / np.trapezoid(th1, r) * th1
+    seg = 0.5 * (th[1:] + th[:-1]) * h
+    w = np.concatenate([-np.cumsum(seg[::-1])[::-1], [0.0]])
+    return -np.pi * np.trapezoid(r**2 * th, r), r, w
+
+
+@pytest.mark.feld3d
+def test_gp62_randschicht_der_folie(stand):
+    """Gegenprobe 62: Randschicht der eingespannten Folie."""
+    # Die Folie ist eine Platte unter Zug, D·∇⁴w − T·∇²w = p, eingespannt
+    # mit w = w' = 0. Für λ = √(D/(T a²)) ≪ 1 ist sie im Innern Membran;
+    # in einer Randschicht der Breite ℓ = √(D/T) biegt sie sich in die
+    # Einspannung. Außerhalb der Schicht erfüllt die Membranlösung
+    # w = ℓ·∂w/∂r und verschwindet um ℓ vor dem Rand — in erster Ordnung
+    # eine Membran mit dem WIRKSAMEN Radius a − ℓ (am Pfosten r_i + ℓ).
+    # Das senkt die statische Nachgiebigkeit um ≈ 4λ und hebt die Grund-
+    # frequenz um ≈ λ (B&K-Nickel: −2.5 %, +0.65 %). Bis Gegenprobe 61
+    # stand die Biegung als parallele Plattenfeder πa⁶/(192D) in der
+    # Kette, eine Größe der Ordnung λ²; die Randschicht fehlte.
+    # a) STATIK gegen eine unabhängige Lösung der Plattengleichung
+    #    (_platte62) und, ohne Pfosten, gegen die geschlossene Form
+    #    C = πa⁴/(8T)·[1 − 4λ(I0(1/λ)/I1(1/λ) − 2λ)]: die wirksame Membran
+    #    trifft beide bis auf O(λ²·λ) (Kreis 10⁻⁶, Ring 10⁻⁵).
+    # b) FREQUENZ gegen den exakten Eigenwert der Platte unter Zug
+    #    (_platten_verduennung): es bleibt die Plattendispersion im
+    #    Innern, ω²/ω_w² = 1 + k1²ℓ², also ≈ −z1²λ²/2 — nicht gerechnet.
+    # c) FORM über der Elektrode gegen die exakte statische Plattenform.
+    # d) 2D UND 3D GLEICH: der 3D-Löser spannt seine Membranfelder an den
+    #    wirksamen Rändern ein (Gitterende bzw. Schnittzelle mit
+    #    Elementgewicht und logarithmischem Leitwert). Statische
+    #    Nachgiebigkeit des Membranfelds gegen die Kette, und Ende zu Ende
+    #    verschiebt die Randschicht 2D und 3D gleich.
+    # e) PULL-IN: Warrens Ā gilt für die wirksame Membran.
+    # f) GATTER: über 1 % Abweichung gegen die Platte warnt das Modell,
+    #    bei einer Randschicht über ein Viertel der Membranbreite bricht es
+    #    ab.
+    # g) WIRKUNG (Stand-Werte): B&K-Nickelfolie bei vorgegebener Spannung;
+    #    die K67 (PET, vorgegebene Resonanz).
+    if not _HAS_SCIPY:
+        return
+    from scipy.special import ive as _ive62
+    j01 = 2.404825557695773
+    bk62 = dict(
+        membrane_material={"rho": 8900.0, "E": 200.0e9, "nu": 0.31},
+        membrane_resonance_hz=None, membrane_diameter=2 * 4.445e-3,
+        membrane_thickness=5.0e-6, membrane_tension=3162.3,
+        air_gap=2.077e-5, backplate_diameter=2 * 3.607e-3,
+        backplate_thickness=0.843e-3, bias_voltage=1.0,
+        architecture="single", n_through_holes=6,
+        through_hole_diameter=2 * 5.080e-4, through_hole_pcd=2 * 2.032e-3,
+        n_blind_holes=0, ring_vent_width=0.838e-3,
+        ring_vent_length=3.048e-4, rear_network_enabled=True,
+        delay_length=0.0, cavity_length=1.264e-7 / (np.pi * 3.607e-3**2),
+        n_cavity_holes=0, fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+        include_diffraction=False, squeeze_model="2d")
+    pet62 = dict(membrane_resonance_hz=None, membrane_tension=45.0,
+                 membrane_diameter=25.4e-3, membrane_thickness=6e-6,
+                 architecture="single", bias_voltage=1.0,
+                 backplate_diameter=23.9e-3, squeeze_model="2d")
+
+    # a) Statik
+    stat62 = {}
+    for nm, kw in (("B&K", bk62), ("PET", pet62),
+                   ("PET, Pfosten 3 mm", dict(pet62,
+                                              center_post_diameter=3e-3)),
+                   ("Nickel, Pfosten 1 mm", dict(bk62,
+                                                 center_post_diameter=1e-3))):
+        c = MicrophoneCapsule(**kw)
+        T = kw["membrane_tension"]
+        V, r, w = _platte62(c.a_mem, c.r_post, c._D_plate, T)
+        C_mem = (np.pi * c.a_mem**4 / (8.0 * T)
+                 * _ring_compliance_factor(c.rho_post))
+        stat62[nm] = (c.C_A_mem / V - 1.0, V / C_mem - 1.0, c, r, w)
+        lam = c._ell / c.a_mem
+        assert abs(stat62[nm][0]) < 3.0 * lam**2, \
+            (f"a) {nm}: die wirksame Membran muss die statische Platte "
+             f"treffen ({stat62[nm][0]:+.1e}, Randschicht "
+             f"{stat62[nm][1]:+.2%})")
+        if c.r_post == 0.0:
+            x = 1.0 / lam
+            k_ex = 1.0 - 4.0 * lam * (_ive62(0, x) / _ive62(1, x) - 2.0 * lam)
+            assert abs(V / (C_mem * k_ex) - 1.0) < 1e-6, \
+                (f"a) {nm}: unabhängige Lösung gegen die geschlossene Form "
+                 f"({V / (C_mem * k_ex) - 1.0:+.1e})")
+            assert abs(c.C_A_mem / (C_mem * k_ex) - 1.0) < 5.0 * lam**3, \
+                (f"a) {nm}: Kette gegen die geschlossene Form "
+                 f"({c.C_A_mem / (C_mem * k_ex) - 1.0:+.1e})")
+    # ohne Randschicht fehlte genau dieser Anteil
+    MicrophoneCapsule._RANDSCHICHT = False
+    try:
+        c_ohne = MicrophoneCapsule(**bk62)
+    finally:
+        MicrophoneCapsule._RANDSCHICHT = True
+    c_bk = stat62["B&K"][2]
+    lam_bk = c_bk._ell / c_bk.a_mem
+    assert abs(c_ohne.C_A_mem / c_bk.C_A_mem - 1.0 - 4.0 * lam_bk) \
+        < 12.0 * lam_bk**2, \
+        (f"a) ohne Randschicht ist die B&K-Folie um ≈ 4λ zu nachgiebig "
+         f"({c_ohne.C_A_mem / c_bk.C_A_mem - 1.0:+.3%})")
+
+    # b) Frequenz gegen den exakten Eigenwert der Platte
+    fq62 = {}
+    for nm in stat62:
+        c = stat62[nm][2]
+        lam_w = c._ell / c._a_w
+        z1_w = c._ring_modes()["z_w"][0]
+        disp = -0.5 * (z1_w * lam_w) ** 2
+        fq62[nm] = (c.f_res / c.f_res_modal_exact - 1.0, disp)
+        assert abs(fq62[nm][0] / disp - 1.0) < 0.15, \
+            (f"b) {nm}: gegen die Platte bleibt nur die Dispersion "
+             f"({fq62[nm][0]:+.2e} statt {disp:+.2e})")
+    f_fak_bk = c_bk.f_res / c_ohne.f_res
+    assert abs(f_fak_bk - 1.0 - lam_bk) < 3.0 * lam_bk**2, \
+        f"b) die Randschicht hebt die Resonanz um ≈ λ ({f_fak_bk:.5f})"
+
+    # c) Form über der Elektrode (Maximum 1) gegen die exakte Plattenform
+    #    Punktweise außerhalb der Randschichten (fünf Breiten), wo das
+    #    Membranbild gilt; in der Schicht selbst weicht es um O(λ) ab,
+    #    das Elektrodenmittel aber nur um O(λ²). Geprüft wird die
+    #    Ordnung: der Rest muss von zweiter Ordnung in λ sein (Koeffizient
+    #    am Pfosten rund 4, ohne Pfosten unter 1), ohne Randschicht ist er
+    #    von erster.
+    form62 = {}
+    for nm in ("B&K", "PET, Pfosten 3 mm"):
+        _, _, c, r, w = stat62[nm]
+        u_ex = (r / c.a_mem) ** 2
+        w_ex = np.interp(c._es_u, u_ex, w) / np.max(w)
+        r_es = c.a_mem * np.sqrt(c._es_u)
+        frei = ((r_es > c.r_post + 5.0 * c._ell)
+                & (r_es < c.a_mem - 5.0 * c._ell))
+        mitte = (np.trapezoid(c._es_phi, c._es_u)
+                 / np.trapezoid(w_ex, c._es_u) - 1.0)
+        form62[nm] = (float(np.max(np.abs(c._es_phi - w_ex)[frei])), mitte)
+        lam = c._ell / c.a_mem
+        assert form62[nm][0] < 5.0 * lam**2 and abs(mitte) < 2.0 * lam**2, \
+            (f"c) {nm}: Form über der Elektrode gegen die Platte "
+             f"({form62[nm][0]:.1e} punktweise, Mittel {mitte:+.1e})")
+    # ohne Randschicht lag die Form um O(λ) daneben
+    MicrophoneCapsule._RANDSCHICHT = False
+    try:
+        c_of = MicrophoneCapsule(**bk62)
+    finally:
+        MicrophoneCapsule._RANDSCHICHT = True
+    _, _, _, r, w = stat62["B&K"]
+    form_ohne = float(np.max(np.abs(
+        c_of._es_phi - np.interp(c_of._es_u, (r / c_of.a_mem) ** 2, w)
+        / np.max(w))))
+    assert form_ohne > 20.0 * form62["B&K"][0], \
+        (f"c) ohne Randschicht weicht die Form deutlich ab "
+         f"({form_ohne:.1e} gegen {form62['B&K'][0]:.1e})")
+
+    # d) 2D und 3D gleich
+    from scipy.sparse import coo_matrix as _coo62
+    from scipy.sparse.linalg import spsolve as _sps62
+
+    def _feld62(kw):
+        """Statische Nachgiebigkeit des 3D-Membranfelds allein."""
+        cc = MicrophoneCapsule(**dict(kw, squeeze_model="3d"))
+        cc._n_phi_3d = 8
+        cc._build_3d_geometry()
+        g = cc._g3d
+        ow, NM = g["n_films"] * g["NF"], g["NM"]
+        rr, co, vv = g["static"]
+        m = (rr >= ow) & (rr < ow + NM) & (co >= ow) & (co < ow + NM)
+        L = _coo62((vv[m].real, (rr[m] - ow, co[m] - ow)),
+                   shape=(NM, NM)).tocsc()
+        q = np.repeat(g["A_mw"], g["Np"])
+        return float(np.dot(q, _sps62(L, q))) / cc.C_A_mem - 1.0
+    feld62 = {}
+    for nm, kw in (("B&K (Gitterende)", bk62),
+                   ("PET, a_bp = a_mem (Schnittzelle)",
+                    dict(pet62, backplate_diameter=25.4e-3)),
+                   ("PET, Pfosten 3 mm (Schnittzelle)",
+                    dict(pet62, center_post_diameter=3e-3))):
+        feld62[nm] = _feld62(dict(kw, bias_voltage=1e-6))
+        assert abs(feld62[nm]) < 2e-3, \
+            (f"d) {nm}: 3D-Membranfeld gegen die Kette "
+             f"({feld62[nm]:+.1e})")
+    f20 = np.array([20.0])
+    ende62 = {}
+    for nm, kw in (("B&K", bk62),
+                   ("PET, a_bp = a_mem", dict(pet62,
+                                             backplate_diameter=25.4e-3))):
+        dd = []
+        for rand in (False, True):
+            MicrophoneCapsule._RANDSCHICHT = rand
+            try:
+                h2 = MicrophoneCapsule(**kw).transfer_function(f20)[0]
+                h3 = MicrophoneCapsule(**dict(kw, squeeze_model="3d")) \
+                    .transfer_function(f20)[0]
+            finally:
+                MicrophoneCapsule._RANDSCHICHT = True
+            dd.append((float(20 * np.log10(abs(h3 / h2))),
+                       float(20 * np.log10(abs(h2)))))
+        ende62[nm] = (dd[1][0] - dd[0][0], dd[1][1] - dd[0][1])
+        assert abs(ende62[nm][0]) < 0.005, \
+            (f"d) {nm}: die Randschicht muss 2D und 3D gleich verschieben "
+             f"(3D−2D ändert sich um {ende62[nm][0]:+.4f} dB, die "
+             f"Randschicht selbst {ende62[nm][1]:+.3f} dB)")
+
+    # e) Warren mit dem wirksamen Radius (lochfreie volle Elektrode)
+    cw = MicrophoneCapsule(
+        membrane_resonance_hz=None, membrane_diameter=26e-3,
+        membrane_thickness=6e-6, membrane_tension=13.7, air_gap=65e-6,
+        backplate_diameter=26e-3, backplate_thickness=4e-3, bias_voltage=1.0,
+        architecture="single", n_through_holes=0, n_blind_holes=0,
+        rear_network_enabled=False, squeeze_model="1d",
+        include_diffraction=False)
+    A_w = (cw.U_pullin**2 * cw._a_w**2 * EPS0
+           / (2.0 * cw._st["tension"] * cw.h_gap**3))
+    assert abs(A_w / 0.789 - 1.0) < 2e-3, \
+        f"e) Warren mit dem wirksamen Radius ({A_w:.4f})"
+    A_a = A_w * (cw.a_mem / cw._a_w) ** 2
+
+    # f) Gatter
+    steif = dict(membrane_resonance_hz=None, membrane_tension=5.0,
+                 membrane_diameter=10e-3, membrane_thickness=25e-6,
+                 membrane_material="nickel")
+    lam_s = np.sqrt(200e9 * 25e-6**3 / (12 * (1 - 0.31**2)) / 5.0) / 5e-3
+    with pytest.raises(ValueError):
+        MicrophoneCapsule(**steif)
+    with pytest.warns(UserWarning, match="Biegesteife Folie"):
+        MicrophoneCapsule(**dict(steif, membrane_tension=200.0,
+                                 membrane_thickness=12e-6))
+
+    # g) Wirkung
+    stand.wert("bk_resonanzfaktor", f_fak_bk, "",
+               "B&K-Nickelfolie, Resonanz mit/ohne Randschicht (Spannung vorgegeben)")
+    stand.wert("bk_tiefton_db", ende62["B&K"][1], "dB",
+               "B&K-Nickelfolie, Tiefton mit/ohne Randschicht (Spannung vorgegeben)")
+    k67r = MicrophoneCapsule(**dict(K67_KWARGS, squeeze_model="2d"))
+    MicrophoneCapsule._RANDSCHICHT = False
+    try:
+        k67o = MicrophoneCapsule(**dict(K67_KWARGS, squeeze_model="2d"))
+    finally:
+        MicrophoneCapsule._RANDSCHICHT = True
+    k67_db = float(20 * np.log10(abs(k67r.transfer_function(f20)[0]
+                                     / k67o.transfer_function(f20)[0])))
+    stand.wert("k67_tiefton_db", k67_db, "dB",
+               "K67 (PET, Resonanz vorgegeben), Tiefton mit/ohne Randschicht")
+    print(f"Randschicht der Folie: Statik gegen die Platte "
+          + ", ".join(f"{k} {v[0]:+.0e}" for k, v in stat62.items())
+          + f" (Randschicht {stat62['B&K'][1]:+.2%} bei B&K); Frequenz "
+          f"gegen die Platte nur die Dispersion (B&K "
+          f"{fq62['B&K'][0]:+.1e}, Pfosten 3 mm "
+          f"{fq62['PET, Pfosten 3 mm'][0]:+.1e}), Resonanz ×{f_fak_bk:.5f} "
+          f"(1 + λ, λ = {lam_bk:.4f}); Form über der Elektrode "
+          f"{form62['B&K'][0]:.0e} (ohne {form_ohne:.0e}); 3D-Feld gegen die "
+          f"Kette " + ", ".join(f"{v:+.0e}" for v in feld62.values())
+          + f"; 2D/3D-Verschiebung gleich auf "
+          f"{max(abs(v[0]) for v in ende62.values()):.4f} dB (B&K Tiefton "
+          f"{ende62['B&K'][1]:+.3f} dB); Warren Ā = {A_w:.4f} mit a − ℓ "
+          f"({A_a:.4f} mit a); K67 {k67_db:+.3f} dB; Gatter (λ = "
+          f"{lam_s:.2f} bricht ab)  OK")

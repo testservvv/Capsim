@@ -83,6 +83,12 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
     #    497 Hz, gleichauf mit 3D (495 Hz); die verbleibenden 10 % zur FEM
     #    teilen beide Modelle — Reynolds-Film gegen Navier–Stokes ist der
     #    nächstliegende Kandidat, offen.
+    # MEMBRAN (Gegenprobe 62): die Arbeit beschreibt die Membran mit
+    # Spannung und Resonanz nach der MEMBRANformel (116.27 N/m ->
+    # j01/(2πa)·√(T/ρt) = 1040 Hz); mit Biegesteife (λ = 0.0125) läge die
+    # Resonanz bei 1053 Hz. Verglichen wird deshalb ohne Randschicht der
+    # Folie.
+    MicrophoneCapsule._RANDSCHICHT = False
     if _HAS_SCIPY:
         # COMSOL-Referenz, auf 100 Hz normiert (Fig. 4 der Arbeit)
         ref32 = ((100.0, 0.00), (200.0, 0.70), (300.0, 1.98), (500.0, 6.20),
@@ -245,6 +251,26 @@ _BK38 = {
 }
 
 
+def _messpruefling(par):
+    """Der GEMESSENE Prüfling zu einer Membranspannung aus Zuckerwars
+    Tabelle bzw. dem COMSOL-Modell (Gegenprobe 62).
+
+    Zuckerwar bestimmt die Spannung aus der gemessenen ersten Vakuum-
+    resonanz mit der MEMBRANformel T = 6.825·a²·f_R1²·ρt (NASA-Bericht
+    PGSTR-PH77-48, 1977, Gl. 2-34); COMSOLs Membraninterface rechnet mit
+    diesem Wert als reine Membran. Die Zahl ist also eine membran-
+    äquivalente Spannung, in der die Randschicht der Folie schon steckt.
+    Gemessen ist die Resonanz: der physikalische Prüfling bekommt sie
+    vorgegeben, j01/(2πa)·√(T/ρt), und das Modell rechnet seine
+    Randschicht selbst (bei vorgegebener Spannung zählte es sie doppelt,
+    die Resonanz läge 0.6 % zu hoch)."""
+    a = 0.5 * par["membrane_diameter"]
+    sig = par["membrane_material"]["rho"] * par["membrane_thickness"]
+    f_vak = (2.404825557695773 / (2.0 * np.pi * a)
+             * np.sqrt(par["membrane_tension"] / sig))
+    return dict(par, membrane_resonance_hz=f_vak)
+
+
 @pytest.mark.feld3d
 def test_gp38_externe_referenz_b_k_4134(stand):
     """Gegenprobe 38: EXTERNE Referenz B&K 4134/4146."""
@@ -319,18 +345,28 @@ def test_gp38_externe_referenz_b_k_4134(stand):
         bk38 = _BK38
         res38 = {}
         for nm38, (par38, tab38, f38, a38, p38, lim38) in bk38.items():
-            c38 = MicrophoneCapsule(**par38)
-            # a) Ersatzelemente der Membran: analytisch, müssen exakt sein
+            # a) Ersatzelemente der Membran: analytisch, müssen exakt sein.
+            #    Tab. II ist Zuckerwars MEMBRANmodell — verglichen wird die
+            #    Kette ohne Randschicht der Folie mit seiner Spannung.
             #    Zuckerwar rechnet mit dem Rayleigh-Wert 4/3; die Kette
             #    seit Gegenprobe 55 mit 8/j01² (3.75 % schwerer, damit die
             #    Resonanz der Membran exakt ist). Geprüft wird ρt/S.
-            M38 = c38.M_A_mem * c38._mass_factor_rayleigh / c38._piston_factor
+            MicrophoneCapsule._RANDSCHICHT = False
+            try:
+                cm38 = MicrophoneCapsule(**par38)
+            finally:
+                MicrophoneCapsule._RANDSCHICHT = True
+            M38 = cm38.M_A_mem * cm38._mass_factor_rayleigh / cm38._piston_factor
             assert abs(M38 / tab38["M"] - 1.0) < 5e-3, \
                 (f"{nm38}: (4/3)ρt/S muss Tab. II treffen "
                  f"({M38:.1f} gegen {tab38['M']:.0f})")
-            assert abs(c38.C_A_mem / tab38["C_M"] - 1.0) < 5e-3, \
+            assert abs(cm38.C_A_mem / tab38["C_M"] - 1.0) < 5e-3, \
                 (f"{nm38}: C_A der Membran muss S²/(8πT) sein "
-                 f"({c38.C_A_mem:.4e} gegen {tab38['C_M']:.4e})")
+                 f"({cm38.C_A_mem:.4e} gegen {tab38['C_M']:.4e})")
+            #    Der gemessene Prüfling (Vakuumresonanz vorgegeben, mit
+            #    Randschicht, s. _messpruefling) ist bei gleicher Resonanz
+            #    um 2·√(D/T)/a steifer.
+            c38 = MicrophoneCapsule(**_messpruefling(par38))
             # b) Luftzweig bei 250 Hz gegen Tabelle II
             w38 = np.array([2.0 * np.pi * 250.0])
             Zr38 = c38._membrane_port_impedance(w38)[3][0]
@@ -364,7 +400,8 @@ def test_gp38_externe_referenz_b_k_4134(stand):
                 # 4134: der Prüfling war stärker gedämpft als der exakte
                 # Film (Gegenproben 58, 59) — 2D muss dort liegen, wo 3D
                 # liegt: im Hochton über der Messung, im Mittel gleich
-                c3_38 = MicrophoneCapsule(**{**par38, "squeeze_model": "3d"})
+                c3_38 = MicrophoneCapsule(**_messpruefling(
+                    {**par38, "squeeze_model": "3d"}))
                 H3_38 = (c3_38.transfer_function(fa38)
                          / c3_38.transfer_function(np.array([250.0]))[0])
                 am3_38 = 20.0 * np.log10(np.abs(H3_38)) - np.asarray(a38)
@@ -454,7 +491,9 @@ def test_gp58_daempfung_am_lochkreis_befund(stand):
 
     def _fig(nm, **kw):
         par, _, f, a, p, _ = _BK38[nm]
-        c = MicrophoneCapsule(**{**par, "squeeze_model": "3d", **kw})
+        # gemessener Prüfling: Vakuumresonanz vorgegeben (Gegenprobe 62)
+        c = MicrophoneCapsule(**_messpruefling(
+            {**par, "squeeze_model": "3d", **kw}))
         fa = np.asarray(f, dtype=float)
         H = c.transfer_function(fa) / c.transfer_function(np.array([250.0]))[0]
         da = 20.0 * np.log10(np.abs(H)) - np.asarray(a)
@@ -628,18 +667,30 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     fs = f[sel]
     om = 2.0 * np.pi * fs
     f_norm = np.array([f[np.argmin(np.abs(f - 250.0))]])  # wie COMSOL: 251 Hz
-    pegel, re_z = {}, {}
+    # Gegen die FEM rechnet Capsim dieselbe Physik: COMSOLs Membran-
+    # interface hat keine Biegesteifigkeit, also ohne Randschicht der
+    # Folie. Gegen die Messungen der physikalische Prüfling (Vakuum-
+    # resonanz vorgegeben, mit Randschicht; s. _messpruefling).
+    pegel, pegel_m, re_z = {}, {}, {}
     for sm in ("2d", "3d"):
-        c = MicrophoneCapsule(squeeze_model=sm, **_BK4134_COMSOL)
+        MicrophoneCapsule._RANDSCHICHT = False
+        try:
+            c = MicrophoneCapsule(squeeze_model=sm, **_BK4134_COMSOL)
+        finally:
+            MicrophoneCapsule._RANDSCHICHT = True
         H = c.transfer_function(fs)
         pegel[sm] = 20.0 * np.log10(np.abs(H / c.transfer_function(f_norm)[0]))
         V = (c._solve_3d(om, weight="volume")[0] if sm == "3d"
              else H / c._theta)
         re_z[sm] = np.real(1.0 / (1j * om * V)
                            - c._radiation_impedance_membrane(om))
+        cm = MicrophoneCapsule(squeeze_model=sm,
+                               **_messpruefling(_BK4134_COMSOL))
+        pegel_m[sm] = 20.0 * np.log10(np.abs(
+            cm.transfer_function(fs) / cm.transfer_function(f_norm)[0]))
     rms = {sm: float(np.sqrt(np.mean((pegel[sm] - fem[sel]) ** 2)))
            for sm in pegel}
-    rms_m = {sm: float(np.sqrt(np.mean((pegel[sm] - mittel[sel]) ** 2)))
+    rms_m = {sm: float(np.sqrt(np.mean((pegel_m[sm] - mittel[sel]) ** 2)))
              for sm in pegel}
     # a) FEM derselben Geometrie
     assert rms["3d"] < rms["2d"], \
@@ -660,8 +711,8 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     hi = np.maximum(unten, oben)[sel]
     lo = np.minimum(lo, mittel[sel])
     hi = np.maximum(hi, mittel[sel])
-    ausser = pegel["3d"][band] - np.clip(pegel["3d"][band], lo[band] - 0.02,
-                                          hi[band] + 0.02)
+    ausser = pegel_m["3d"][band] - np.clip(pegel_m["3d"][band],
+                                            lo[band] - 0.02, hi[band] + 0.02)
     assert np.all(ausser == 0.0), \
         (f"3D muss bis 12.6 kHz im Streuband der B&K-Messungen liegen "
          f"(außerhalb um {np.round(ausser, 2)} dB)")

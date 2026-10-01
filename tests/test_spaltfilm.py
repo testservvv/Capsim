@@ -768,6 +768,10 @@ def test_gp37_randumgehung_geschlossene_form():
     # außerhalb der Platte den Randdruck statt des Filmdrucks sieht.
     # Ohne die Umgehung wäre Z um 1/f_in² = 1/[u(2−u)]² zu groß — bei
     # den B&K-Kapseln der Gegenprobe 38 sind das +28 bzw. +56 %.
+    # Die geschlossene Form setzt die Parabel bis a_mem voraus; die Probe
+    # gilt dem Film und läuft ohne die Randschicht der Folie (Gegenprobe
+    # 62), die die Form um 2·√(D/T)/a staucht.
+    MicrophoneCapsule._RANDSCHICHT = False
     if _HAS_SCIPY:
         b37 = dict(membrane_resonance_hz=None, membrane_thickness=5e-6,
                    membrane_tension=3000.0,
@@ -948,6 +952,10 @@ def test_gp60_lochkreis_als_makroelement(stand):
     #    widerstands (3D/2D 0.94 statt 1.02, beim 40-µm-Spalt 0.49 statt
     #    1.03). Seit Gegenprobe 61 ist er in beiden Modellen derselbe
     #    hysteretische Verlust und fällt aus dem Phasenverhältnis heraus.
+    # Die Probe gilt dem FILM; ihre Referenzen setzen die Quelle als
+    # Parabel 1 − ρ² bis a_mem an. Sie läuft deshalb ohne die Randschicht
+    # der Folie (die die Form um 2·√(D/T)/a staucht, Gegenprobe 62).
+    MicrophoneCapsule._RANDSCHICHT = False
     if not _HAS_SCIPY:
         return
     fa60 = np.array([2.0 * np.pi * 0.01])
