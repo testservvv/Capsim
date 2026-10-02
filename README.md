@@ -466,42 +466,50 @@ Schreiben.
    0,46/0,21 dB, 4146 2D 0,70 dB. Gegenprobe 52 d
    grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,5 dB);
    eine hergeleitete Aktuatorlast (Abstand, Schlitzgeometrie) fehlt.
-9. **K67 mit realem Bohrbild: Laufzeitverhältnis 1,49 — Ursache ist
-   die externe Bezugslaufzeit (Gegenprobe 71).** Mit dem aus dem Foto
-   vermessenen Bohrbild (108 Senkungen auf dem 2-mm-Raster, Mitte frei,
-   Hälften um 90° verdreht), Randnut und Mittenaussparung liegt die
-   Auslöschung bei 1 kHz im 3D-Löser bei −14,2 dB statt der
-   publizierten −26 dB; intern/extern 1,49 (26,6 gegen 18,3 mm).
-   *Untersucht:*
-   - **Die interne Laufzeit stimmt.** Die Rückkette zerfällt exakt in
-     Blöcke (D_r = T_rück[1,1]); über 90 % trägt C_vorn·R_Zwischenspalt
-     — das Volumen der Frontsenkungen mal dem Film zwischen den
-     versetzten Kernen. Den Film prüft eine unabhängige Lösung: das
-     unendliche Schachbrett aus Quellen und Senken im 2-mm-Raster gibt
-     (1/πK)·[ln(p/a) − 0,617] je Kernpaar; die zwei Škvor-Halbzellen des
-     2D-Modells liegen 19 % darunter. Damit korrigiert käme 2D auf
-     ≈ 27,5 mm — der 3D-Löser rechnet 27,2 mm (fein 26,6 mm).
-   - **Die externe Bezugslaufzeit passt nicht zur U87.** Die d_ext-Kugel
-     (18,3 mm) entspricht im BEM einem 56-mm-Körper 7 mm KOAXIAL hinter
-     der Kapsel. Die U87 ist seitenbesprochen; hinter der Rückmembran
-     sitzt nur der Korb. Die freie Scheibe gibt 32,2 mm (Sphäroid,
-     exakt), der freie Kopf im BEM 34,9 mm; dagegen ist die interne
-     Laufzeit 18–22 % zu KURZ (0,82/0,78): 1 kHz −6,9/−22,3 dB bei
-     90/135°, tiefste Stelle −27 dB bei 141–145°, 180° −17 bis −19 dB.
-     Gewählt wurde die Kugel, als die interne Laufzeit noch ~17 mm war
-     (Gegenprobe 20: „freie Scheibe ergäbe eine Superniere bei 123°") —
-     zwei Fehler hoben sich auf; mit Spalt-Mündung, exaktem Zwischenspalt
-     und realem Bohrbild ist die interne Seite vollständig, und die
-     Kompensation kippt.
-   - **Tiefe der Null: auch der Betrag.** Der Außenweg ist eine reine
-     Laufzeit (|G(180°)| = 1,00), das innere RC-Netzwerk hebt den Betrag
-     (|D_r| = 1,05; bei reinem RC 1/cos φ). Das allein begrenzt die Null
-     auf −20…−26 dB: mit freier Scheibe und 45-µm-Spacer passt die Phase
-     (1,04), die Null bleibt bei −19,5 dB.
-   Offen: welche externe Laufzeit der Korb und die Halterung der U87
-   wirklich ergeben, und ob dem inneren Netzwerk Trägheit fehlt, die es
-   von einem RC-Glied zu einer Laufzeit macht. Ein passender Spacer allein
-   wäre ein Fit.
+9. **K67 mit realem Bohrbild und realen Spalten: interne Laufzeit zu
+   lang (Gegenprobe 71).** Mit dem aus dem Foto vermessenen Bohrbild
+   (108 Senkungen auf dem 2-mm-Raster, Mitte frei, Hälften um 90°
+   verdreht), Randnut, Mittenaussparung und den realen Spalten (40 µm
+   zwischen den Hälften, ~50 µm Membran–Backplate) ist die interne
+   Laufzeit im 3D-Löser 42,0 mm (feines Gitter) — länger als jeder
+   plausible Außenweg: die d_ext-Kugel gibt 18,3 mm (Verhältnis 2,30,
+   1 kHz −3,0/−5,4/−6,6 dB bei 90/135/180°), die freie Scheibe 32,2 mm
+   (1,30, −4,5/−9,4/−11,9 dB). Das Modell sagt mit diesen Maßen keine
+   Niere voraus; die reale K67 ist eine. *Untersucht:*
+   - **Zerlegung:** die Rückkette zerfällt exakt in Blöcke (D_r =
+     T_rück[1,1]); über 90 % trägt C_vorn·R_Zwischenspalt — das Volumen
+     der Frontsenkungen mal dem Film zwischen den versetzten Kernen. Der
+     40-µm-Spalt verdoppelt R (1/h³): 26,6 → 42,0 mm; der 50-µm-
+     Membranspalt trägt ~1,4 mm, die Membranresonanz (1500–1900 Hz)
+     < 0,3 mm.
+   - **Zwischenspalt-Film gegengerechnet:** das unendliche Schachbrett
+     aus Quellen und Senken im 2-mm-Raster gibt (1/πK)·[ln(p/a) − 0,617]
+     je Kernpaar; die zwei Škvor-Halbzellen des 2D-Modells liegen 19 %
+     darunter, korrigiert träfe 2D den 3D-Löser (bei 65/50 µm 27,5
+     gegen 27,2 mm). Der Film ist also richtig gerechnet — für einen
+     ebenen Spalt mit scharfkantigen 0,6-mm-Kernen.
+   - **Trägheit fehlt nicht (Option A):** Film (exakte Stokes-Lösung in
+     K(ω)), Senkungsleitungen, Kerne, Mündungsmassen (Potential-
+     strömung, Gegenprobe 67) und Membranen sind enthalten und senken
+     |D_r| schon von 1,27 auf 1,21. Selbst 800 kg/m⁴ zusätzlich (gut das
+     Doppelte des Vorhandenen) brächten |D_r| nur auf 1,11, und die Phase
+     würde länger. Das Problem ist die Phase (42° gegen höchstens 34°
+     außen), nicht der Betrag.
+   - **Außenweg:** die d_ext-Kugel entspricht im BEM einem 56-mm-Körper
+     7 mm KOAXIAL hinter der Kapsel; die U87 ist seitenbesprochen. Die
+     freie Scheibe (32,2 mm) oder der freie Kopf im BEM (34,9 mm) passt
+     besser zur Montage — die Kugel wurde gewählt, als die interne
+     Laufzeit noch ~17 mm war (Gegenprobe 20). Auch damit bleibt die
+     interne Laufzeit 30 % zu lang.
+   - **Größter Hebel ist der Kernbereich zum Zwischenspalt:** Kern-
+     mündung 0,8 statt 0,6 mm (Fase, Entgratung) → 30,6 mm (Verhältnis
+     0,95 zur freien Scheibe), 1,0 mm → 23,9 mm; eine Senkung von 3,0
+     statt 3,7 mm → 38,1 mm. Auch bei passender Phase bleibt die Null
+     bei 1 kHz um −16 dB: der RC-Phasenschieber hebt den Betrag (|D_r|
+     > 1), der Außenweg nicht (|G| = 1,00).
+   Offen: Kernmündung und -durchmesser auf der Innenseite, Senkungstiefe,
+   Plattendicke, ob das Mittelloch durchgeht — an der realen Platte
+   messbar. Ein passendes Maß ohne Messung wäre ein Fit.
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
@@ -680,15 +688,17 @@ vollständig aus den akustischen Parametern (s. Abschnitt
 `examples/k67_experimentell_bohrbild.json` — **experimentell**: die K67
 mit dem realen Bohrbild, der Randnut und der Mittenaussparung, vermessen
 aus einem Foto zweier Backplate-Hälften (s. „K67-Bohrbild aus dem Foto
-und Freistich in der Elektrostatik (Gegenprobe 71)“). Gegenüber
+und Freistich in der Elektrostatik (Gegenprobe 71)“), und den realen
+Spalten: 40 µm zwischen den Hälften, ~50 µm Membran–Backplate. Gegenüber
 `u87_k67_projekt.json` geändert: 108 Senkungen auf dem quadratischen
 2-mm-Raster als 13 Lochkreise (54 durchgebohrt, Mitte frei), Elektrode
-25,4 mm, Membran 27,2 mm, Mittenterminierung 1 mm und eine 5-mm-
-Aussparung in der Mitte. Auslöschung bei 1 kHz (tiefste Stelle, jeweils
-bei 180°): 3D −14,2 dB (feines Gitter, Referenz), 2D −17,4 dB — das
-2D-Modell warnt hier selbst (lochfreie Mitte). Voreingestellt ist 2D;
-den Referenzwert liefert das 3D-Feldmodell (in der App ~6 min bei 100
-Punkten).
+25,4 mm, Membran 27,2 mm, Mittenterminierung 1 mm, 5-mm-Aussparung in
+der Mitte, Spalte 50/40 µm und — damit die Membran bei 60 V nicht
+kollabiert — 1700 Hz Membranresonanz (Annahme: derselbe Pull-in-Abstand
+wie zuvor). Ergebnis bei 1 kHz (90/135/180°): 3D −3,0/−5,4/−6,6 dB
+(feines Gitter), 2D −3,2/−6,0/−7,5 dB — mit diesen Maßen keine Niere,
+s. „Offene Punkte“ 9. Voreingestellt ist 2D; den Referenzwert liefert
+das 3D-Feldmodell (in der App ~6 min bei 100 Punkten).
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 
@@ -2850,7 +2860,10 @@ Modell warnt: lochfreie Mitte bis 4,3 mm); maßgeblich ist 3D. Dort ändert
 das reale Bohrbild die Auslöschung gegenüber der gleichverteilten Basis
 nur um rund 1 dB. Die publizierten −26 dB erreicht keine der beiden
 Rechnungen; das Laufzeitverhältnis intern/extern ist 1,49 (s. „Offene
-Punkte“ 9).
+Punkte“ 9). *Nachtrag:* mit den realen Spalten (40 µm zwischen den
+Hälften, ~50 µm Membran–Backplate, Membran dafür 1700 Hz) steigt die
+interne Laufzeit auf 42,0 mm, und bei 1 kHz bleiben −3,0/−5,4/−6,6 dB
+(90/135/180°, 3D fein).
 
 ## Verlustmechanismen (vollständig erfasst)
 
