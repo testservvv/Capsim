@@ -327,7 +327,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 114 Werte aus 32 Gegenproben, davon 12 Sperrklinken.
+Die Basis umfasst 115 Werte aus 33 Gegenproben, davon 12 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
