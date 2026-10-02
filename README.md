@@ -10,7 +10,7 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 | `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung); `python microphone_capsule.py` startet den Selbsttest |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
 | `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
-| `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures, `stand.py` und `basis_werte.json` die Stand-Werte und Sperrklinken, `stokes_zelle.py` und `stokes_eben.py` die Referenzlöser der Spalt-Mündung (Gegenprobe 67) |
+| `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures, `stand.py` und `basis_werte.json` die Stand-Werte und Sperrklinken, `stokes_zelle.py` und `stokes_eben.py` die Referenzlöser der Spalt-Mündung (Gegenprobe 67), `potential3d.py` den 3D-Gegenlöser für den Front-Rück-Weg nicht achsensymmetrischer Montagen (Offene Punkte 9) |
 
 ## Sprache / Language
 
@@ -466,50 +466,52 @@ Schreiben.
    0,46/0,21 dB, 4146 2D 0,70 dB. Gegenprobe 52 d
    grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,5 dB);
    eine hergeleitete Aktuatorlast (Abstand, Schlitzgeometrie) fehlt.
-9. **K67 mit realem Bohrbild und realen Spalten: interne Laufzeit zu
-   lang (Gegenprobe 71).** Mit dem aus dem Foto vermessenen Bohrbild
-   (108 Senkungen auf dem 2-mm-Raster, Mitte frei, Hälften um 90°
-   verdreht), Randnut, Mittenaussparung und den realen Spalten (40 µm
-   zwischen den Hälften, ~50 µm Membran–Backplate) ist die interne
-   Laufzeit im 3D-Löser 42,0 mm (feines Gitter) — länger als jeder
-   plausible Außenweg: die d_ext-Kugel gibt 18,3 mm (Verhältnis 2,30,
-   1 kHz −3,0/−5,4/−6,6 dB bei 90/135/180°), die freie Scheibe 32,2 mm
-   (1,30, −4,5/−9,4/−11,9 dB). Das Modell sagt mit diesen Maßen keine
-   Niere voraus; die reale K67 ist eine. *Untersucht:*
+9. **K67 mit realem Bohrbild und realen Spalten: interne Laufzeit 10 %
+   zu lang — Rest im Außenweg der seitenbesprochenen U87 und in
+   Toleranzen (Gegenprobe 71).** Mit dem aus dem Foto vermessenen
+   Bohrbild (108 Senkungen auf dem 2-mm-Raster, Mitte frei, Hälften um
+   90° verdreht), Randnut, Mittenaussparung und den realen Maßen
+   (Zwischenspacer 40 µm, Membranspalt ~50 µm, Hälfte 4,07 mm, Senkung
+   3,75 mm, Kerne ohne Fase, Mittelloch verschraubt) ist die interne
+   Laufzeit im 3D-Löser 42,4 mm (feines Gitter). Die d_ext-Kugel gibt
+   18,3 mm (Verhältnis 2,30, 1 kHz −3,0/−5,4/−6,6 dB bei 90/135/180°),
+   der freie Kopf im BEM 35,0 mm (1,21, −4,6/−10,1/−12,7 dB).
+   *Untersucht:*
    - **Zerlegung:** die Rückkette zerfällt exakt in Blöcke (D_r =
      T_rück[1,1]); über 90 % trägt C_vorn·R_Zwischenspalt — das Volumen
      der Frontsenkungen mal dem Film zwischen den versetzten Kernen. Der
-     40-µm-Spalt verdoppelt R (1/h³): 26,6 → 42,0 mm; der 50-µm-
-     Membranspalt trägt ~1,4 mm, die Membranresonanz (1500–1900 Hz)
-     < 0,3 mm.
+     40-µm-Spalt verdoppelt R (1/h³): 26,6 → 42 mm.
    - **Zwischenspalt-Film gegengerechnet:** das unendliche Schachbrett
      aus Quellen und Senken im 2-mm-Raster gibt (1/πK)·[ln(p/a) − 0,617]
      je Kernpaar; die zwei Škvor-Halbzellen des 2D-Modells liegen 19 %
-     darunter, korrigiert träfe 2D den 3D-Löser (bei 65/50 µm 27,5
-     gegen 27,2 mm). Der Film ist also richtig gerechnet — für einen
-     ebenen Spalt mit scharfkantigen 0,6-mm-Kernen.
-   - **Trägheit fehlt nicht (Option A):** Film (exakte Stokes-Lösung in
-     K(ω)), Senkungsleitungen, Kerne, Mündungsmassen (Potential-
-     strömung, Gegenprobe 67) und Membranen sind enthalten und senken
-     |D_r| schon von 1,27 auf 1,21. Selbst 800 kg/m⁴ zusätzlich (gut das
-     Doppelte des Vorhandenen) brächten |D_r| nur auf 1,11, und die Phase
-     würde länger. Das Problem ist die Phase (42° gegen höchstens 34°
-     außen), nicht der Betrag.
-   - **Außenweg:** die d_ext-Kugel entspricht im BEM einem 56-mm-Körper
-     7 mm KOAXIAL hinter der Kapsel; die U87 ist seitenbesprochen. Die
-     freie Scheibe (32,2 mm) oder der freie Kopf im BEM (34,9 mm) passt
-     besser zur Montage — die Kugel wurde gewählt, als die interne
-     Laufzeit noch ~17 mm war (Gegenprobe 20). Auch damit bleibt die
-     interne Laufzeit 30 % zu lang.
-   - **Größter Hebel ist der Kernbereich zum Zwischenspalt:** Kern-
-     mündung 0,8 statt 0,6 mm (Fase, Entgratung) → 30,6 mm (Verhältnis
-     0,95 zur freien Scheibe), 1,0 mm → 23,9 mm; eine Senkung von 3,0
-     statt 3,7 mm → 38,1 mm. Auch bei passender Phase bleibt die Null
-     bei 1 kHz um −16 dB: der RC-Phasenschieber hebt den Betrag (|D_r|
-     > 1), der Außenweg nicht (|G| = 1,00).
-   Offen: Kernmündung und -durchmesser auf der Innenseite, Senkungstiefe,
-   Plattendicke, ob das Mittelloch durchgeht — an der realen Platte
-   messbar. Ein passendes Maß ohne Messung wäre ein Fit.
+     darunter, korrigiert träfe 2D den 3D-Löser (27,5 gegen 27,2 mm bei
+     65/50 µm). Für einen ebenen Spalt mit scharfkantigen 0,6-mm-Kernen
+     ist der Film richtig gerechnet.
+   - **Trägheit fehlt nicht:** Film (exakte Stokes-Lösung in K(ω)),
+     Senkungsleitungen, Kerne, Mündungsmassen und Membranen sind
+     enthalten und senken |D_r| schon von 1,27 auf 1,21. Selbst die
+     doppelte Trägheit brächte |D_r| nur auf 1,11 und verlängerte die
+     Phase. Das Problem ist die Phase, nicht der Betrag.
+   - **Hebel im Innern (3D, intern):** Zwischenspalt 42/45/48 µm →
+     40,2/35,8/32,1 mm; Kern 0,7 mm → 38,8 mm; Senkung 3,4 mm → 41,1 mm;
+     Membranspalt 45/55 µm, Polarisation, Mittelbohrungen ≤ 2 %.
+   - **Außenweg der U87:** die d_ext-Kugel entspricht im BEM einem
+     56-mm-Körper 7 mm KOAXIAL hinter der Kapsel (Endbesprechung); sie
+     wurde gewählt, als die interne Laufzeit noch ~17 mm war (Gegenprobe
+     20). Die U87 ist seitenbesprochen: der Körper sitzt UNTER der Kapsel.
+     Eine 3D-Potentialrechnung (`tests/potential3d.py`; geprüft an der
+     Kugel, 0,5 %, und am achsensymmetrischen BEM mit freiem und koaxialem
+     Körper, ≤ 1,2 %) gibt für den Körper 10–15 mm unter dem Kapselrand
+     37,4–38,6 mm statt 34,7 mm frei: +9–11 %. Mit dem Modellwert des
+     freien Kopfes (35,0 mm) sind das ~38,5 mm, das Verhältnis sinkt auf
+     ~1,10.
+   - **Tiefe der Null:** auch bei passender Phase bleibt sie bei 1 kHz um
+     −16 dB, weil der RC-Phasenschieber den Betrag hebt (|D_r| > 1), der
+     Außenweg nicht (|G| = 1,00).
+   Offen: die seitenbesprochene Montage als Körpermodell (3D-BEM über die
+   Frequenz), und die restlichen ~10 % — sie liegen in Fertigungs-
+   toleranzen (wirksamer Zwischenspalt 40 → 41,5 µm, Kern 0,6 → 0,65 mm,
+   Senkung 3,4 mm). Ein passendes Maß ohne Messung wäre ein Fit.
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
@@ -693,11 +695,12 @@ Spalten: 40 µm zwischen den Hälften, ~50 µm Membran–Backplate. Gegenüber
 `u87_k67_projekt.json` geändert: 108 Senkungen auf dem quadratischen
 2-mm-Raster als 13 Lochkreise (54 durchgebohrt, Mitte frei), Elektrode
 25,4 mm, Membran 27,2 mm, Mittenterminierung 1 mm, 5-mm-Aussparung in
-der Mitte, Spalte 50/40 µm und — damit die Membran bei 60 V nicht
-kollabiert — 1700 Hz Membranresonanz (Annahme: derselbe Pull-in-Abstand
-wie zuvor). Ergebnis bei 1 kHz (90/135/180°): 3D −3,0/−5,4/−6,6 dB
-(feines Gitter), 2D −3,2/−6,0/−7,5 dB — mit diesen Maßen keine Niere,
-s. „Offene Punkte“ 9. Voreingestellt ist 2D; den Referenzwert liefert
+der Mitte, Spalte 50/40 µm, Hälfte 4,07 mm, Senkung 3,75 mm und — damit
+die Membran bei 60 V nicht kollabiert — 1700 Hz Membranresonanz
+(Annahme: derselbe Pull-in-Abstand wie zuvor). Ergebnis bei 1 kHz
+(90/135/180°): 3D −3,0/−5,4/−6,6 dB (feines Gitter, Kugel als
+Außenweg), mit dem freien Kopf −4,6/−10,1/−12,7 dB; 2D −3,2/−6,0/
+−7,5 dB — s. „Offene Punkte“ 9. Voreingestellt ist 2D; den Referenzwert liefert
 das 3D-Feldmodell (in der App ~6 min bei 100 Punkten).
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
