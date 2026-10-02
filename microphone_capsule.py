@@ -5580,8 +5580,10 @@ class MicrophoneCapsule:
         symmetrischen Löser auf 0.001 dB.
         HOCHTON (Gegenprobe 52): oberhalb der Membranresonanz liegt der
         3D-Löser über dem 2D-Modell — kein Fehler: die Membran weicht dem
-        Filmdruck aus (das Einmodenbild kann das nicht), und für Löcher
-        auf einem Lochkreis überschätzt das 2D-Feld den Filmwiderstand.
+        Filmdruck aus (das Einmodenbild kann das nicht); den Film am
+        Lochkreis rechnet das 2D-Feld seit Gegenprobe 60 exakt (vorher
+        überschätzte es ihn), der 3D-Löser trifft ihn auf 0.1–0.5 %
+        (Gegenprobe 68).
         OFFENER PUNKT: an der gemessenen B&K 4134 (Gegenprobe 38) liegt
         der 3D-Löser bei 13…20 kHz 2.2…3.5 dB über der Messung, das 2D-
         Modell höchstens 0.6 dB — die reale Kapsel dämpft also stärker
@@ -5680,8 +5682,12 @@ class MicrophoneCapsule:
         # Auflösung der kleinsten Mündung in Zellen je Radius (die gröbere
         # Richtung zählt, azimutal am äußersten Lochmittenkreis)
         mouth = self._grid_3d_mouths()
+        # (nur ein Mittelloch, R = 0: die Zellen um die Achse sind azimutal
+        # beliebig schmal, es zählt nur die radiale Richtung)
         cells_rm = (None if mouth is None
-                    else min(mouth[0] / dr, mouth[0] / (mouth[1] * dphi)))
+                    else min(mouth[0] / dr,
+                             mouth[0] / (mouth[1] * dphi) if mouth[1] > 0.0
+                             else np.inf))
         fine_capped = (self.grid_3d == "fine" and cells_rm is not None
                        and cells_rm < self._GRID_FINE_CELLS * (1.0 - 1e-9))
         if fine_capped:
@@ -5728,8 +5734,19 @@ class MicrophoneCapsule:
                 cells = [i0 * Np_ + j0 % Np_]
                 for i in range(i_lo, i_hi + 1):
                     ri = r_f[i]
-                    dj = min(Np_ // 2,
-                             int(np.ceil(r_hole / (ri * dphi))) + 1)
+                    # Suchfenster aus dem EXAKTEN halben Öffnungswinkel der
+                    # Mündung auf dem Ring r_i: cos Δ = (r_i² + R² − r²)/
+                    # (2·r_i·R). Bis hier stand r/r_i — richtig nur für
+                    # Löcher fern der Achse; ein Mittelloch (oder eins, das
+                    # die Achse überdeckt) umfasst auf seinen äußeren
+                    # Ringen den ganzen Umfang, und das Fenster schnitt es
+                    # zum Keil zu (Filmwiderstand +6…55 % bei r/a =
+                    # 0.06…0.28, B&K 4146; Gegenprobe 68).
+                    den = 2.0 * ri * radius
+                    c_half = ((ri**2 + radius**2 - r_hole**2) / den
+                              if den > 0.0 else -1.0)
+                    half = float(np.arccos(np.clip(c_half, -1.0, 1.0)))
+                    dj = min(Np_ // 2, int(np.ceil(half / dphi)) + 1)
                     jj = np.arange(j0 - dj, j0 + dj + 1)
                     d2 = (ri**2 + radius**2 - 2.0 * ri * radius
                           * np.cos((jj + 0.5) * dphi - ph0))
@@ -6211,7 +6228,10 @@ class MicrophoneCapsule:
         verschiebung aus, die mit dem Wandlerkoeffizienten der Kette die
         Spannung ergibt (s. _output_weight_3d, Gegenprobe 54); 'volume'
         die reine Volumenverschiebung über der Elektrode (für Validierungen
-        gegen geschlossene Formen und Reziprozität).
+        gegen geschlossene Formen und Reziprozität); 'membrane' die der
+        GANZEN Membran (auch außerhalb der Elektrode) — die Größe, die die
+        Kette als V = e/Θ führt und gegen die akustische Impedanzen wie
+        p/(jωV) zu bilden sind (Gegenprobe 68).
 
         Rückgabe: (X_f, X_r) je Frequenz [m³/Pa]; mit ``want_rear``
         zusätzlich die Rückmembran-Antworten (B_f, B_r) für
@@ -6226,7 +6246,7 @@ class MicrophoneCapsule:
 
         WIEDERVERWENDUNG (Gegenprobe 56): eine schon gelöste Frequenz wird
         nicht erneut faktorisiert, sondern aus dem Lösungsspeicher
-        (_solve_3d_cache) bedient — bitgleich, für beide Gewichte und mit
+        (_solve_3d_cache) bedient — bitgleich, für alle Gewichte und mit
         denselben Rückmembran-Antworten. ``_lu_3d_count`` zählt die
         tatsächlichen Faktorisierungen; wie zerlegt wird, s. _lu_solve_3d
         (Gegenprobe 57).
@@ -6277,16 +6297,18 @@ class MicrophoneCapsule:
         # gesetzt; das Minus richtet die 3D-Ausgänge an der Kettenkonvention
         # aus, sodass H über alle Modelle phasengleich ist (Beträge und das
         # Verhältnis D_r = −X_f/X_r sind davon unberührt).
-        if weight not in ("output", "volume"):
-            raise ValueError("weight muss 'output' oder 'volume' sein.")
-        # beide Gewichte je Lösung, damit der Speicher jede spätere
-        # Anfrage bedienen kann
+        if weight not in ("output", "volume", "membrane"):
+            raise ValueError("weight muss 'output', 'volume' oder "
+                             "'membrane' sein.")
+        # alle Gewichte je Lösung, damit der Speicher jede spätere
+        # Anfrage bedienen kann; 'membrane' läuft über alle Membranzellen
         w_vol = -np.repeat(A_fw, Np_)
+        rhs_w = np.repeat(A_mw, Np_)
         w_outs = {"volume": w_vol,
                   "output": (-np.repeat(A_fw * self._output_weight_3d(r_f),
                                         Np_)
-                             if self._OUTPUT_EXACT_3D else w_vol)}
-        rhs_w = np.repeat(A_mw, Np_)
+                             if self._OUTPUT_EXACT_3D else w_vol),
+                  "membrane": -rhs_w}
         speicher = self._solve_3d_cache()
 
         def _two_port_stamp(rows, cols, vals, ca, offa, cb, offb,
@@ -6716,11 +6738,14 @@ class MicrophoneCapsule:
                 rhs[off_n + 0, 0] = d_n              # p_front am Frontknoten
                 rhs[off_n + 1, 1] = src_bk           # p_rear an der Kette
             x = self._lu_solve_3d(S, rhs)
-            wf = x[off_w:off_w + NF, :]              # Elektrodenbereich
-            wr = (x[off_w + NM:off_w + NM + NF, :]
-                  if arch == "dual_diaphragm" else None)
             neu = {"recip": None, "knoten": None}
             for w_name, w_v in w_outs.items():
+                # Elektrodenbereich (die ersten NF Membranzellen) bzw. die
+                # ganze Membran (NM Zellen)
+                nw = w_v.size
+                wf = x[off_w:off_w + nw, :]
+                wr = (x[off_w + NM:off_w + NM + nw, :]
+                      if arch == "dual_diaphragm" else None)
                 xf_ = np.sum(w_v[:, None] * wf, axis=0)
                 if wr is not None:
                     bf_ = np.sum(w_v[:, None] * wr, axis=0)

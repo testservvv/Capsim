@@ -247,7 +247,7 @@ Klassenschalter wie `MicrophoneCapsule._MASS_EXACT` werden nach jedem
 Test zurückgesetzt, auch wenn er scheitert.
 
 Laufzeit auf 4 Kernen: alle Gegenproben etwa 3 Minuten, die schnelle
-Stufe ohne die `slow`-Proben (32, 41, 43, 57, 60, 64, 66b und 67)
+Stufe ohne die `slow`-Proben (32, 41, 43, 57, 60, 64, 66b, 67 und 68)
 gut 2 Minuten (gemessen in einer Cloud-Sitzung). Vor Gegenprobe 57 (LU-Zerlegung des 3D-Lösers) waren es knapp
 3 Minuten. Die Gegenproben 22, 23 und 48 sind
 in unabhängige Teilprüfungen aufgeteilt (22a–e, 23a–f, 48a–g3), die
@@ -297,9 +297,12 @@ Neu festgelegt wurde mit Gegenprobe 65 die 2D-Amplitude gegen
 Zuckerwars 4146 (0,63 → 0,87 dB): der alte Wert enthielt die
 Strahlungslast im Druckgang, die den Hochtonüberschuss des 2D-Modells
 verdeckte. Ebenso mit Gegenprobe 67 der Abstand des 3D-Modells zur
-COMSOL-FEM der 4134 (0,066 → 0,112 dB): die Spalt-Mündung hebt den
-Filmwiderstand, den 3D am Lochkreis schon überschätzt, während 3D
-gegen das B&K-Messmittel besser wird (0,36 → 0,21 dB). Wird ein
+COMSOL-FEM der 4134 (0,066 → 0,112 dB): die Spalt-Mündung bringt den
+Widerstand an die FEM (Re Z 3D/FEM 0,96 → 1,01, an der ganzen Membran
+gemessen, Gegenprobe 68), der Pegel fällt aber bei 20 kHz um 0,45 dB
+unter die FEM; gegen das B&K-Messmittel wird 3D besser (0,36 →
+0,21 dB). (Die erste Begründung, 3D überschätze den Filmwiderstand am
+Lochkreis, war ein Messfehler der Probe, s. Gegenprobe 68.) Wird ein
 solcher Wert schlechter als
 die Basis (über eine kleine Toleranz hinaus), scheitert der Test; wird
 er besser, meldet es der Bericht.
@@ -342,28 +345,28 @@ Schreiben.
    (`gp59.rms_2d_gegen_fem_makro`; vor der Spalt-Mündung, Gegenprobe
    67, 0,31 dB, vor dem Makroelement 1,80 dB), Re Z 2 % unter der FEM
    (`gp59.widerstand_2d_zu_fem`, vorher 6 % darunter, vor dem
-   Makroelement 61 % darüber). Offen bleibt:
-   - **Mittelloch im 3D-Löser:** ein Loch auf der Polarachse des
-     3D-Gitters überschätzt dessen Filmwiderstand um 5–54 % (r/a =
-     0,06…0,28; das 2D-Makroelement trifft die geschlossene Form auf
-     0,05 %). Betroffen ist die 4146 (3D/2D 1,09 bei erzwungener Form).
-     Große Mündungen abseits der Achse trifft 3D auf 1–3 %.
+   Makroelement 61 % darüber). Der 3D-Löser trifft den Film an
+   Lochkreisen und Mittellöchern auf 0,1–0,5 % (Gegenprobe 68; das
+   Mittelloch lag bis dahin durch einen Fehler im Fußabdruck 6–55 %
+   daneben, die übrigen „1–4 % zu viel" waren Messgrößen der Proben).
+   Offen bleibt:
    - **3D gegen die COMSOL-FEM der 4134:** 0,11 dB RMS
-     (`gp59.rms_3d_gegen_fem`, vor Gegenprobe 67 0,07 dB), Re Z
-     3D/FEM 1,18 (vorher 1,12). Die Spalt-Mündung erhöht den
-     Filmwiderstand um rund 5 %, und den überschätzt 3D am Lochkreis
-     schon (Gegenprobe 52: 3D/2D 1,04). Gegen das B&K-Messmittel liegt
-     3D dagegen besser: 0,21 statt 0,36 dB. Die Sperrklinke ist mit
-     Gegenprobe 67 bewusst neu festgelegt (0,066 → 0,112 dB).
+     (`gp59.rms_3d_gegen_fem`, vor Gegenprobe 67 0,07 dB). Der
+     Widerstand stimmt (Re Z 3D/FEM 1,01, an der ganzen Membran
+     gemessen; vor der Spalt-Mündung 0,96), aber bei 20 kHz liegt 3D
+     jetzt 0,39 dB UNTER der FEM (vorher +0,06 dB) — eine Frage der
+     Reaktanz. Gegen das B&K-Messmittel liegt 3D besser: 0,21 statt
+     0,36 dB. Die Sperrklinke ist mit Gegenprobe 67 bewusst neu
+     festgelegt (0,066 → 0,112 dB).
    - **Zuckerwars 4134 von 1978** war stärker gedämpft als heutige 4134
      (20 kHz: −3,1 gegen −1,2 dB); 2D und 3D liegen gleichermaßen
      darüber (2,0 bzw. 1,6 dB RMS, `gp38.rms_2d_4134_db`; vor
      Gegenprobe 67 2,2/1,7 dB). Warum, bleibt
      offen (Tabelle I weicht von B&Ks Geometrie ab: Spalt 20,77 statt
      18,6 µm, Lochkreis 2,03 statt 1,70 mm). Am 4146 liegen 2D 0,70
-     und 3D 0,90 dB daneben (`gp38.rms_2d_4146_db`; vor Gegenprobe 67
-     0,87/0,73 dB — die Spalt-Mündung bringt 2D näher und 3D weiter
-     weg, s. Punkt 9).
+     und 3D 0,83 dB daneben (`gp38.rms_2d_4146_db`; vor Gegenprobe 67
+     0,87/0,73 dB, mit der Spalt-Mündung und vor dem Mittelloch-Fix
+     0,70/0,90 dB, s. Punkt 9).
 
 2. **Resonanzlage gegen die FEM (Gegenprobe 32): aufgeklärt, Rest
    offen.** Die 10 % Abstand waren zum größten Teil ein Fehler im
@@ -492,6 +495,12 @@ Schreiben.
   die Löcher, ist der Fehler von der Ordnung q·ΔZ (q
   Lochflächenanteil). Die Stufenbohrung trägt sie wie den Zellterm in
   beiden Zweigen der Senkung. Über h/a = 2 geklemmt.
+- **Elektrode und Einmodenbild (Gegenprobe 68):** die Kette wandelt die
+  Modenamplitude mit Θ in Spannung; im 3D-Feld sieht die Spannung die
+  Auslenkung nur über der Elektrode, die über den Löchern fehlt. Unter
+  Filmlast weicht die Form ab, und die 2D-Spannung sieht bei großen
+  Löchern 2–3 % weniger Verlust als die 3D-Spannung
+  (`gp68.elektrodengewicht_lochkreis` 1,03), bei gleichem Film.
 - **Höhere Membranmoden (`membrane_modes`):** die elektrostatische
   Feder-Erweichung wird nicht auf sie übertragen, und ihre
   Filmdämpfung wird gleich der Grundmode gesetzt (konservativ).
@@ -2118,14 +2127,16 @@ f_res = 300 kHz blähte das den 2D-Wert bei 1 kHz 300-fach auf; bei
 Nickelfolie waren das bis 8 % des Filmwiderstands (B&K-Geometrie: 3D/2D
 scheinbar 0,94 statt 1,02, mit 40 µm Spalt 0,49 statt 1,03). Seit
 Gegenprobe 61 tragen beide Modelle denselben hysteretischen
-Folienverlust, und er fällt aus dem Phasenverhältnis heraus. Sauber liegt 3D bei großen
-Mündungen 1–3 % über der exakten Lösung (B&K 1,02, r/a = 0,17: 1,03;
-`gp60.r3d_zu_exakt_bk`), die B&K-Fälle der Testbank bei 0,99–1,04
-(Gaußband 0,59–0,72), der FEM-Fall der Gegenprobe 32 bei 1,02 (0,91).
-Bei der 4146 sind es 1,09: dort sitzt ein Mittelloch auf der
-Polarachse des 3D-Gitters, und das überschätzt der 3D-Löser um 5–54 %
-(r/a = 0,06…0,28, gegen die geschlossene Form, die das 2D-Makroelement
-auf 0,05 % trifft) — offen („Offene Punkte" 1).
+Folienverlust, und er fällt aus dem Phasenverhältnis heraus. Hier
+stand danach, 3D liege bei großen Mündungen 1–3 % über der exakten
+Lösung und am Mittelloch der 4146 um 5–54 %. Gegenprobe 68 hat das
+aufgelöst: das Mittelloch war ein Fehler im Fußabdruck, der Rest kam
+von zwei weiteren Fallen der Methode — gemessen an der Spannung (die
+über den Löchern keine Elektrode sieht) und bei Kapseln mit Körper mit
+Beugung (deren Phase die Filmphase überdeckt). Seitdem misst
+`filmwiderstand_3d_zu_2d` (tests/basis.py) an der Volumenverschiebung
+der ganzen Membran ohne Beugung; 3D trifft das exakte 2D auf 0,1–0,5 %
+(`gp60.r3d_zu_exakt_bk` 1,004).
 
 ### Folienverlust (Gegenprobe 61)
 
@@ -2528,6 +2539,49 @@ festgelegt (0,066 → 0,112 dB).
 Klassen-Standard `delay_length = 3e-3`, also mit einem Laufzeitglied,
 das die FEM-Kapsel nicht hat (+39 % Rückvolumen). Es verdeckte, dass
 das Modell ohne die Mündung 6 % zu hoch und zu schwach bedämpft lag.
+
+### Mittelloch und Messgrößen im 3D-Löser (Gegenprobe 68)
+
+Offen stand, der 3D-Löser überschätze den Filmwiderstand am Mittelloch
+um 5–54 %, an großen Lochkreis-Mündungen um 1–3 %, und sein Widerstand
+liege gegen die COMSOL-FEM der 4134 12–18 % hoch. Eine eigene Messbank
+(Druckfeld und Membranauslenkung je Zelle aus der Lösung) hat das
+getrennt:
+
+- **Fußabdruck (Fehler, behoben):** die Zellen einer Mündung wurden
+  ringweise in einem azimutalen Fenster der halben Breite r/r_i
+  gesucht. Fern der Achse reicht das; ein Mittelloch — oder eines, das
+  die Achse überdeckt — umfasst auf seinen äußeren Ringen aber den
+  ganzen Umfang, und das Fenster schnitt es zum Keil zu (Druckfeld
+  azimutal 17 % ungleich bei einer achsensymmetrischen Aufgabe). Jetzt
+  mit dem exakten halben Öffnungswinkel; der Film am Mittelloch trifft
+  die geschlossene Form auf 0,1 % (r/a = 0,06/0,14/0,28: vorher
+  +6/+19/+55 %). Eine Kapsel nur mit Mittelloch brach im 3D-Löser sogar
+  ab (Division durch null bei der Gitterauflösung). Betroffen war die
+  4146: gegen Zuckerwars Fig. 7 jetzt 0,83 statt 0,90 dB.
+- **Phasenmethode an der Spannung (Messgröße):** im Steifigkeitsbereich
+  ist tan(Phase) ∝ Filmwiderstand — aber nur, wenn Ein- und Ausgang
+  dieselbe Form sehen. Die Spannung sieht die Auslenkung nur über der
+  Elektrode, die über den Löchern fehlt; das 3D-Feld zeigt damit bei
+  großen Löchern 2–3 % mehr Verlust als die Einmoden-Kette, bei gleichem
+  Film. An der Volumenverschiebung der ganzen Membran trifft 3D das
+  exakte 2D auf 0,1–0,5 %.
+- **Beugung (Messgröße):** bei Kapseln mit Körper rechnete die Methode
+  mit Beugung, deren Phase (0,3 rad gegen 0,002 rad Filmphase) das
+  Verhältnis trivial 1 machte. Die Prüfungen „gleichverteilte Löcher
+  3D = 2D" (Gegenprobe 52) und die ½″-Lochkreise (Gegenprobe 60) prüften
+  so nichts; jetzt ohne Beugung gemessen. Dabei zeigte sich: das grobe
+  3D-Gitter hat bei sechs Mündungen mit 1,9 Zellen je Radius
+  (azimutal) 1 % Filmfehler, das feine 0,7 % — Gegenprobe 60 rechnet
+  diesen Fall seither fein.
+- **Re Z gegen die FEM (Messgröße):** Gegenprobe 59 bildete den
+  3D-Widerstand mit der Volumenverschiebung nur über der Elektrode
+  (a_bp = 0,8·a_mem), FEM und 2D meinen die der ganzen Membran. Mit
+  `weight='membrane'` (neu) liegt 3D bei 1,01 statt 1,18.
+
+Die Filmvergleiche laufen jetzt über `filmwiderstand_3d_zu_2d` in
+`tests/basis.py` (Volumen der ganzen Membran, ohne Beugung) und geben
+die Spannung getrennt aus.
 
 ## Verlustmechanismen (vollständig erfasst)
 

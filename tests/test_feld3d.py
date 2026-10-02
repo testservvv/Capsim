@@ -952,8 +952,11 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
     #    am Lochkreis exakt. Der Folienverlust war in 2D (fester Widerstand
     #    ω0·M/Q) und 3D (mit ω wachsend) verschieden angesetzt und
     #    verfälschte das Verhältnis bei erzwungener Form und Nickelfolie um
-    #    ~8 %; seit Gegenprobe 61 ist er in beiden gleich. Sauber liegt
-    #    3D/2D bei 1.04 (Gaußband 0.65).
+    #    ~8 %; seit Gegenprobe 61 ist er in beiden gleich. Sauber lag
+    #    3D/2D dann bei 1.04 (Gaußband 0.65) — an der Spannung gemessen;
+    #    an der Volumenverschiebung der ganzen Membran (Gegenprobe 68)
+    #    sind es 1.004, und die gleichverteilte Probe lief bis dahin mit
+    #    Beugung, deren Phase die Filmphase überdeckte.
     # OFFEN: die B&K-Messung (Zuckerwar 1978, Aktuator) folgte dem alten
     #    2D-Modell (ein Ausgleich, Gegenprobe 59); mit dem Makroelement
     #    liegen 2D und 3D gleichermaßen über ihr (Gegenprobe 38). Der
@@ -1130,18 +1133,12 @@ def test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart(stand):
         # c) Filmwiderstand bei erzwungener Form (sehr steife Membran):
         #    tan(Phase) ≈ −ω·R·C im Steifigkeitsbereich
         def _Rratio52(p):
-            # der Folienverlust ist in 2D und 3D gleich (hysteretisch,
-            # Gegenprobe 61) und fällt aus dem Phasenverhältnis heraus;
-            # bis Gegenprobe 60 verfälschte er es bei Nickelfolie um ~8 %
-            q = dict(p, membrane_resonance_hz=300e3)
-            q.pop("membrane_tension", None)
-            ff = np.array([1000.0])
-            ph = {}
-            for sm in ("2d", "3d"):
-                cc = MicrophoneCapsule(squeeze_model=sm, **q)
-                ph[sm] = np.angle(cc.transfer_function(ff)[0]
-                                  / cc.transfer_function([20.0])[0])
-            return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
+            # an der Volumenverschiebung der ganzen Membran (s.
+            # filmwiderstand_3d_zu_2d; die Spannung sähe zusätzlich das
+            # Elektrodengewicht über den Löchern, Gegenprobe 68). Der
+            # Folienverlust ist in 2D und 3D gleich (hysteretisch,
+            # Gegenprobe 61) und fällt aus dem Verhältnis heraus.
+            return filmwiderstand_3d_zu_2d(p)[0]
 
         a24_52 = dict(
             architecture="single", membrane_resonance_hz=2100.0,
@@ -1623,3 +1620,123 @@ def test_gp57_symmetrische_zerlegung():
           + f" (ohne Rückfall); wie pivotisiert bis "
           f"{max(dev57.values()):.0e}; Auffüllung dual {fill57:.2f}; "
           f"Rückfall erzwungen bitgleich, winzige Diagonale erkannt  OK")
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+def test_gp68_mittelloch_und_messgroessen_im_3d_loeser(stand):
+    """Gegenprobe 68: Mittelloch im 3D-Löser, Messgrößen des Filmvergleichs."""
+    # Offen war: der 3D-Löser überschätze den Filmwiderstand am Mittelloch
+    # um 5–54 % und an großen Lochkreis-Mündungen um 1–3 %, und gegen die
+    # COMSOL-FEM der 4134 liege sein Widerstand 12–18 % hoch. Nur das
+    # erste war ein Fehler des Lösers:
+    # * FUSSABDRUCK: die Zellen einer Mündung wurden ringweise in einem
+    #   azimutalen Fenster der halben Breite r/r_i gesucht — richtig fern
+    #   der Achse, aber ein Mittelloch (oder eins, das die Achse überdeckt)
+    #   umfasst auf seinen äußeren Ringen den ganzen Umfang, und das
+    #   Fenster schnitt es zum Keil (r/a = 0.06/0.14/0.28: +6/+19/+55 %;
+    #   B&K 4146). Jetzt mit dem exakten halben Öffnungswinkel. Eine Kapsel
+    #   NUR mit Mittelloch brach im 3D-Löser sogar ab (Division durch null
+    #   in der Gitterauflösung).
+    # * MESSGRÖSSEN, kein Filmfehler: die Phasenmethode der Gegenproben 52,
+    #   53, 60 maß an der SPANNUNG. Die Elektrode fehlt über den Löchern;
+    #   das 3D-Feld wichtet die Rückseitendrücke deshalb anders als die
+    #   Einmoden-Kette — bei großen Löchern 2–3 % mehr Verlust, physikalisch
+    #   richtig im 3D, eine Grenze des 2D-Einmodenbilds. Mit Beugung
+    #   (Kapseln mit Körper) überdeckte deren Phase die Filmphase ganz.
+    #   Gegenprobe 59 bildete Re Z des 3D-Lösers mit der Volumenverschiebung
+    #   nur über der Elektrode; FEM und 2D meinen die der ganzen Membran.
+    #   Der 3D-Löser hat dafür jetzt weight='membrane'.
+    # Geprüft:
+    # a) eine Kapsel nur mit Mittelloch baut und rechnet,
+    # b) der Fußabdruck jeder Mündung ist genau die Menge der Zellen, deren
+    #    Mitte in ihr liegt (gegen eine Vollsuche über alle Zellen) —
+    #    Mittelloch, Loch über der Achse, Lochkreis,
+    # c) Mittelloch: Film 3D/2D bei erzwungener Form (Volumen) auf 1 %,
+    # d) das Elektrodengewicht: die Spannung sieht bei großen Löchern MEHR
+    #    Verlust als das Volumen (Stand-Wert),
+    # e) weight='membrane' == 'volume', wenn die Elektrode die ganze
+    #    Membran deckt, sonst im Tiefton das Verhältnis u·(2 − u) der
+    #    Parabel (u = (a_bp/a_mem)²).
+    # Die Probe gilt dem Film: ohne Randschicht der Folie und ohne
+    # Spalt-Mündung (2D und 3D setzen sie gleich an die Lochknoten).
+    MicrophoneCapsule._RANDSCHICHT = False
+    MicrophoneCapsule._MUENDUNG = False
+    if not _HAS_SCIPY:
+        return
+    a68 = 3.6e-3
+    bk68 = dict(membrane_material={"rho": 8900.0, "E": 221e9, "nu": 0.31},
+                membrane_diameter=2 * a68, membrane_thickness=5e-6,
+                air_gap=18.6e-6, backplate_diameter=2 * a68,
+                backplate_thickness=1e-6, bias_voltage=1.0,
+                architecture="single", n_blind_holes=0,
+                rear_network_enabled=True, delay_length=0.0,
+                cavity_length=131e-9 / (np.pi * a68**2), n_cavity_holes=0,
+                fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+                include_diffraction=False)
+
+    def _mitte(u, R=0.0):
+        return dict(bk68, n_through_holes=1,
+                    through_hole_rings=[(1, 2.0 * R)],
+                    through_hole_diameter=2.0 * u * a68)
+
+    # a) + b) Fußabdruck gegen die Vollsuche
+    worst_b = 0
+    for q in (_mitte(0.28), _mitte(0.28, R=0.03e-3),
+              dict(bk68, n_through_holes=6, through_hole_pcd=3.4e-3,
+                   through_hole_diameter=1.2e-3)):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            c = MicrophoneCapsule(**q, squeeze_model="3d")
+        g = c._g3d
+        Np_, dphi, r_f = g["Np"], g["dphi"], g["r_f"]
+        rr_, jj_ = np.meshgrid(r_f, (np.arange(Np_) + 0.5) * dphi,
+                               indexing="ij")
+        for (R, deg, _), cells in zip(c._hole_positions()["th"], g["th_f"]):
+            ph0 = np.deg2rad(deg)
+            d2 = rr_**2 + R**2 - 2.0 * rr_ * R * np.cos(jj_ - ph0)
+            soll = set(np.nonzero((d2 <= c.r_th**2 * (1 + 1e-12)).ravel())[0])
+            i0 = int(np.clip(R / g["dr"], 0, g["Nr"] - 1))
+            soll.add(i0 * Np_ + int(np.floor(ph0 / dphi)) % Np_)
+            worst_b = max(worst_b, len(soll ^ set(cells.tolist())))
+    assert worst_b == 0, \
+        f"Fußabdruck muss die Mündung genau decken ({worst_b} Zellen falsch)"
+    # c) + d) Mittelloch: Film und Elektrodengewicht
+    rr68, ee68 = {}, {}
+    for u in (0.06, 0.14, 0.28):
+        rr68[u], ee68[u] = filmwiderstand_3d_zu_2d(_mitte(u))
+        assert abs(rr68[u] - 1.0) < 0.01, \
+            (f"Mittelloch r/a = {u}: Filmwiderstand 3D/2D bei erzwungener "
+             f"Form {rr68[u]:.4f} (vor Gegenprobe 68: 1.06/1.19/1.55)")
+    v_bk, e_bk = filmwiderstand_3d_zu_2d(
+        dict(bk68, n_through_holes=6, through_hole_pcd=3.4e-3,
+             through_hole_diameter=1.2e-3))
+    assert ee68[0.28] > rr68[0.28] and e_bk > v_bk, \
+        "die Spannung muss über den Löchern weniger Elektrode sehen"
+    stand.wert("elektrodengewicht_mittelloch", ee68[0.28] / rr68[0.28], "",
+               "Spannung/Volumen im Filmvergleich, Mittelloch r/a 0.28")
+    stand.wert("elektrodengewicht_lochkreis", e_bk / v_bk, "",
+               "Spannung/Volumen im Filmvergleich, 6 × r 0.6 mm (B&K)")
+    # e) ganze Membran gegen Elektrode
+    om68 = 2.0 * np.pi * np.array([20.0])
+    gleich = MicrophoneCapsule(**_mitte(0.14), squeeze_model="3d")
+    Vm = gleich._solve_3d(om68, weight="membrane")[0]
+    Vv = gleich._solve_3d(om68, weight="volume")[0]
+    assert np.array_equal(Vm, Vv), \
+        "Elektrode über der ganzen Membran: 'membrane' muss 'volume' sein"
+    klein = MicrophoneCapsule(**dict(_mitte(0.14),
+                                     backplate_diameter=1.6 * a68),
+                              squeeze_model="3d")
+    u68 = (0.8) ** 2
+    verh = abs(klein._solve_3d(om68, weight="volume")[0][0]
+               / klein._solve_3d(om68, weight="membrane")[0][0])
+    assert abs(verh / (u68 * (2.0 - u68)) - 1.0) < 0.01, \
+        (f"Volumen über der Elektrode / ganze Membran muss im Tiefton "
+         f"u(2−u) = {u68 * (2 - u68):.3f} sein ({verh:.3f})")
+    print(f"Mittelloch und Messgrößen im 3D-Löser: Fußabdrücke exakt "
+          f"(Mittelloch, Loch über der Achse, Lochkreis); Film 3D/2D am "
+          f"Mittelloch {rr68[0.06]:.4f}/{rr68[0.14]:.4f}/{rr68[0.28]:.4f} "
+          f"bei r/a = 0.06/0.14/0.28 (vorher 1.06/1.19/1.55); "
+          f"Elektrodengewicht Spannung/Volumen {ee68[0.28] / rr68[0.28]:.3f} "
+          f"(Mittelloch), {e_bk / v_bk:.3f} (Lochkreis); Volumen Elektrode/"
+          f"Membran {verh:.3f} gegen u(2−u) = {u68 * (2 - u68):.3f}  OK")

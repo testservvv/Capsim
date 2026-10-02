@@ -571,16 +571,7 @@ def test_gp53_warnlucke_weiter_spalt_lochkreise(stand):
         #     Gegenprobe 52) stimmt er auf 3 % (mit dem Makroelement auf
         #     0.1 %, Gegenprobe 60)
         def _rr53(q):
-            q = dict(q, membrane_resonance_hz=300e3)
-            q.pop("membrane_tension", None)
-            ph = {}
-            for sm in ("2d", "3d"):
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    cc = MicrophoneCapsule(squeeze_model=sm, **q)
-                ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
-                                  / cc.transfer_function([20.0])[0])
-            return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
+            return filmwiderstand_3d_zu_2d(q)[0]   # Gegenprobe 68
         rrR53 = _rr53(qR53)
         assert abs(rrR53 - 1.0) < 0.03, \
             (f"Lochkreis: Filmwiderstand bei erzwungener Form 3D/2D = "

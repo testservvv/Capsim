@@ -955,10 +955,13 @@ def test_gp60_lochkreis_als_makroelement(stand):
     # b) MITTELLOCH gegen die geschlossene Form auf 0.1 %.
     # c) Reziprok (det T = 1) auch mit Bändern, Mittelloch, Ringschlitz
     #    aus überlappenden Löchern und Freistich.
-    # d) Gegen 3D bei erzwungener Form (Phasenmethode wie Gegenprobe 52):
-    #    Lochkreise mit kleinen Löchern auf 1 % (vorher bis 4 %), große
-    #    Mündungen (B&K-Originalgeometrie) auf 3 %; dort liegt 3D 1–3 %
-    #    ÜBER der exakten Lösung (Stand-Werte).
+    # d) Gegen 3D bei erzwungener Form (Phasenmethode, s.
+    #    filmwiderstand_3d_zu_2d): Lochkreise auf 1 %, große Mündungen
+    #    (B&K-Originalgeometrie) ebenso. Bis Gegenprobe 68 hieß es hier,
+    #    3D liege bei großen Mündungen 1–3 % ÜBER der exakten Lösung — das
+    #    war an der Spannung gemessen, die über den Löchern keine Elektrode
+    #    sieht; der Film selbst trifft auf 0.4 %. Die ½"-Fälle waren mit
+    #    Beugung gerechnet, deren Phase die Filmphase überdeckte.
     #    VORSICHT bei dieser Methode: bis hierher war der Folienverlust im
     #    2D ein fester Widerstand ω0·M/Q, im 3D mit ω wachsend. Mit der
     #    erzwungenen Form (f_res = 300 kHz) blähte das den 2D-Wert bei
@@ -1060,16 +1063,7 @@ def test_gp60_lochkreis_als_makroelement(stand):
 
     # d) gegen 3D bei erzwungener Form
     def _rr60(q):
-        q = dict(q, membrane_resonance_hz=300e3)
-        q.pop("membrane_tension", None)
-        ph = {}
-        for sm in ("2d", "3d"):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                cc = MicrophoneCapsule(**{**q, "squeeze_model": sm})
-            ph[sm] = np.angle(cc.transfer_function([1000.0])[0]
-                              / cc.transfer_function([20.0])[0])
-        return float(np.tan(ph["3d"]) / np.tan(ph["2d"]))
+        return filmwiderstand_3d_zu_2d(q)[0]          # Gegenprobe 68
 
     # ½"-Kapsel der Gegenprobe 53; 48 Löcher auf 0.33·a überlappen zum
     # geschlossenen Ringschlitz (Zellen ohne Film am Lochknoten)
@@ -1081,14 +1075,21 @@ def test_gp60_lochkreis_als_makroelement(stand):
               cavity_wall_thickness=1.0e-3, n_cavity_holes=0,
               fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
               body_diameter=14e-3)
+    # (feines 3D-Gitter: die sechs Mündungen sind azimutal grob nur mit
+    # 1.9 Zellen je Radius aufgelöst, das kostet dort 1 % — bis Gegenprobe
+    # 68 verdeckte die Beugungsphase das, s. filmwiderstand_3d_zu_2d)
     A60 = 48 * np.pi * (0.35e-3 * 5.5 / 11.95) ** 2
     for n, ring in ((6, 0.67), (48, 0.33)):
-        rr60 = _rr60(dict(b1, n_through_holes=n,
-                          through_hole_rings=[(n, ring * 11.0e-3)],
-                          through_hole_diameter=2 * np.sqrt(A60 / (n * np.pi))))
+        q60 = dict(b1, n_through_holes=n,
+                   through_hole_rings=[(n, ring * 11.0e-3)],
+                   through_hole_diameter=2 * np.sqrt(A60 / (n * np.pi)))
+        rr60 = _rr60(dict(q60, grid_3d="fine"))
         assert abs(rr60 - 1.0) < 0.01, \
             (f"{n} Löcher auf {ring}·a: Filmwiderstand 3D/2D bei erzwungener "
              f"Form ({rr60:.3f})")
+        if n == 6:
+            stand.wert("r3d_zu_exakt_6_grob", _rr60(q60), "",
+                       "3D/2D, 6 Löcher auf 0.67·a, grobes 3D-Gitter")
     a_bk = 3.6e-3
     bk60 = dict(membrane_material={"rho": 8900.0, "E": 221e9, "nu": 0.31},
                 membrane_diameter=2 * a_bk, membrane_thickness=5e-6,
@@ -1103,7 +1104,9 @@ def test_gp60_lochkreis_als_makroelement(stand):
     r3d60 = {}
     for r60 in (0.5e-3, 0.6e-3):
         r3d60[r60] = _rr60(dict(bk60, through_hole_diameter=2 * r60))
-    assert abs(r3d60[0.5e-3] - 1.0) < 0.03, \
+    # bis Gegenprobe 68 an der Spannung gemessen: 1.02/1.03 — das war das
+    # Elektrodengewicht über den Löchern, nicht der Film
+    assert abs(r3d60[0.5e-3] - 1.0) < 0.01, \
         (f"B&K-Originalgeometrie: Filmwiderstand 3D/2D bei erzwungener "
          f"Form ({r3d60[0.5e-3]:.3f})")
     stand.wert("r3d_zu_exakt_bk", r3d60[0.5e-3], "",
@@ -1113,7 +1116,7 @@ def test_gp60_lochkreis_als_makroelement(stand):
     print(f"Lochkreis als Makroelement: statisch gegen die unabhängige "
           f"Lösung auf {100 * worst60:.2f} % (Gaußband B&K "
           f"{alt60['B&K-Originalgeometrie']:.2f}-fach), Mittelloch auf "
-          f"0.1 %, reziprok; gegen 3D bei erzwungener Form auf 1 %, große "
+          f"0.1 %, reziprok; gegen 3D bei erzwungener Form auf 1 % (fein), große "
           f"Mündungen: 3D/exakt {r3d60[0.5e-3]:.3f} / {r3d60[0.6e-3]:.3f} "
           f"(r/a 0.14/0.17)  OK")
 

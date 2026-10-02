@@ -84,7 +84,7 @@
   "art": "stand"
  },
  "gp18.f_h_debenham": {
-  "wert": 2957.4847119317005,
+  "wert": 2957.4847119325173,
   "einheit": "Hz",
   "text": "interne Resonanz Debenham (Freistich)",
   "test": "tests/test_grundlagen.py::test_gp18_angle_responses_helmholtz_frequenz",
@@ -466,7 +466,7 @@
   "art": "stand"
  },
  "gp52.r3d_zu_r2d_lochkreis": {
-  "wert": 1.0429456274041276,
+  "wert": 1.00368428385377,
   "einheit": "",
   "text": "Filmwiderstand 3D/2D, B&K 4134, erzwungene Form",
   "test": "tests/test_feld3d.py::test_gp52_hochtonuberschuss_des_3d_losers_aufgeklart",
@@ -543,14 +543,14 @@
   "art": "stand"
  },
  "gp58.rms_3d_4146_db": {
-  "wert": 0.8965216165359129,
+  "wert": 0.8300091532429348,
   "einheit": "dB",
   "text": "3D gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
   "art": "stand"
  },
  "gp58.rms_3d_4146_grad": {
-  "wert": 9.732898243172173,
+  "wert": 9.151605778073728,
   "einheit": "°",
   "text": "3D gegen Fig. 7, Phase",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
@@ -613,7 +613,7 @@
   "art": "stand"
  },
  "gp58.rms_4146_mit_serien_r_db": {
-  "wert": 1.5248809778487715,
+  "wert": 1.4478314810646016,
   "einheit": "dB",
   "text": "3D + 1000 Rayl gegen Fig. 7, Amplitude",
   "test": "tests/test_referenzen.py::test_gp58_daempfung_am_lochkreis_befund",
@@ -659,7 +659,7 @@
   "art": "stand"
  },
  "gp59.widerstand_3d_zu_fem": {
-  "wert": 1.1785196825178197,
+  "wert": 1.0077633043471101,
   "einheit": "",
   "text": "Re Z 3D / FEM, Mittel 1–20 kHz",
   "test": "tests/test_referenzen.py::test_gp59_comsol_referenz_b_k_4134",
@@ -679,15 +679,22 @@
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
   "art": "stand"
  },
+ "gp60.r3d_zu_exakt_6_grob": {
+  "wert": 1.0100557212405863,
+  "einheit": "",
+  "text": "3D/2D, 6 Löcher auf 0.67·a, grobes 3D-Gitter",
+  "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
+  "art": "stand"
+ },
  "gp60.r3d_zu_exakt_bk": {
-  "wert": 1.019999527623024,
+  "wert": 1.0043957758828423,
   "einheit": "",
   "text": "3D/2D(= exakt), B&K-Geometrie r/a 0.139, erzwungene Form",
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
   "art": "stand"
  },
  "gp60.r3d_zu_exakt_gross": {
-  "wert": 1.0337768166684553,
+  "wert": 1.0032158015879216,
   "einheit": "",
   "text": "3D/2D(= exakt), r/a 0.167",
   "test": "tests/test_spaltfilm.py::test_gp60_lochkreis_als_makroelement",
@@ -777,6 +784,20 @@
   "einheit": "dB",
   "text": "Strahlungslast im Druckgang, B&K 4134, 20 kHz (2D)",
   "test": "tests/test_beugung_bem.py::test_gp65_strahlungslast_im_druckgang",
+  "art": "stand"
+ },
+ "gp68.elektrodengewicht_lochkreis": {
+  "wert": 1.0304630519515223,
+  "einheit": "",
+  "text": "Spannung/Volumen im Filmvergleich, 6 × r 0.6 mm (B&K)",
+  "test": "tests/test_feld3d.py::test_gp68_mittelloch_und_messgroessen_im_3d_loeser",
+  "art": "stand"
+ },
+ "gp68.elektrodengewicht_mittelloch": {
+  "wert": 1.0201661046625783,
+  "einheit": "",
+  "text": "Spannung/Volumen im Filmvergleich, Mittelloch r/a 0.28",
+  "test": "tests/test_feld3d.py::test_gp68_mittelloch_und_messgroessen_im_3d_loeser",
   "art": "stand"
  }
 }

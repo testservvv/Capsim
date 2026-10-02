@@ -632,8 +632,12 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     #    Strahlungslast (die FEM hat keine; seit Gegenprobe 65 auch der
     #    Druckgang nicht mehr, abgezogen wird die tatsächlich anliegende
     #    Last _front_radiation): 2D lag mit dem Gaußband 61 %
-    #    über der FEM, mit dem Makroelement 6 % darunter; 3D liegt 12 %
-    #    darüber (Stand-Werte).
+    #    über der FEM, mit dem Makroelement 6 % darunter. Für 3D stand
+    #    hier „12 % darüber" — gemessen mit der Volumenverschiebung nur
+    #    über der ELEKTRODE (a_bp = 0.8·a_mem), während 2D und FEM die der
+    #    ganzen Membran meinen. Mit derselben Größe (weight='membrane',
+    #    Gegenprobe 68) liegt 3D auf 1 % an der FEM; beide Modelle müssen
+    #    auf 10 % treffen.
     # Folgerung für Gegenprobe 38/58: Zuckerwars Prüfling von 1978 war
     # deutlich stärker gedämpft als heutige 4134 (20 kHz: −3.1 gegen
     # −1.2 dB); dass das alte 2D-Modell ihn traf, war das Zusammentreffen
@@ -684,7 +688,7 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
             MicrophoneCapsule._RANDSCHICHT = True
         H = c.transfer_function(fs)
         pegel[sm] = 20.0 * np.log10(np.abs(H / c.transfer_function(f_norm)[0]))
-        V = (c._solve_3d(om, weight="volume")[0] if sm == "3d"
+        V = (c._solve_3d(om, weight="membrane")[0] if sm == "3d"
              else H / c._theta)
         re_z[sm] = np.real(1.0 / (1j * om * V)
                            - c._front_radiation(om))
@@ -730,6 +734,9 @@ def test_gp59_comsol_referenz_b_k_4134(stand):
     assert abs(np.log(q2)) < np.log(1.1), \
         (f"2D-Widerstand muss mit dem Makroelement auf 10 % an der FEM "
          f"liegen (Re Z 2D/FEM {q2:.2f})")
+    assert abs(np.log(q3)) < np.log(1.1), \
+        (f"3D-Widerstand muss auf 10 % an der FEM liegen (Re Z 3D/FEM "
+         f"{q3:.2f})")
     stand.wert("widerstand_3d_zu_fem", q3, "", "Re Z 3D / FEM, Mittel 1–20 kHz")
     stand.wert("widerstand_2d_zu_fem", q2, "", "Re Z 2D / FEM, Mittel 1–20 kHz")
     i20 = int(np.argmax(fs))

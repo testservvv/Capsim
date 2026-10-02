@@ -222,10 +222,43 @@ def _grin_rms(cap, ang, f_ref=None, a_ref=None):
     return float(np.sqrt(np.mean(d ** 2))), d
 
 
+def filmwiderstand_3d_zu_2d(q, f=1000.0):
+    """Filmwiderstand 3D/2D bei erzwungener Form (Phasenmethode,
+    Gegenproben 52, 53, 60, 68).
+
+    Sehr steife Membran (f_res = 300 kHz): im Steifigkeitsbereich ist
+    tan(Phase) ≈ −ω·R·C, das Verhältnis der Tangenten 3D/2D also das der
+    Filmwiderstände. Gemessen wird an der Volumenverschiebung der GANZEN
+    Membran (3D ``weight='membrane'``, 2D H/Θ). Die Spannung gewichtet
+    zusätzlich mit der Elektrode, die über den Löchern fehlt; im 3D-Feld
+    sieht sie deshalb die Rückseitendrücke anders als die Einmoden-Kette
+    — bei großen Löchern 2–3 % mehr Verlust, ohne dass der Film anders
+    wäre (Gegenprobe 68). Bis dahin maßen die Proben mit der Spannung.
+    Rückgabe (Volumen, Spannung)."""
+    import warnings
+    # ohne Beugung: deren Phase (Laufweg um den Körper) ist in 2D und 3D
+    # gleich, überdeckt aber die Filmphase um Größenordnungen — bis hier
+    # war das Verhältnis bei Kapseln mit Körper deshalb trivial 1
+    q = dict(q, membrane_resonance_hz=300e3, include_diffraction=False)
+    q.pop("membrane_tension", None)
+    om = 2.0 * np.pi * np.array([20.0, f])
+    tv, te = {}, {}
+    for sm in ("2d", "3d"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            cc = MicrophoneCapsule(**{**q, "squeeze_model": sm})
+        H = cc.transfer_function(om / (2.0 * np.pi))
+        V = (cc._solve_3d(om, weight="membrane")[0] if sm == "3d"
+             else H / cc._theta)
+        tv[sm] = np.tan(np.angle(V[1] / V[0]))
+        te[sm] = np.tan(np.angle(H[1] / H[0]))
+    return float(tv["3d"] / tv["2d"]), float(te["3d"] / te["2d"])
+
+
 __all__ = sorted(set(_MODUL) | {
     "MicrophoneCapsule", "demo_capsule", "K67_KWARGS", "k67_capsule",
     "k67_null_angle", "DEB_KWARGS", "debenham", "DEB_CLEARANCE",
     "DEB_CLEARANCE_WIDE", "hermetic_capsule", "_fchk", "f_grin",
     "vc_grin", "f_exp90", "exp90_grin", "f_exp0", "exp0_grin",
     "_grin_rms", "f_nbs_4134", "ffk_nbs_4134", "f_matsui_4134",
-    "ffk_matsui_4134"})
+    "ffk_matsui_4134", "filmwiderstand_3d_zu_2d"})
