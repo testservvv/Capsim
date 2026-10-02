@@ -326,6 +326,125 @@ def test_gp66_uebersetzungen(app):
           f"unbenutzt  OK")
 
 
+def test_gp66c_modellmeldungen():
+    """Gegenprobe 66 c: Meldungen des Modells in beiden Sprachen."""
+    # Bis hier waren die Fehlermeldungen des Modells nur deutsch und
+    # erschienen so auch in der englischen Oberfläche. Jetzt wirft jede
+    # Parameterprüfung einen ParameterFehler (ein ValueError mit der
+    # deutschen Meldung wie bisher), dessen Text die Oberfläche aus
+    # _MELDUNGEN in ihrer Sprache bildet.
+    # a) Jeder Eintrag hat Deutsch und Englisch, nicht leer, mit denselben
+    #    Platzhaltern, und beide lassen sich mit denselben Werten füllen.
+    # b) Jeder ParameterFehler(...) im Modell nennt einen vorhandenen
+    #    Schlüssel als Konstante und genau dessen Platzhalter als Werte;
+    #    kein Eintrag ist unbenutzt.
+    # c) In den Methoden, die Parameter prüfen, steht kein einfacher
+    #    ValueError mehr (der käme nur deutsch an). Einfache ValueError
+    #    bleiben für falsche Aufrufe aus eigenem Code (interne Löser,
+    #    Rauschspektrum, Druckgang bei offener Rückseite).
+    import ast
+    import string
+    import microphone_capsule as M
+    fmt = string.Formatter()
+
+    def felder(txt):
+        return {f for _, f, _, _ in fmt.parse(txt) if f is not None}
+
+    fehler = []
+    for k, v in M._MELDUNGEN.items():
+        if set(v) != {"de", "en"} or not all(
+                isinstance(x, str) and x.strip() for x in v.values()):
+            fehler.append(f"{k}: Sprachen/leer")
+            continue
+        if felder(v["de"]) != felder(v["en"]):
+            fehler.append(f"{k}: Platzhalter {felder(v['de'])} / "
+                          f"{felder(v['en'])}")
+            continue
+        for lang in ("de", "en"):
+            try:
+                v[lang].format(**{f: 1.5 for f in felder(v[lang])})
+            except Exception as exc:
+                fehler.append(f"{k}.{lang}: {exc}")
+    assert not fehler, fehler
+    src = open(os.path.join(_WURZEL, "microphone_capsule.py"),
+               encoding="utf-8").read()
+    pruefend = {"__init__", "_normalize_rings", "_derive_parameters",
+                "_wirk_membran", "_ring_eigen", "_bem_front_modes",
+                "_build_3d_geometry"}
+    benutzt, einfach = set(), []
+
+    def walk(node, stack):
+        for ch in ast.iter_child_nodes(node):
+            if isinstance(ch, (ast.FunctionDef, ast.ClassDef)):
+                walk(ch, stack + [ch.name])
+                continue
+            if isinstance(ch, ast.Call) and getattr(
+                    ch.func, "id", "") == "ParameterFehler":
+                a0 = ch.args[0] if ch.args else None
+                if not (isinstance(a0, ast.Constant)
+                        and a0.value in M._MELDUNGEN):
+                    fehler.append(f"Zeile {ch.lineno}: Schlüssel "
+                                  f"{ast.get_source_segment(src, ch)}")
+                else:
+                    benutzt.add(a0.value)
+                    soll = felder(M._MELDUNGEN[a0.value]["de"])
+                    ist = {kw.arg for kw in ch.keywords}
+                    if soll != ist:
+                        fehler.append(f"Zeile {ch.lineno} {a0.value}: "
+                                      f"Werte {ist}, Platzhalter {soll}")
+            if (isinstance(ch, ast.Raise) and isinstance(ch.exc, ast.Call)
+                    and getattr(ch.exc.func, "id", "") == "ValueError"
+                    and stack and stack[-1] in pruefend):
+                einfach.append(f"{stack[-1]} Zeile {ch.lineno}")
+            walk(ch, stack)
+    walk(ast.parse(src), [])
+    assert not fehler, fehler
+    tot = sorted(set(M._MELDUNGEN) - benutzt)
+    assert not tot, f"unbenutzte Meldungen: {tot}"
+    assert not einfach, f"einsprachige Parameterfehler: {einfach}"
+    # die Meldung selbst: deutsch als str(exc), englisch über text()
+    with pytest.raises(ValueError) as ei:
+        MicrophoneCapsule(architecture="quer")
+    assert isinstance(ei.value, M.ParameterFehler)
+    assert str(ei.value) == M._MELDUNGEN["architektur"]["de"]
+    assert ei.value.text("en") == M._MELDUNGEN["architektur"]["en"]
+    print(f"Modellmeldungen: {len(M._MELDUNGEN)} zweisprachig mit "
+          f"gleichen Platzhaltern, alle benutzt; jede Parameterprüfung "
+          f"wirft ParameterFehler  OK")
+
+
+def test_gp66d_modellmeldung_in_der_oberflaeche(app):
+    """Gegenprobe 66 d: die App zeigt die Modellmeldung in ihrer
+    Sprache — die Voreinstellung (K67) mit 400 V kollabiert (Pull-in)."""
+    from streamlit.testing.v1 import AppTest
+    import translations as T
+    import microphone_capsule as M
+    gesehen = {}
+    for lang in ("en", "de"):
+        at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                               default_timeout=120)
+        at.session_state["ui_lang"] = lang
+        for key, val in app.DEFAULTS.items():
+            if key not in app._RING_PREFIX:
+                at.session_state["p_" + key] = val
+        at.session_state["p_bias_v"] = 400.0
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            at.run()
+        assert not at.exception, [e.value for e in at.exception]
+        fehl = [e.value for e in at.error]
+        # (das führende ⚠️ macht Streamlit zum Symbol des Kastens)
+        kopf = T.TR["err_params"][lang].split("{")[0].replace(
+            "⚠️", "").strip()
+        anfang = M._MELDUNGEN["pullin"][lang].split("{")[0]
+        assert any(kopf in t and anfang in t for t in fehl), \
+            f"{lang}: Pull-in-Meldung in der Oberflächensprache erwartet " \
+            f"({fehl})"
+        gesehen[lang] = fehl[0][:60]
+    print(f"Modellmeldung in der Oberfläche: en „{gesehen['en']}…“, "
+          f"de „{gesehen['de']}…“  OK")
+
+
 @pytest.mark.slow
 def test_gp66b_oberflaeche_in_beiden_sprachen(app):
     """Gegenprobe 66 b: die Oberfläche spricht durchgehend EINE Sprache."""

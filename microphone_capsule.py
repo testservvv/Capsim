@@ -534,6 +534,371 @@ T_KELVIN = 293.15        # Lufttemperatur (20 °C, konsistent
 P_REF = 2.0e-5           # Bezugsschalldruck                 [Pa]
 
 
+# ---------------------------------------------------------------------------
+# Meldungen bei ungültigen Parametern (zweisprachig, Gegenprobe 66)
+# ---------------------------------------------------------------------------
+# Jede Meldung, die eine Parameterwahl auslösen kann — beim Bau einer
+# Kapsel oder in einer Rechnung, die an ihren Maßen scheitert —, steht hier
+# auf Deutsch und Englisch, mit denselben Platzhaltern. Das Modell meldet
+# deutsch (str(exc)); die Oberfläche zeigt dieselbe Meldung über
+# ParameterFehler.text(sprache) in ihrer Sprache. Fehler, die nur ein
+# falscher Aufruf aus eigenem Code auslösen kann (Argumente interner
+# Löser, Rauschspektrum, Druckgang bei offener Rückseite), bleiben
+# einfache ValueError.
+_MELDUNGEN = {
+    "material_unbekannt": {
+        "de": "Unbekanntes Membranmaterial '{name}'. Verfügbar: {liste} "
+              "oder dict mit rho/E/nu.",
+        "en": "Unknown membrane material '{name}'. Available: {liste} or "
+              "a dict with rho/E/nu.",
+    },
+    "eta_negativ": {
+        "de": "Verlustfaktor eta der Folie darf nicht negativ sein.",
+        "en": "The loss factor eta of the film must not be negative.",
+    },
+    "membran_positiv": {
+        "de": "Membrangeometrie und Vorspannung müssen > 0 sein.",
+        "en": "Membrane geometry and tension must be > 0.",
+    },
+    "moden_bereich": {
+        "de": "membrane_modes muss zwischen 1 und {n} liegen "
+              "(axialsymmetrische (0,m)-Moden).",
+        "en": "membrane_modes must be between 1 and {n} (axisymmetric "
+              "(0,m) modes).",
+    },
+    "modal_source": {
+        "de": "modal_source ist ein Schalter: 0 (aus, Voreinstellung) oder "
+              "1 (modenabhängiger Quelldruck).",
+        "en": "modal_source is a switch: 0 (off, default) or 1 "
+              "(mode-dependent source pressure).",
+    },
+    "pfosten_negativ": {
+        "de": "center_post_diameter darf nicht negativ sein.",
+        "en": "center_post_diameter must not be negative.",
+    },
+    "pfosten_zu_gross": {
+        "de": "Mittenterminierung: r_i/a = {rho:.3f} — über 0.6 ist die "
+              "Membran ein schmaler Ring, für den die hier benutzten "
+              "Lumped-Formen (ein Freiheitsgrad, Kolbenmasse) nicht mehr "
+              "sinnvoll sind.",
+        "en": "Center termination: r_i/a = {rho:.3f} — above 0.6 the "
+              "membrane is a narrow ring, for which the lumped forms used "
+              "here (one degree of freedom, piston mass) no longer make "
+              "sense.",
+    },
+    "pfosten_scipy": {
+        "de": "Mittenterminierung braucht SciPy (Besselfunktionen zweiter "
+              "Art für die Ringmoden).",
+        "en": "Center termination requires SciPy (Bessel functions of the "
+              "second kind for the ring modes).",
+    },
+    "architektur": {
+        "de": "architecture muss 'single', 'dual' oder 'dual_diaphragm' "
+              "sein.",
+        "en": "architecture must be 'single', 'dual' or 'dual_diaphragm'.",
+    },
+    "zwischenspalt_negativ": {
+        "de": "center_gap darf nicht negativ sein.",
+        "en": "center_gap must not be negative.",
+    },
+    "lochkreis_paar": {
+        "de": "{art}: jeder Lochkreis braucht das Paar (Anzahl, "
+              "Lochkreis-Durchmesser).",
+        "en": "{art}: every pitch circle needs the pair (count, "
+              "pitch-circle diameter).",
+    },
+    "lochzahl_negativ": {
+        "de": "{art}: Lochanzahl darf nicht negativ sein.",
+        "en": "{art}: the number of holes must not be negative.",
+    },
+    "lochkreis_radius": {
+        "de": "{art}: Lochkreisradius muss zwischen 0 und "
+              "Backplate-Radius liegen.",
+        "en": "{art}: the pitch-circle radius must lie between 0 and the "
+              "backplate radius.",
+    },
+    "durchgangsloch_d": {
+        "de": "Durchgangslochdurchmesser muss > 0 sein.",
+        "en": "The through-hole diameter must be > 0.",
+    },
+    "dual_ohne_loecher": {
+        "de": "Dual-Architektur ohne Durchgangslöcher: die vordere "
+              "Backplate würde die Membran vollständig vom Schallfeld "
+              "isolieren.",
+        "en": "Dual architecture without through holes: the front "
+              "backplate would isolate the membrane completely from the "
+              "sound field.",
+    },
+    "blindloch_tiefe": {
+        "de": "Blindlochtiefe muss zwischen 0 und Backplate-Dicke liegen.",
+        "en": "The blind-hole depth must lie between 0 and the backplate "
+              "thickness.",
+    },
+    "stufe_tiefe": {
+        "de": "Stufenbohrung: die Senkungstiefe (= Blindlochtiefe) muss "
+              "zwischen 0 und Backplate-Dicke liegen.",
+        "en": "Stepped bore: the counterbore depth (= blind-hole depth) "
+              "must lie between 0 and the backplate thickness.",
+    },
+    "stufe_weite": {
+        "de": "Stufenbohrung: die Senkung muss weiter sein als der Kern "
+              "(Sackloch-Ø > Durchgangsloch-Ø).",
+        "en": "Stepped bore: the counterbore must be wider than the core "
+              "(blind-hole Ø > through-hole Ø).",
+    },
+    "stufe_anzahl": {
+        "de": "Stufenbohrung: höchstens so viele Durchgangslöcher wie "
+              "Senkungen (jedes Durchgangsloch sitzt in einer Senkung; "
+              "Blindlochanzahl = Gesamtzahl der Senkungen).",
+        "en": "Stepped bore: at most as many through holes as "
+              "counterbores (every through hole sits in a counterbore; "
+              "number of blind holes = total number of counterbores).",
+    },
+    "klemmring_negativ": {
+        "de": "Klemmring-Dicke und -Breite dürfen nicht negativ sein.",
+        "en": "Clamp-ring thickness and width must not be negative.",
+    },
+    "freistich_negativ": {
+        "de": "Clearance-Ring-Maße dürfen nicht negativ sein.",
+        "en": "Clearance-ring dimensions must not be negative.",
+    },
+    "randspalt_negativ": {
+        "de": "Randspalt-Breite darf nicht negativ sein.",
+        "en": "The edge-vent width must not be negative.",
+    },
+    "randspalt_laenge": {
+        "de": "Randspalt-Kanallänge muss > 0 sein.",
+        "en": "The edge-vent channel length must be > 0.",
+    },
+    "randspalt_bauform": {
+        "de": "Randspalt (ring_vent_width) gilt nur für die Bauformen "
+              "'single'/'dual' — bei der Doppelmembran-Bauform versiegeln "
+              "Spacer/Klemmringe den Elektrodenrand.",
+        "en": "An edge vent (ring_vent_width) applies only to the "
+              "'single'/'dual' architectures — in the dual-diaphragm "
+              "design, spacers/clamp rings seal the electrode rim.",
+    },
+    "rueckplatte_negativ": {
+        "de": "Spacer-Höhe, Rückplatten-Dicke und -Lochzahl dürfen nicht "
+              "negativ sein.",
+        "en": "Spacer height, rear-plate thickness and rear-plate hole "
+              "count must not be negative.",
+    },
+    "rueckplatte_loch": {
+        "de": "Rückplatten-Lochdurchmesser muss > 0 sein.",
+        "en": "The rear-plate hole diameter must be > 0.",
+    },
+    "hohlraum_lochlage": {
+        "de": "cavity_hole_position muss 'circumference' oder 'end' sein.",
+        "en": "cavity_hole_position must be 'circumference' or 'end'.",
+    },
+    "gewebe_lage": {
+        "de": "fabric_rear_position muss 'backplate' oder 'inlet' sein.",
+        "en": "fabric_rear_position must be 'backplate' or 'inlet'.",
+    },
+    "gewebe_einlass": {
+        "de": "fabric_rear_position='inlet': die Doppelmembran-Bauform hat "
+              "keine rückwärtigen Einlasslöcher — ihr rückwärtiges Gewebe "
+              "liegt über der Rückmembran ('backplate' nutzen).",
+        "en": "fabric_rear_position='inlet': the dual-diaphragm design has "
+              "no rear inlet holes — its rear fabric lies over the rear "
+              "membrane (use 'backplate').",
+    },
+    "koerperlaenge": {
+        "de": "body_length muss > 0 sein (oder None).",
+        "en": "body_length must be > 0 (or None).",
+    },
+    "spaltmodell": {
+        "de": "squeeze_model muss '1d', '2d' oder '3d' sein.",
+        "en": "squeeze_model must be '1d', '2d' or '3d'.",
+    },
+    "dreid_stufe": {
+        "de": "squeeze_model='3d' mit Stufenbohrung erfordert bei der "
+              "Doppelmembran-Bauform center_gap > 0 (zwei "
+              "Elektrodenhälften, K67-Typ).",
+        "en": "squeeze_model='3d' with stepped bores requires "
+              "center_gap > 0 in the dual-diaphragm design (two electrode "
+              "halves, K67 type).",
+    },
+    "dreid_ohne_loecher": {
+        "de": "squeeze_model='3d' erfordert Durchgangslöcher oder einen "
+              "Randspalt.",
+        "en": "squeeze_model='3d' requires through holes or an edge vent.",
+    },
+    "gitter": {
+        "de": "grid_3d muss 'coarse' oder 'fine' sein.",
+        "en": "grid_3d must be 'coarse' or 'fine'.",
+    },
+    "randspalt_rueckplatte": {
+        "de": "Randspalt ist nicht mit Spacer/Rückplatte (K103-Bauform) "
+              "kombinierbar — beide teilen sich den Backplate-Rand.",
+        "en": "An edge vent cannot be combined with spacer/rear plate "
+              "(K103 design) — both share the backplate rim.",
+    },
+    "randspalt_1d": {
+        "de": "Randspalt PLUS Durchgangslöcher erfordert das "
+              "2D-/3D-Feldmodell (Stromaufteilung Rand/Löcher); der "
+              "1D-Pfad rechnet nur den rein randbelüfteten Fall "
+              "(n_through_holes = 0).",
+        "en": "Edge vent PLUS through holes requires the 2D/3D field "
+              "model (flow split between rim and holes); the 1D path only "
+              "handles the purely edge-vented case (n_through_holes = 0).",
+    },
+    "koerpermodell": {
+        "de": "axial_body_model muss 'sphere', 'spheroid' oder 'bem' sein.",
+        "en": "axial_body_model must be 'sphere', 'spheroid' or 'bem'.",
+    },
+    "koerpermodell_scipy": {
+        "de": "axial_body_model='{modell}' erfordert SciPy.",
+        "en": "axial_body_model='{modell}' requires SciPy.",
+    },
+    "bem_koerper": {
+        "de": "BEM-Körper: Luftspalt > 2 mm und Länge > 5 mm nötig "
+              "(getrennte, verrundete Konturen).",
+        "en": "BEM body: air gap > 2 mm and length > 5 mm required "
+              "(separate, rounded contours).",
+    },
+    "pfosten_ring": {
+        "de": "Mittenterminierung: der Pfosten (r_i = {r_i:.2f} mm) lässt "
+              "von der Backplate (a_bp = {a_bp:.2f} mm) keinen brauchbaren "
+              "Ring übrig.",
+        "en": "Center termination: the post (r_i = {r_i:.2f} mm) leaves "
+              "no usable ring of the backplate (a_bp = {a_bp:.2f} mm).",
+    },
+    "loecher_flaeche": {
+        "de": "Durchgangs- und Blindlöcher bedecken >= 90 % der Backplate "
+              "— keine wirksame Elektrode mehr.",
+        "en": "Through and blind holes cover >= 90 % of the backplate — "
+              "no effective electrode left.",
+    },
+    "pullin": {
+        "de": "Elektrostatischer Kollaps (Pull-in): die statische "
+              "Anziehung der Backplate übersteigt die Rückstellkraft der "
+              "Membran. Maximal stabile Polarisationsspannung für diese "
+              "Konfiguration: ca. {u:.1f} V. Abhilfe: Spannung senken, "
+              "Luftspalt vergrößern oder Membran steifer (höhere "
+              "Resonanzfrequenz/Vorspannung). Hinweis: statisch trägt nur "
+              "die Membran-Vorspannung — das Luftpolster entweicht durch "
+              "die Löcher; gemessene Kapselresonanzen enthalten dagegen "
+              "die Luftpolster-Steifigkeit und liegen deshalb unter der "
+              "hier maßgeblichen Vorspannungs-Resonanz.",
+        "en": "Electrostatic collapse (pull-in): the static attraction of "
+              "the backplate exceeds the restoring force of the membrane. "
+              "Maximum stable polarization voltage for this "
+              "configuration: approx. {u:.1f} V. Remedy: lower the "
+              "voltage, enlarge the air gap or stiffen the membrane "
+              "(higher resonance frequency/tension). Note: statically only "
+              "the membrane tension carries the load — the air cushion "
+              "escapes through the holes; measured capsule resonances, by "
+              "contrast, include the air-cushion stiffness and therefore "
+              "lie below the tension resonance that matters here.",
+    },
+    "pullin_feder": {
+        "de": "Elektrostatischer Kollaps (Feder-Erweichung).",
+        "en": "Electrostatic collapse (spring softening).",
+    },
+    "lochanteil": {
+        "de": "Lochflächenanteil q={q:.3f} der Bohrungen muss in (0, 1) "
+              "liegen.",
+        "en": "The hole area fraction q={q:.3f} of the bores must lie in "
+              "(0, 1).",
+    },
+    "gehaeuse": {
+        "de": "Gehäusedurchmesser muss mindestens so groß sein wie "
+              "Membran- und Backplate-Durchmesser.",
+        "en": "The body diameter must be at least as large as the "
+              "membrane and backplate diameters.",
+    },
+    "sphaeroid_bauform": {
+        "de": "axial_body_model='spheroid' gilt nur für die "
+              "Doppelmembran-Bauform (axialer Front-Rück-Transfer). Für "
+              "den Frontfaktor einer Ein-Membran-Kapsel 'bem' nehmen.",
+        "en": "axial_body_model='spheroid' applies only to the "
+              "dual-diaphragm design (axial front-to-rear transfer). For "
+              "the front factor of a single-membrane capsule use 'bem'.",
+    },
+    "bem_laenge_fehlt": {
+        "de": "axial_body_model='bem' braucht die axiale Körperlänge "
+              "body_length (die Kugelrechnung kennt nur body_diameter).",
+        "en": "axial_body_model='bem' needs the axial body length "
+              "body_length (the sphere model only knows body_diameter).",
+    },
+    "koerperlaenge_doppel": {
+        "de": "body_length gilt nicht für die Doppelmembran-Bauform — dort "
+              "spannen die beiden Membranen die Stirnflächen auf, die "
+              "axiale Länge ist d_ext.",
+        "en": "body_length does not apply to the dual-diaphragm design — "
+              "there the two membranes form the end faces, and the axial "
+              "length is d_ext.",
+    },
+    "bem_kontur": {
+        "de": "BEM-Kontur: die axiale Körperlänge muss >= 2 mm sein "
+              "({l:.2f} mm).",
+        "en": "BEM contour: the axial body length must be >= 2 mm "
+              "({l:.2f} mm).",
+    },
+    "sphaeroid_halbachse": {
+        "de": "axial_body_model='spheroid': die axiale Halbachse d_ext/2 = "
+              "{d:.1f} mm muss kleiner als der Körperradius {r:.1f} mm "
+              "sein (oblate Scheibe).",
+        "en": "axial_body_model='spheroid': the axial semi-axis d_ext/2 = "
+              "{d:.1f} mm must be smaller than the body radius {r:.1f} mm "
+              "(oblate disc).",
+    },
+    "randschicht": {
+        "de": "Biegesteife Folie: die Randschicht √(D/T) = {ell:.0f} µm "
+              "nimmt mehr als ein Viertel der Membranbreite ein "
+              "(T = {T:.4g} N/m) — das ist eine Platte, keine Membran, und "
+              "dafür ist das Modell nicht gebaut.",
+        "en": "Bending-stiff film: the boundary layer √(D/T) = {ell:.0f} µm "
+              "takes up more than a quarter of the membrane width "
+              "(T = {T:.4g} N/m) — that is a plate, not a membrane, and "
+              "the model is not built for it.",
+    },
+    "ring_eigenwerte": {
+        "de": "Mittenterminierung: Ring-Eigenwerte nicht gefunden.",
+        "en": "Center termination: ring eigenvalues not found.",
+    },
+    "bem_unloesbar": {
+        "de": "BEM: die Randintegralgleichung ist bei {f:.0f} Hz nicht "
+              "lösbar ({n} Elemente, Kondition {kond:.2e}). Körpermaße "
+              "prüfen.",
+        "en": "BEM: the boundary integral equation cannot be solved at "
+              "{f:.0f} Hz ({n} elements, condition number {kond:.2e}). "
+              "Check the body dimensions.",
+    },
+    "gitter_grob": {
+        "de": "3D-Gitter: zwischen den wirksamen Einspannungen liegt keine "
+              "freie Membranzelle — das Gitter ist zu grob.",
+        "en": "3D grid: there is no free membrane cell between the "
+              "effective clamps — the grid is too coarse.",
+    },
+}
+
+
+class ParameterFehler(ValueError):
+    """Ungültige Kapselparameter (beim Bau oder in einer Rechnung).
+
+    Ein ValueError mit der deutschen Meldung (``str(exc)``) wie bisher; dazu
+    ``schluessel`` und ``werte``, mit denen :meth:`text` dieselbe Meldung
+    in einer anderen Sprache bildet (Tabelle ``_MELDUNGEN``). Ein Wert, der
+    selbst übersetzt werden muss (etwa die Lochart), wird als
+    ``{"de": ..., "en": ...}`` übergeben.
+    """
+
+    def __init__(self, schluessel, **werte):
+        self.schluessel = schluessel
+        self.werte = werte
+        super().__init__(self.text("de"))
+
+    def text(self, sprache="de"):
+        tab = _MELDUNGEN[self.schluessel]
+        sprache = sprache if sprache in tab else "de"
+        werte = {k: (v.get(sprache, v["de"]) if isinstance(v, dict) else v)
+                 for k, v in self.werte.items()}
+        return tab[sprache].format(**werte)
+
+
 class MicrophoneCapsule:
     """Lumped-Element-Modell einer Kondensatormikrofonkapsel.
 
@@ -1066,18 +1431,16 @@ class MicrophoneCapsule:
         else:
             key = str(membrane_material).strip().lower()
             if key not in self.MATERIALS:
-                raise ValueError(
-                    f"Unbekanntes Membranmaterial '{membrane_material}'. "
-                    f"Verfügbar: {sorted(self.MATERIALS)} oder dict mit rho/E/nu."
-                )
+                raise ParameterFehler(
+                    "material_unbekannt", name=membrane_material,
+                    liste=sorted(self.MATERIALS))
             mat = self.MATERIALS[key]
         self.mat_rho = float(mat["rho"])
         self.mat_E = float(mat["E"])
         self.mat_nu = float(mat.get("nu", 0.35))
         self.mat_eta = float(mat.get("eta", self._ETA_DEFAULT))
         if self.mat_eta < 0.0:
-            raise ValueError("Verlustfaktor eta der Folie darf nicht "
-                             "negativ sein.")
+            raise ParameterFehler("eta_negativ")
         self.membrane_material = membrane_material
 
         self.f_res_user = membrane_resonance_hz
@@ -1085,19 +1448,13 @@ class MicrophoneCapsule:
         self.t_mem = float(membrane_thickness)
         self.tension = float(membrane_tension)
         if self.a_mem <= 0 or self.t_mem <= 0 or self.tension <= 0:
-            raise ValueError("Membrangeometrie und Vorspannung müssen > 0 sein.")
+            raise ParameterFehler("membran_positiv")
         self.membrane_modes = int(membrane_modes)
         if not 1 <= self.membrane_modes <= len(self._J0_ZEROS):
-            raise ValueError(
-                f"membrane_modes muss zwischen 1 und {len(self._J0_ZEROS)} "
-                "liegen (axialsymmetrische (0,m)-Moden)."
-            )
+            raise ParameterFehler("moden_bereich", n=len(self._J0_ZEROS))
         self.modal_source = int(modal_source)
         if self.modal_source not in (0, 1):
-            raise ValueError(
-                "modal_source ist ein Schalter: 0 (aus, Voreinstellung) "
-                "oder 1 (modenabhängiger Quelldruck)."
-            )
+            raise ParameterFehler("modal_source")
         # ---------------------- MITTENTERMINIERUNG -------------------------
         # Eine in der Mitte festgelegte Membran (Kontaktstift, Mittenbolzen)
         # ist keine Kreis-, sondern eine RINGMEMBRAN. Das ist kein kleiner
@@ -1106,20 +1463,12 @@ class MicrophoneCapsule:
         # Ordnung (r_i/a = 1 % -> 22 % weniger Nachgiebigkeit).
         self.r_post = 0.5 * float(center_post_diameter)
         if self.r_post < 0.0:
-            raise ValueError("center_post_diameter darf nicht negativ sein.")
+            raise ParameterFehler("pfosten_negativ")
         self.rho_post = self.r_post / self.a_mem
         if self.rho_post >= 0.6:
-            raise ValueError(
-                f"Mittenterminierung: r_i/a = {self.rho_post:.3f} — über 0.6 "
-                "ist die Membran ein schmaler Ring, für den die hier "
-                "benutzten Lumped-Formen (ein Freiheitsgrad, Kolbenmasse) "
-                "nicht mehr sinnvoll sind."
-            )
+            raise ParameterFehler("pfosten_zu_gross", rho=self.rho_post)
         if self.r_post > 0.0 and not _HAS_SCIPY:
-            raise ValueError(
-                "Mittenterminierung braucht SciPy (Besselfunktionen zweiter "
-                "Art für die Ringmoden)."
-            )
+            raise ParameterFehler("pfosten_scipy")
         self.u_post = self.rho_post ** 2
 
         # ---------------------- Backplate-System ---------------------------
@@ -1136,15 +1485,14 @@ class MicrophoneCapsule:
         elif arch.startswith("single"):
             self.architecture = "single"
         else:
-            raise ValueError("architecture muss 'single', 'dual' oder "
-                             "'dual_diaphragm' sein.")
+            raise ParameterFehler("architektur")
         # Anzahl der wandelnden Backplates (Gegentakt nur bei 'dual';
         # bei der K67-Bauform ist im Nierenmodus nur die vordere Seite
         # polarisiert)
         self.n_bp = 2 if self.architecture == "dual" else 1
         self.h_center = float(center_gap)
         if self.architecture == "dual_diaphragm" and self.h_center < 0:
-            raise ValueError("center_gap darf nicht negativ sein.")
+            raise ParameterFehler("zwischenspalt_negativ")
         # center_gap = 0 ist zulässig und beschreibt eine EINZELNE, komplett
         # durchbohrte Mittelelektrode (Braunmühl-Weber-Bauform, z. B.
         # Debenham/Robinson/Stebbings): die Durchgangslöcher beider Seiten
@@ -1168,45 +1516,35 @@ class MicrophoneCapsule:
                 try:
                     cnt, pcd = entry
                 except (TypeError, ValueError):
-                    raise ValueError(
-                        f"{label}: jeder Lochkreis braucht das Paar "
-                        "(Anzahl, Lochkreis-Durchmesser)."
-                    )
+                    raise ParameterFehler("lochkreis_paar", art=label)
                 cnt = int(cnt)
                 if cnt < 0:
-                    raise ValueError(
-                        f"{label}: Lochanzahl darf nicht negativ sein.")
+                    raise ParameterFehler("lochzahl_negativ", art=label)
                 r = None if pcd is None else 0.5 * float(pcd)
                 if r is not None and not (0.0 <= r <= self.a_bp):
-                    raise ValueError(
-                        f"{label}: Lochkreisradius muss zwischen 0 und "
-                        "Backplate-Radius liegen."
-                    )
+                    raise ParameterFehler("lochkreis_radius", art=label)
                 out.append((cnt, r))
                 n_tot += cnt
             return out, n_tot
 
         self._th_rings, self.n_th = _normalize_rings(
             through_hole_rings, n_through_holes, through_hole_pcd,
-            "Durchgangslöcher")
+            {"de": "Durchgangslöcher", "en": "Through holes"})
         self.r_th = 0.5 * float(through_hole_diameter)
         if self.n_th > 0 and self.r_th <= 0:
-            raise ValueError("Durchgangslochdurchmesser muss > 0 sein.")
+            raise ParameterFehler("durchgangsloch_d")
         if self.n_th == 0 and self.architecture == "dual":
-            raise ValueError(
-                "Dual-Architektur ohne Durchgangslöcher: die vordere "
-                "Backplate würde die Membran vollständig vom Schallfeld "
-                "isolieren."
-            )
+            raise ParameterFehler("dual_ohne_loecher")
 
         self._bh_rings, self.n_bh = _normalize_rings(
-            blind_hole_rings, n_blind_holes, blind_hole_pcd, "Blindlöcher")
+            blind_hole_rings, n_blind_holes, blind_hole_pcd,
+            {"de": "Blindlöcher", "en": "Blind holes"})
         self.r_bh = 0.5 * float(blind_hole_diameter)
         if blind_hole_depth is None:
             blind_hole_depth = 0.5 * self.t_bp
         self.d_bh = float(blind_hole_depth)
         if self.n_bh > 0 and not (0 < self.d_bh < self.t_bp):
-            raise ValueError("Blindlochtiefe muss zwischen 0 und Backplate-Dicke liegen.")
+            raise ParameterFehler("blindloch_tiefe")
 
         # Stufenbohrung (K67/K87): jedes Durchgangsloch sitzt konzentrisch
         # am Grund einer Senkung mit Sackloch-Geometrie (r_bh, d_bh); nur
@@ -1221,21 +1559,11 @@ class MicrophoneCapsule:
         self.stepped = bool(through_holes_stepped) and self.n_th > 0
         if self.stepped:
             if not (0 < self.d_bh < self.t_bp):
-                raise ValueError(
-                    "Stufenbohrung: die Senkungstiefe (= Blindlochtiefe) "
-                    "muss zwischen 0 und Backplate-Dicke liegen."
-                )
+                raise ParameterFehler("stufe_tiefe")
             if self.r_bh <= self.r_th:
-                raise ValueError(
-                    "Stufenbohrung: die Senkung muss weiter sein als der "
-                    "Kern (Sackloch-Ø > Durchgangsloch-Ø)."
-                )
+                raise ParameterFehler("stufe_weite")
             if self.n_th > self.n_bh:
-                raise ValueError(
-                    "Stufenbohrung: höchstens so viele Durchgangslöcher wie "
-                    "Senkungen (jedes Durchgangsloch sitzt in einer Senkung; "
-                    "Blindlochanzahl = Gesamtzahl der Senkungen)."
-                )
+                raise ParameterFehler("stufe_anzahl")
             # rein blinde Senkungen = Gesamt − durchgebohrt; die Ring-
             # verteilung wird anteilig auf die blind bleibenden skaliert
             # (Durchgangs- und Blindlöcher sind gleich verteilt).
@@ -1261,8 +1589,7 @@ class MicrophoneCapsule:
         self.clamp_ring_thickness = float(clamp_ring_thickness)
         self.clamp_ring_width = float(clamp_ring_width)
         if self.clamp_ring_thickness < 0 or self.clamp_ring_width < 0:
-            raise ValueError("Klemmring-Dicke und -Breite dürfen nicht "
-                             "negativ sein.")
+            raise ParameterFehler("klemmring_negativ")
 
         # Clearance-Ring: ringförmiger Freistich in den Elektroden-
         # Stirnflächen (je Seite). Position über den Ring-Ø, radiale
@@ -1277,24 +1604,19 @@ class MicrophoneCapsule:
         self.clearance_ring_depth = float(clearance_ring_depth)
         if (self.clearance_ring_diameter < 0 or self.clearance_ring_width < 0
                 or self.clearance_ring_depth < 0):
-            raise ValueError("Clearance-Ring-Maße dürfen nicht negativ sein.")
+            raise ParameterFehler("freistich_negativ")
 
         # Durchgehender Randspalt um die Backplate (B&K-Bauform)
         self.ring_vent_w = float(ring_vent_width)
         if self.ring_vent_w < 0.0:
-            raise ValueError("Randspalt-Breite darf nicht negativ sein.")
+            raise ParameterFehler("randspalt_negativ")
         self.ring_vent_L = (self.t_bp if ring_vent_length is None
                             else float(ring_vent_length))
         if self.ring_vent_w > 0.0:
             if self.ring_vent_L <= 0.0:
-                raise ValueError("Randspalt-Kanallänge muss > 0 sein.")
+                raise ParameterFehler("randspalt_laenge")
             if arch == "dual_diaphragm":
-                raise ValueError(
-                    "Randspalt (ring_vent_width) gilt nur für die "
-                    "Bauformen 'single'/'dual' — bei der Doppelmembran-"
-                    "Bauform versiegeln Spacer/Klemmringe den "
-                    "Elektrodenrand."
-                )
+                raise ParameterFehler("randspalt_bauform")
 
         # ------------------ Akustische Netzwerke & Rückseite ----------------
         self.rear_network_enabled = bool(rear_network_enabled)
@@ -1306,12 +1628,9 @@ class MicrophoneCapsule:
         self.n_rp = int(n_rear_plate_holes)
         self.r_rp = 0.5 * float(rear_plate_hole_diameter)
         if self.h_sp < 0 or self.t_rp < 0 or self.n_rp < 0:
-            raise ValueError(
-                "Spacer-Höhe, Rückplatten-Dicke und -Lochzahl dürfen "
-                "nicht negativ sein."
-            )
+            raise ParameterFehler("rueckplatte_negativ")
         if self.t_rp > 0 and self.n_rp > 0 and self.r_rp <= 0:
-            raise ValueError("Rückplatten-Lochdurchmesser muss > 0 sein.")
+            raise ParameterFehler("rueckplatte_loch")
 
         self.l_delay = float(delay_length)
         self.l_cav = float(cavity_length)
@@ -1319,7 +1638,7 @@ class MicrophoneCapsule:
 
         pos = str(cavity_hole_position).strip().lower()
         if pos not in ("circumference", "end"):
-            raise ValueError("cavity_hole_position muss 'circumference' oder 'end' sein.")
+            raise ParameterFehler("hohlraum_lochlage")
         self.cavity_hole_position = pos
         self.n_ch = int(n_cavity_holes)
         self.r_ch = 0.5 * float(cavity_hole_diameter)
@@ -1349,13 +1668,9 @@ class MicrophoneCapsule:
         # _rear_chain_mats, Gegenprobe 24).
         frp = str(fabric_rear_position).strip().lower()
         if frp not in ("backplate", "inlet"):
-            raise ValueError("fabric_rear_position muss 'backplate' oder "
-                             "'inlet' sein.")
+            raise ParameterFehler("gewebe_lage")
         if frp == "inlet" and self.architecture == "dual_diaphragm":
-            raise ValueError(
-                "fabric_rear_position='inlet': die Doppelmembran-Bauform "
-                "hat keine rückwärtigen Einlasslöcher — ihr rückwärtiges "
-                "Gewebe liegt über der Rückmembran ('backplate' nutzen).")
+            raise ParameterFehler("gewebe_einlass")
         self.fabric_rear_position = frp
 
         self.body_diameter = (None if body_diameter is None
@@ -1363,13 +1678,13 @@ class MicrophoneCapsule:
         self.body_length = (None if body_length is None
                             else float(body_length))
         if self.body_length is not None and self.body_length <= 0.0:
-            raise ValueError("body_length muss > 0 sein (oder None).")
+            raise ParameterFehler("koerperlaenge")
         self.include_diffraction = bool(include_diffraction)
         self.pressure_radiation_load = bool(pressure_radiation_load)
 
         sm = str(squeeze_model).strip().lower()
         if sm not in ("1d", "2d", "3d"):
-            raise ValueError("squeeze_model muss '1d', '2d' oder '3d' sein.")
+            raise ParameterFehler("spaltmodell")
         if sm == "3d":
             # Der 3D-(r,phi)-Löser rechnet das Sandwich der durchbohrten
             # Elektrode(n) mit DISKRETEN Löchern. Moden:
@@ -1390,13 +1705,9 @@ class MicrophoneCapsule:
             #     rückwärtige Baugruppe).
             if self.architecture == "dual_diaphragm" and self.stepped \
                     and self.h_center <= 0.0:
-                raise ValueError("squeeze_model='3d' mit Stufenbohrung "
-                                 "erfordert bei der Doppelmembran-Bauform "
-                                 "center_gap > 0 (zwei Elektrodenhälften, "
-                                 "K67-Typ).")
+                raise ParameterFehler("dreid_stufe")
             if self.n_th <= 0 and self.ring_vent_w <= 0.0:
-                raise ValueError("squeeze_model='3d' erfordert "
-                                 "Durchgangslöcher oder einen Randspalt.")
+                raise ParameterFehler("dreid_ohne_loecher")
         # Verdrehung der Elektrodenhälften gegeneinander (nur 3D-K67-
         # Modus): die realen Hälften sind so verdreht, dass die
         # Durchgangslöcher nicht zueinander zeigen. None = automatisch
@@ -1419,7 +1730,7 @@ class MicrophoneCapsule:
         # Wirkung, wird aber immer geprüft (Projektdateien).
         g3 = str(grid_3d).strip().lower()
         if g3 not in ("coarse", "fine"):
-            raise ValueError("grid_3d muss 'coarse' oder 'fine' sein.")
+            raise ParameterFehler("gitter")
         self.grid_3d = g3
 
         # Randspalt-Gatter, die die endgültige Konfiguration brauchen:
@@ -1428,18 +1739,9 @@ class MicrophoneCapsule:
         # aufteilung Löcher/Randspalt nicht lumped darstellbar.
         if self.ring_vent_w > 0.0:
             if self.h_sp > 0.0 or self.t_rp > 0.0:
-                raise ValueError(
-                    "Randspalt ist nicht mit Spacer/Rückplatte "
-                    "(K103-Bauform) kombinierbar — beide teilen sich den "
-                    "Backplate-Rand."
-                )
+                raise ParameterFehler("randspalt_rueckplatte")
             if self.squeeze_model == "1d" and self.n_th > 0:
-                raise ValueError(
-                    "Randspalt PLUS Durchgangslöcher erfordert das "
-                    "2D-/3D-Feldmodell (Stromaufteilung Rand/Löcher); "
-                    "der 1D-Pfad rechnet nur den rein randbelüfteten "
-                    "Fall (n_through_holes = 0)."
-                )
+                raise ParameterFehler("randspalt_1d")
 
         # Axiales Körpermodell für den Front-Rück-Transfer der
         # Doppelmembran-Bauform: "sphere" (Kugel mit Durchmesser d_ext,
@@ -1463,22 +1765,16 @@ class MicrophoneCapsule:
         # Kapsel ohne Mikrofonkörper dahinter.
         ab = str(axial_body_model).strip().lower()
         if ab not in ("sphere", "spheroid", "bem"):
-            raise ValueError(
-                "axial_body_model muss 'sphere', 'spheroid' oder 'bem' sein."
-            )
+            raise ParameterFehler("koerpermodell")
         if ab in ("spheroid", "bem") and not _HAS_SCIPY:
-            raise ValueError(
-                f"axial_body_model='{ab}' erfordert SciPy.")
+            raise ParameterFehler("koerpermodell_scipy", modell=ab)
         self.axial_body_model = ab
         self.bem_body_diameter = float(bem_body_diameter)
         self.bem_body_gap = float(bem_body_gap)
         self.bem_body_length = float(bem_body_length)
         if ab == "bem" and self.bem_body_diameter > 0.0:
             if self.bem_body_gap <= 2e-3 or self.bem_body_length <= 5e-3:
-                raise ValueError(
-                    "BEM-Körper: Luftspalt > 2 mm und Länge > 5 mm nötig "
-                    "(getrennte, verrundete Konturen)."
-                )
+                raise ParameterFehler("bem_koerper")
         self._bem_geo = None
 
         # ------------------------ abgeleitete Größen ------------------------
@@ -1492,11 +1788,8 @@ class MicrophoneCapsule:
         if self.r_post >= 0.9 * self.a_bp:
             # Spaltfilm und Elektrode leben auf dem Ring r_i..a_bp — der
             # muss auch einer sein.
-            raise ValueError(
-                f"Mittenterminierung: der Pfosten (r_i = "
-                f"{self.r_post * 1e3:.2f} mm) lässt von der Backplate "
-                f"(a_bp = {self.a_bp * 1e3:.2f} mm) keinen brauchbaren "
-                "Ring übrig.")
+            raise ParameterFehler(
+                "pfosten_ring", r_i=self.r_post * 1e3, a_bp=self.a_bp * 1e3)
         self.S_mem = np.pi * a**2                 # Membranfläche [m^2]
         self.S_bp = np.pi * self.a_bp**2          # Backplate-Fläche [m^2]
         rho_s = self.mat_rho * t                  # Flächendichte [kg/m^2]
@@ -1799,10 +2092,7 @@ class MicrophoneCapsule:
             self.phi_bh += (self.n_th * np.pi
                             * (self.r_bh**2 - self.r_th**2) / self.S_bp)
         if self.phi_th + self.phi_bh >= 0.9:
-            raise ValueError(
-                "Durchgangs- und Blindlöcher bedecken >= 90 % der "
-                "Backplate — keine wirksame Elektrode mehr."
-            )
+            raise ParameterFehler("loecher_flaeche")
         # generalisierte Steifigkeit zur Koordinate w0 (Maximalauslenkung):
         # E = (w0·S_eff)²/(2C_A)  ->  k_gen = S_eff²/C_A. Ohne Mitten-
         # terminierung ist S_eff = S/2, also S²/(4C_A). Seit Gegenprobe 49
@@ -1834,18 +2124,7 @@ class MicrophoneCapsule:
         self.U_pullin = (float(np.sqrt(lam_pi / EPS0))
                          if np.isfinite(lam_pi) else float("inf"))
         if not stable:
-            raise ValueError(
-                "Elektrostatischer Kollaps (Pull-in): die statische "
-                "Anziehung der Backplate übersteigt die Rückstellkraft der "
-                "Membran. Maximal stabile Polarisationsspannung für diese "
-                f"Konfiguration: ca. {self.U_pullin:.1f} V. Abhilfe: "
-                "Spannung senken, Luftspalt vergrößern oder Membran steifer "
-                "(höhere Resonanzfrequenz/Vorspannung). Hinweis: statisch "
-                "trägt nur die Membran-Vorspannung — das Luftpolster "
-                "entweicht durch die Löcher; gemessene Kapselresonanzen "
-                "enthalten dagegen die Luftpolster-Steifigkeit und liegen "
-                "deshalb unter der hier maßgeblichen Vorspannungs-Resonanz."
-            )
+            raise ParameterFehler("pullin", u=self.U_pullin)
         self._w_static = w_st
         self._st_soft = soft
         self.w0_static = float(np.max(w_st))       # MAXIMALE Auslenkung
@@ -1857,7 +2136,7 @@ class MicrophoneCapsule:
         C_st0 = self._st_compliance(np.zeros_like(soft))
         C_st1 = self._st_compliance(soft)
         if not (np.isfinite(C_st1) and C_st1 > 0.0):
-            raise ValueError("Elektrostatischer Kollaps (Feder-Erweichung).")
+            raise ParameterFehler("pullin_feder")
         self.C_A_eff = self.C_A_mem * C_st1 / C_st0
         # relative Steifigkeitsreduktion durch die Vorspannung (Diagnose)
         self.softening_ratio = 1.0 - self.C_A_mem / self.C_A_eff
@@ -1989,10 +2268,7 @@ class MicrophoneCapsule:
                 q = (self.n_th * self.r_th**2
                      + self.n_bh * self.r_bh**2) / self.a_bp**2
             if not (0.0 < q < 1.0):
-                raise ValueError(
-                    f"Lochflächenanteil q={q:.3f} der Bohrungen "
-                    "muss in (0, 1) liegen."
-                )
+                raise ParameterFehler("lochanteil", q=q)
             self._q_drain = q
             # BEWUSSTE GRENZE DES 1D-PFADS: Škvor rechnet die Spaltluft
             # unter der GANZEN Platte zu den Löchern; die Membranfläche
@@ -2246,10 +2522,7 @@ class MicrophoneCapsule:
         else:
             self.R_body = 0.5 * self.body_diameter
             if self.R_body < max(self.a_mem, self.a_bp):
-                raise ValueError(
-                    "Gehäusedurchmesser muss mindestens so groß sein wie "
-                    "Membran- und Backplate-Durchmesser."
-                )
+                raise ParameterFehler("gehaeuse")
         # cos des Kalotten-Halbwinkels der Membran
         self._cap_cos = float(np.cos(np.arcsin(
             min(self.a_mem / self.R_body, 1.0))))
@@ -2286,12 +2559,7 @@ class MicrophoneCapsule:
         self._bem_head_len = self.d_ext
         if self.axial_body_model == "spheroid":
             if self.architecture != "dual_diaphragm":
-                raise ValueError(
-                    "axial_body_model='spheroid' gilt nur für die "
-                    "Doppelmembran-Bauform (axialer Front-Rück-Transfer). "
-                    "Für den Frontfaktor einer Ein-Membran-Kapsel 'bem' "
-                    "nehmen."
-                )
+                raise ParameterFehler("sphaeroid_bauform")
         elif self.axial_body_model == "bem":
             if self.architecture != "dual_diaphragm":
                 # GRADIENTENEMPFÄNGER: der rückwärtige Einlass hat seit
@@ -2303,11 +2571,7 @@ class MicrophoneCapsule:
                 # noch Kapselgitter, und der Bohrungskranz wird als
                 # idealer Ring bei seiner Einbautiefe angesetzt.
                 if self.body_length is None:
-                    raise ValueError(
-                        "axial_body_model='bem' braucht die axiale "
-                        "Körperlänge body_length (die Kugelrechnung kennt "
-                        "nur body_diameter)."
-                    )
+                    raise ParameterFehler("bem_laenge_fehlt")
                 self._bem_head_len = self.body_length
                 if self.rear_open:
                     # Tiefe ab der Stirnfläche = vorderer Einlass, also
@@ -2343,26 +2607,17 @@ class MicrophoneCapsule:
                         )
                     warnings.warn(hinweis, UserWarning, stacklevel=2)
             elif self.body_length is not None:
-                raise ValueError(
-                    "body_length gilt nicht für die Doppelmembran-Bauform "
-                    "— dort spannen die beiden Membranen die Stirnflächen "
-                    "auf, die axiale Länge ist d_ext."
-                )
+                raise ParameterFehler("koerperlaenge_doppel")
         if self.axial_body_model == "bem" and self._bem_head_len < 2.0e-3:
             # Verrundung und Elementlänge skalieren mit dem Körper
             # (s. _bem_geometry), darunter wird die Scheibe aber so dünn,
             # dass die m=0-Kollokation auf dem Mantel entartet.
-            raise ValueError(
-                "BEM-Kontur: die axiale Körperlänge muss >= 2 mm sein "
-                f"({self._bem_head_len * 1e3:.2f} mm).")
+            raise ParameterFehler("bem_kontur", l=self._bem_head_len * 1e3)
         if self.axial_body_model == "spheroid":
             if 0.5 * self.d_ext >= 0.98 * self.R_body:
-                raise ValueError(
-                    "axial_body_model='spheroid': die axiale Halbachse "
-                    f"d_ext/2 = {0.5 * self.d_ext * 1e3:.1f} mm muss "
-                    f"kleiner als der Körperradius {self.R_body * 1e3:.1f}"
-                    " mm sein (oblate Scheibe)."
-                )
+                raise ParameterFehler(
+                    "sphaeroid_halbachse", d=0.5 * self.d_ext * 1e3,
+                    r=self.R_body * 1e3)
 
         # 3D-Löser: Gitter-/Lochgeometrie einmalig aufbauen
         if self.squeeze_model == "3d":
@@ -4036,11 +4291,7 @@ class MicrophoneCapsule:
         # Das Gatter gilt der PHYSIKALISCHEN Folie, auch ohne Randschicht
         ell_ph = float(np.sqrt(self._D_plate / T))
         if not (np.isfinite(ell_ph) and ell_ph < 0.25 * (a - self.r_post)):
-            raise ValueError(
-                f"Biegesteife Folie: die Randschicht √(D/T) = "
-                f"{ell_ph * 1e6:.0f} µm nimmt mehr als ein Viertel der "
-                f"Membranbreite ein (T = {T:.4g} N/m) — das ist eine Platte, "
-                "keine Membran, und dafür ist das Modell nicht gebaut.")
+            raise ParameterFehler("randschicht", ell=ell_ph * 1e6, T=T)
         ell = ell_ph if self._RANDSCHICHT else 0.0
         a_w = a - ell
         r_iw = self.r_post + ell if self.r_post > 0.0 else 0.0
@@ -4164,8 +4415,7 @@ class MicrophoneCapsule:
                 z.append(0.5 * (lo + hi))
             x0, prev = x1, cur
         if len(z) < n:
-            raise ValueError(
-                "Mittenterminierung: Ring-Eigenwerte nicht gefunden.")
+            raise ParameterFehler("ring_eigenwerte")
         z = np.array(z, dtype=float)
         C1 = (_besselj(1, z) * _bessely(0, z * rho)
               - _bessely(1, z) * _besselj(0, z * rho))
@@ -4812,11 +5062,9 @@ class MicrophoneCapsule:
             with np.errstate(all="ignore"):
                 u, *_ = np.linalg.lstsq(A, b, rcond=None)
                 if not np.all(np.isfinite(u)):
-                    raise ValueError(
-                        f"BEM: die Randintegralgleichung ist bei "
-                        f"{omega[i] / (2 * np.pi):.0f} Hz nicht lösbar "
-                        f"({N} Elemente, Kondition "
-                        f"{np.linalg.cond(A):.2e}). Körpermaße prüfen.")
+                    raise ParameterFehler(
+                        "bem_unloesbar", f=omega[i] / (2 * np.pi), n=N,
+                        kond=np.linalg.cond(A))
                 # FRONT: Galerkin-Projektion auf die Membranmode (Fläche ×
                 # Modengewicht, s. _cap_mode_quad). RÜCK: was dort steht,
                 # entscheidet die Geometrie — bei der Doppelmembran
@@ -5691,9 +5939,7 @@ class MicrophoneCapsule:
             i_lo = int(np.min(np.nonzero(d_c >= dr / self._SW_CAP)[0]))
             d_ein = float(d_c[i_lo])
         if i_hi <= i_lo:
-            raise ValueError(
-                "3D-Gitter: zwischen den wirksamen Einspannungen liegt "
-                "keine freie Membranzelle — das Gitter ist zu grob.")
+            raise ParameterFehler("gitter_grob")
         dphi = 2.0 * np.pi / Np_
         A_f = r_f * dr * dphi                       # Zellfläche je Ring
         A_m = r_m * drm * dphi

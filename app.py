@@ -28,7 +28,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from microphone_capsule import MicrophoneCapsule
+from microphone_capsule import MicrophoneCapsule, ParameterFehler
 from translations import TR, LABEL_TR
 
 _LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo.svg")
@@ -48,6 +48,16 @@ def tr(key, **kw):
     """Übersetzten GUI-Text holen; Platzhalter per str.format füllen."""
     txt = TR[key][_lang()]
     return txt.format(**kw) if kw else txt
+
+
+def meldung(exc):
+    """Fehlermeldung des Modells in der Sprache der Oberfläche: ein
+    ParameterFehler trägt seine Meldung zweisprachig (s.
+    microphone_capsule._MELDUNGEN), jeder andere Fehler zeigt seinen
+    Text wie gemeldet."""
+    if isinstance(exc, ParameterFehler):
+        return exc.text(_lang())
+    return str(exc)
 
 
 def tr_label(canonical):
@@ -1431,7 +1441,7 @@ try:
     capsule = get_capsule(params, _show_progress)
 except ValueError as exc:
     _prog_slot.empty()
-    st.error(tr("err_params", exc=exc))
+    st.error(tr("err_params", exc=meldung(exc)))
     st.stop()
 
 # Cache-Schlüssel: alle Parameter, die Physik oder berechnete Daten ändern.
@@ -1441,7 +1451,15 @@ _key_params = {**params, "dir_freqs": sorted(params["dir_freqs"])}
 _key_params.pop("normalize_1khz", None)
 _cache_key = json.dumps(_key_params, sort_keys=True)
 
-_res = compute_results(_cache_key, capsule, _show_progress)
+# Auch eine Rechnung kann an den Maßen scheitern (etwa eine nicht lösbare
+# BEM-Randintegralgleichung) — dann dieselbe Meldung statt eines
+# Tracebacks. Andere Fehler bleiben sichtbar, wie sie sind.
+try:
+    _res = compute_results(_cache_key, capsule, _show_progress)
+except ParameterFehler as exc:
+    _prog_slot.empty()
+    st.error(tr("err_params", exc=meldung(exc)))
+    st.stop()
 _prog_slot.empty()
 fr, di, aux = _res["fr"], _res["di"], _res["aux"]
 sens_1k, delay = _res["sens_1k"], _res["delay"]

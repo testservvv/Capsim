@@ -20,12 +20,14 @@ reine Anzeige-Einstellung und wandert **nicht** in die Projektdateien: die
 kanonischen Auswahl-Werte (Architektur, Material, axialer Körper …) bleiben
 sprachunabhängig gespeichert, sodass Projekte zwischen beiden Sprachen
 voll austauschbar sind. Auch der Diagnose-Summary (`MicrophoneCapsule.
-summary(lang=…)`) folgt der Sprachwahl.
+summary(lang=…)`) und die Meldungen des Modells bei ungültigen Parametern
+(`ParameterFehler.text(…)`) folgen der Sprachwahl.
 
 The interface is bilingual (**English** default, German selectable via the
 language switch at the top of the sidebar). The language is a display-only
 setting and is **not** written to project files, so projects stay fully
-interchangeable between both languages.
+interchangeable between both languages. The model's messages for invalid
+parameters follow the selected language as well.
 
 ## Spaltfilm-Modell: 1D vs. 2D
 
@@ -562,9 +564,11 @@ Messungen der realen Kapsel.
   und ergibt die Kurve des Modells; seit Gegenprobe 66 in beiden
   Sprachen, mit vollständigen Übersetzungstabellen. Es fehlt ein Test
   des Uploaders selbst (der AppTest kann ihn nicht bedienen; die Probe
-  schreibt den Session-State wie `_load_project()`). Fehlermeldungen
-  des Modells selbst (`ValueError` beim Bau einer Kapsel) sind nur
-  deutsch und erscheinen so auch in der englischen Oberfläche.
+  schreibt den Session-State wie `_load_project()`). Die Meldungen des
+  Modells bei ungültigen Parametern sind seit Gegenprobe 66 c
+  zweisprachig (`ParameterFehler`); seine Warnungen (`UserWarning`)
+  bleiben deutsch, die App zeigt sie aber nicht (nur im
+  Konsolenprotokoll).
 - Kein automatischer Testlauf bei jedem Push (kein GitHub-Workflow).
 - Laufzeit: die BEM-Proben 41, 43, 44, 26 und 21 brauchen etwa 117 der
   316 s Rechenzeit; Gegenprobe 41 allein (54 s) ist die Untergrenze des
@@ -2503,6 +2507,24 @@ Punkte“ 8).
   Text — Überschriften, Meldungen, Feldbeschriftungen und Hilfen,
   angezeigte Optionen, Diagrammtitel und Spurnamen — ist ein fester Text
   der anderen Sprache.
+- c) Meldungen des Modells: bis hier waren sie nur deutsch und
+  erschienen so auch in der englischen Oberfläche. Jede Parameterprüfung
+  wirft jetzt einen `ParameterFehler` — ein `ValueError` mit der
+  deutschen Meldung wie bisher (`str(exc)`, für Skripte unverändert) —,
+  dessen Text `exc.text("en")` aus der Tabelle `_MELDUNGEN` neben dem
+  Modell bildet (54 Meldungen, Deutsch und Englisch mit denselben
+  Platzhaltern). Geprüft: jeder Eintrag zweisprachig und füllbar, jeder
+  `ParameterFehler(...)` im Quelltext mit vorhandenem Schlüssel und
+  genau dessen Platzhaltern, kein Eintrag unbenutzt, und in den
+  prüfenden Methoden (Bau, abgeleitete Größen, Randschicht, Ringmoden,
+  BEM, 3D-Gitter) kein einfacher `ValueError` mehr. Einfache
+  `ValueError` bleiben für falsche Aufrufe aus eigenem Code (interne
+  Löser, Rauschspektrum, Druckgang bei offener Rückseite).
+- d) In der App: die Voreinstellung mit 400 V kollabiert (Pull-in); die
+  Meldung erscheint auf Englisch und auf Deutsch in der jeweiligen
+  Sprache. Scheitert eine Rechnung an den Maßen (etwa eine nicht lösbare
+  BEM-Randintegralgleichung), zeigt die App dieselbe Meldung statt eines
+  Tracebacks.
 
 ### Mündung Spaltfilm → Bohrung (Gegenprobe 67)
 
