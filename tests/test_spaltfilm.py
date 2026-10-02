@@ -361,6 +361,19 @@ def test_gp30_zellfunktion_des_durchflusses(k67, stand):
     #    realen K67 — statt bei ~164°, und die publizierten U87-Werte
     #    werden dabei besser getroffen (180°: -26.6 gegen -26 dB
     #    publiziert; 20.0 gegen ~20 mV/Pa).
+    #    NACHTRAG Gegenprobe 70: die TIEFE der Auslöschung ist seither ein
+    #    Stand-Wert, Pflicht bleibt das Minimum bei 180°. Die Spalt-Mündung
+    #    gilt jetzt auch im membranlosen Zwischenspalt der K67 (je Loch
+    #    in Serie, s. _portmuendung) — eine Umlenkung, die es physikalisch
+    #    gibt und die bis dahin fehlte. Sie legt einen von der Kernlage
+    #    unabhängigen Widerstand vor den Querweg im Zwischenspalt und hebt
+    #    die Nullstelle von -26.4 auf -21.7 dB. Die alte Grenze -25 dB war
+    #    an die publizierten -26 dB angelehnt; wie tief die Auslöschung
+    #    der realen Kapsel ist, hängt aber an Maßen, die niemand
+    #    dokumentiert hat (Lage der Kerne im 50-µm-Zwischenspalt,
+    #    Gegenprobe 22 e; Kerndurchmesser und -länge). Eine Grenze, die
+    #    eine fehlende Umlenkung braucht, um zu halten, wäre angepasst
+    #    und nicht hergeleitet.
     # c) NÄHER AM 3D-FELDLÖSER, der die diskreten Löcher auflöst und
     #    deshalb Referenz ist: die RMS-Abweichung des Richtdiagramms sank
     #    damals bei der Debenham-Platte (12 Löcher) und der Nieren-Single;
@@ -403,8 +416,8 @@ def test_gp30_zellfunktion_des_durchflusses(k67, stand):
         assert na30 >= 179.0, \
             (f"K67-Niere muss ihr Minimum bei 180° haben (real), nicht "
              f"bei {na30:.0f}°")
-        assert pat30["db"][180] < -25.0, \
-            f"K67 rückwärts < -25 dB erwartet ({pat30['db'][180]:.1f})"
+        stand.wert("k67_180grad", float(pat30["db"][180]), "dB",
+                   "K67 2D, 1 kHz, Pegel bei 180°")
         assert 18.0 < H30 < 22.0, \
             f"K67-Empfindlichkeit nahe 20 mV/Pa erwartet ({H30:.1f})"
         # c) Richtdiagramm näher am 3D-Feldlöser (Debenham, 12 Löcher)
@@ -1248,3 +1261,174 @@ def test_gp67_muendung_spaltfilm_bohrung():
           f"{100 * rel[0]:.2f}/{100 * rel[1]:.2f} % bei h/a = 0.01/0.02 "
           f"(Škvor-Grenzfall exakt); Massenlängen bei a/δ = 128 auf "
           f"{100 * traeg67:.1f} % an der Potentialströmung  OK")
+
+
+def test_gp69_freistich_oertlich():
+    """Gegenprobe 69: Mündungen sehen den Freistich an ihrem Ort."""
+    # Ein Clearance-Ring (Freistich) vertieft den Spalt nur in einem Ring.
+    # Bis Gegenprobe 68 setzte das 2D-Feld ein Flag, sobald irgendeine
+    # Mündung im Freistich lag, und gab dann ALLEN Mündungen die
+    # entlastete Engstelle (Zellterm) bzw. seit Gegenprobe 67 die
+    # entlastete Spalt-Mündung — bei gleichverteilten Löchern also allen,
+    # sobald der Freistich eine Zelle berührte, bei Lochkreisen auch denen
+    # weit weg vom Freistich. Jetzt sieht jede Mündung den Spalt an ihrem
+    # Ort: gleichverteilte Löcher je Zelle, Lochkreise am Kreis.
+    # a) GRENZFALL: Freistich über die ganze Platte ist ein größerer Spalt
+    #    — Zweitor gleich dem der Kapsel mit h + Tiefe (gleichverteilt und
+    #    Lochkreis).
+    # b) ÖRTLICH: bei einem Freistich nur am Rand sehen die Mündungen
+    #    beide Spalte, gleichverteilte Löcher h und h + t, ein Lochkreis
+    #    innen nur h (die Spalt-Mündung wird dafür protokolliert).
+    h69, t69, a69 = 25e-6, 20e-6, 5.5e-3
+    k69 = dict(architecture="single", membrane_diameter=12.0e-3,
+               membrane_thickness=5e-6, membrane_resonance_hz=8000.0,
+               backplate_diameter=2 * a69, backplate_thickness=1.0e-3,
+               bias_voltage=1.0, n_blind_holes=0, rear_network_enabled=True,
+               delay_length=0.0, cavity_length=4.0e-3, n_cavity_holes=0,
+               fabric_front_rayl=0.0, fabric_rear_rayl=0.0,
+               include_diffraction=False, squeeze_model="2d")
+    gleich = dict(n_through_holes=40, through_hole_diameter=0.5e-3)
+    kreis = dict(n_through_holes=8, through_hole_diameter=0.5e-3,
+                 through_hole_rings=[(8, 0.5 * 2 * a69)])
+    om69 = 2.0 * np.pi * np.geomspace(50.0, 20e3, 12)
+
+    def _baue(**kw):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return MicrophoneCapsule(**{**k69, **kw})
+
+    # a) ganze Platte entlastet == größerer Spalt
+    voll = dict(clearance_ring_diameter=a69, clearance_ring_width=2 * a69,
+                clearance_ring_depth=t69)
+    worst_a = 0.0
+    for lb in (gleich, kreis):
+        T_f = _baue(air_gap=h69, **lb, **voll)._gap_field_2port(
+            om69, h_film=h69)
+        T_g = _baue(air_gap=h69 + t69, **lb)._gap_field_2port(
+            om69, h_film=h69 + t69)
+        worst_a = max(worst_a, float(np.max(np.abs(T_f / T_g - 1.0))))
+    assert worst_a < 1e-9, \
+        (f"Freistich über der ganzen Platte muss ein größerer Spalt sein "
+         f"({worst_a:.1e})")
+    # b) Freistich nur am Rand: welche Spalte sehen die Mündungen?
+    rand = dict(clearance_ring_diameter=2 * 0.9 * a69,
+                clearance_ring_width=0.2 * a69, clearance_ring_depth=t69)
+    gesehen = {}
+    orig = MicrophoneCapsule._muendung_spalt.__func__
+    for nm, lb in (("gleich", gleich), ("kreis", kreis)):
+        c = _baue(air_gap=h69, **lb, **rand)
+        hs = []
+
+        def _protokoll(cls, omega, r_loch, h_film, q=0.0, _hs=hs):
+            _hs.append(round(h_film / h69, 6))
+            return orig(cls, omega, r_loch, h_film, q)
+        MicrophoneCapsule._muendung_spalt = classmethod(_protokoll)
+        try:
+            c._gap_field_2port(om69, h_film=h69)
+        finally:
+            MicrophoneCapsule._muendung_spalt = classmethod(orig)
+        gesehen[nm] = sorted(set(hs))
+    soll = round((h69 + t69) / h69, 6)
+    assert gesehen["gleich"] == [1.0, soll], \
+        (f"gleichverteilte Löcher müssen h UND h + t sehen "
+         f"({gesehen['gleich']})")
+    assert gesehen["kreis"] == [1.0], \
+        (f"ein Lochkreis fern vom Freistich muss h sehen "
+         f"({gesehen['kreis']})")
+    print(f"Freistich örtlich: ganze Platte == größerer Spalt "
+          f"({worst_a:.0e}); Freistich am Rand: gleichverteilte Mündungen "
+          f"sehen h/h = {gesehen['gleich']}, der Lochkreis innen "
+          f"{gesehen['kreis']}  OK")
+
+
+def test_gp70_portmuendung_nach_bauform():
+    """Gegenprobe 70: die portseitige Mündung richtet sich nach der
+    Bauform."""
+    # Bis Gegenprobe 69 trug JEDE Durchgangsbohrung portseitig eine
+    # Freifeld-Flanschmündung (0.85·r mit Fok-Faktor + Sampson). Das
+    # stimmt nur, wo die Bohrung in ein großes Volumen oder ins Schallfeld
+    # mündet. Die einteilige Mittelelektrode (dual_diaphragm ohne
+    # Zwischenspalt) hatte damit zwei Freifeld-Mündungen MITTEN im Rohr;
+    # Zwischenspalt (K67) und Spacer (K103) sind dünne membranlose Filme,
+    # in die die Bohrung genauso umlenkt wie membranseitig (Gegenprobe 67,
+    # q = 0: über der Öffnung liegt keine Membran). Verankert an:
+    # a) BESTAND: wo die Bohrung in ein Volumen mündet, ist die neue
+    #    Aufteilung (Rohr + _portmuendung) identisch mit der alten Form
+    #    (Rohr mit visc_ends = 1 + Fok-Flanschmasse) — gerade und gestuft.
+    # b) EINTEILIG: keine Mündung — zwei Plattenhälften in Serie sind
+    #    EXAKT das Rohr durch die volle Dicke (wie im 3D-Löser).
+    # c) MEMBRANLOSE SPALTE: Zwischenspalt und Spacer tragen die Spalt-
+    #    Mündung ihres Spalts (q = 0) und keine Flanschmasse.
+    # Die Mündung selbst prüft Gegenprobe 67; ihre Verteilung auf die
+    # Filmflächen im 3D-Löser Gegenprobe 70 in test_feld3d.py.
+    om70 = 2.0 * np.pi * np.geomspace(50.0, 20e3, 9)
+    k103 = dict(
+        membrane_resonance_hz=1500.0, membrane_diameter=25e-3,
+        air_gap=50e-6, backplate_diameter=23e-3, backplate_thickness=3e-3,
+        bias_voltage=45.0, architecture="single",
+        n_through_holes=24, through_hole_diameter=0.8e-3,
+        n_blind_holes=30, blind_hole_diameter=1.2e-3,
+        rear_network_enabled=True,
+        rear_spacer_height=50e-6, rear_plate_thickness=2e-3,
+        n_rear_plate_holes=30, rear_plate_hole_diameter=0.5e-3,
+        delay_length=0.0, cavity_length=0.0, n_cavity_holes=0,
+        include_diffraction=False)
+    ohne_sp = dict(rear_spacer_height=0.0, rear_plate_thickness=0.0,
+                   n_rear_plate_holes=0, cavity_length=4e-3)
+
+    def _baue(**kw):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return MicrophoneCapsule(**kw)
+
+    def _alt(c, n):
+        # die Form bis Gegenprobe 69 (Flansch + Sampson, immer)
+        S = np.pi * c.r_th**2
+        if not c.stepped:
+            return (c._hole_impedance(om70, c.r_th, c.t_bp, n,
+                                      end_correction=False, visc_ends=1)
+                    + 1j * om70 * RHO0 * 0.85 * c.r_th * c._fok_th
+                    / (S * n))
+        karal = 1.0 - c.r_th / c.r_bh
+        Z_step = c._hole_impedance(om70, c.r_th, (3.0 * np.pi / 16.0)
+                                   * c.r_th, 1,
+                                   end_correction=False).real * karal
+        return (c._hole_impedance(om70, c.r_th, c.t_th_eff, n,
+                                  end_correction=False, visc_ends=1)
+                + (1j * om70 * RHO0 * 0.85 * c.r_th * (c._fok_th + karal)
+                   / S + Z_step) / n)
+
+    # a) Volumen hinter der Platte: unverändert
+    worst_a = 0.0
+    for stufe in ({}, dict(through_holes_stepped=True,
+                           blind_hole_depth=1.0e-3)):
+        c = _baue(**{**k103, **ohne_sp, **stufe})
+        Z_neu = c._through_hole_impedance(om70, c.n_th)
+        worst_a = max(worst_a, float(np.max(np.abs(Z_neu / _alt(c, c.n_th)
+                                                   - 1.0))))
+    assert worst_a < 1e-12, \
+        (f"Mündung in ein Volumen muss die alte Form bleiben "
+         f"({worst_a:.1e})")
+    # b) einteilige Mittelelektrode: zwei Hälften == Rohr durch 2·t
+    ein = _baue(**{**K67_KWARGS, "center_gap": 0.0,
+                   "through_holes_stepped": False})
+    assert np.all(ein._portmuendung(om70) == 0.0), \
+        "einteilige Mittelelektrode darf keine Portmündung tragen"
+    Z_ein = 2.0 * ein._through_hole_impedance(om70, ein.n_th)
+    Z_rohr = ein._hole_impedance(om70, ein.r_th, 2.0 * ein.t_bp, ein.n_th,
+                                 end_correction=False)
+    dev_b = float(np.max(np.abs(Z_ein / Z_rohr - 1.0)))
+    assert dev_b < 1e-12, \
+        f"zwei Hälften müssen das durchgehende Rohr sein ({dev_b:.1e})"
+    # c) membranlose Spalte: Spalt-Mündung des eigenen Spalts, q = 0
+    k67 = _baue(**K67_KWARGS)
+    sp = _baue(**k103)
+    for c, h, nm in ((k67, k67.h_center, "Zwischenspalt"),
+                     (sp, sp.h_sp, "Spacer")):
+        Z_p = c._portmuendung(om70)
+        Z_m = c._muendung_spalt(om70, c.r_th, h, 0.0)
+        assert np.all(Z_p == Z_m) and np.all(Z_m.real > 0.0), \
+            f"{nm}: Spalt-Mündung (q = 0) erwartet"
+    print(f"Portmündung nach Bauform: Volumen wie bisher ({worst_a:.0e}), "
+          f"einteilig == Rohr durch 2·t ({dev_b:.0e}), Zwischenspalt und "
+          f"Spacer mit Spalt-Mündung  OK")

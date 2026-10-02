@@ -208,24 +208,33 @@ def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht, stand):
     Die EMPFINDLICHKEIT stimmt; die TIEFE der Auslöschung hängt dagegen
     an einem Maß, das niemand dokumentiert hat: wie die Kerne beider
     Hälften im 50-µm-Zwischenspalt zueinander liegen. Mit konturtreuen
-    Mündungen (Gegenprobe 51, grob und fein auf ~0.5 dB gleich) und
-    Θ-konsistenter Wandlung (Gegenprobe 54): vollständig versetzt
-    (automatisch: jeder Kern über einer Sacksenkung der Gegenseite, ~2 mm
-    Querweg) −17 dB, global 6°/9°/12°/15°/18° −10/−19/−37/−31/−14 dB.
-    Zwischen 9° und 12° liegt eine Kernlage, die das 2D-Modell (−28 dB)
-    trifft, dessen Škvor-Zelle im Zwischenspalt einen mittleren Querweg
-    von etwa einem Zellradius annimmt. (Vor der Θ-konsistenten Wandlung
-    traf 12° mit −29 dB; die Auslöschung reagiert auf jede Gewichtung von
-    Front- gegen Rückantrieb, und bei 60 V gewichtet 1/g² die Mitte. Vor
-    der Konturkorrektur: versetzt −11 dB, 9° −29 dB.) Das ist KEIN
-    Modellfehler, sondern eine offene Geometriefrage an der realen
-    Kapsel — festgehalten, damit sie nicht wieder als gelöst gilt
-    (Gegenprobe 48).
+    Mündungen (Gegenprobe 51, grob und fein auf ~0.5 dB gleich),
+    Θ-konsistenter Wandlung (Gegenprobe 54) und der Spalt-Mündung im
+    Zwischenspalt (Gegenprobe 70): vollständig versetzt (automatisch:
+    jeder Kern über einer Sacksenkung der Gegenseite, ~2 mm Querweg)
+    −14.6 dB, global 6°/9°/10.5°/12°/15°/18° −14.5/−23.2/−25.0/−22.6/
+    −22.6/−17.1 dB (feines Gitter bis auf 0.3 dB gleich); das 2D-Modell,
+    dessen Škvor-Zelle im Zwischenspalt einen mittleren Querweg von etwa
+    einem Zellradius annimmt, liegt mit −21.7 dB knapp über diesem Band.
+    Vor Gegenprobe 70 (ohne Mündung im Zwischenspalt): versetzt −17 dB,
+    6°/9°/12°/15°/18° −10/−19/−37/−31/−14 dB, 2D −28 dB. Die Mündung legt
+    vor jeden Querweg einen Widerstand, der von der Kernlage NICHT
+    abhängt — die Abhängigkeit wird flacher, verschwindet aber nicht.
+    (Vor der Θ-konsistenten Wandlung traf 12° mit −29 dB; die Auslöschung
+    reagiert auf jede Gewichtung von Front- gegen Rückantrieb, und bei
+    60 V gewichtet 1/g² die Mitte. Vor der Konturkorrektur: versetzt
+    −11 dB, 9° −29 dB.) Das ist KEIN Modellfehler, sondern eine offene
+    Geometriefrage an der realen Kapsel — festgehalten, damit sie nicht
+    wieder als gelöst gilt (Gegenprobe 48).
 
-    Geprüft wird nur, DASS die Auslöschung von der Kernlage abhängt. Die
-    Zahlen (Empfindlichkeit 3D/2D, Auslöschung bei 9°/12° und im 2D-Modell)
-    sind Stand-Werte: kein Grenzfall legt sie fest, der Bericht zeigt ihre
-    Verschiebung.
+    Geprüft wird nur, DASS die Auslöschung von der Kernlage abhängt: 12°
+    muss um ein Vielfaches der Gitterunsicherheit (grob/fein ≤ 0.5 dB,
+    Gegenprobe 51) tiefer liegen als vollständig versetzt — 3 dB. Bis
+    Gegenprobe 70 stand hier 8 dB, gesetzt bei 14–20 dB Abstand; mit der
+    Mündung sind es 7.9 dB. Wie TIEF die Abhängigkeit ist, legt kein
+    Grenzfall fest: der Abstand und die übrigen Zahlen (Empfindlichkeit
+    3D/2D, Auslöschung bei 9°/12° und im 2D-Modell) sind Stand-Werte, der
+    Bericht zeigt ihre Verschiebung.
     """
     cap, (pv, _) = k67_3d_verdreht
     ev = abs(cap.transfer_function(np.array([1000.0]))[0]) * 1e3
@@ -241,7 +250,9 @@ def test_gp22e_kernlage_gegen_2d(k67_3d_verdreht, stand):
     stand.wert("ausloeschung_9grad", p09, "dB", "K67 180°, 1 kHz, 3D 9°")
     stand.wert("ausloeschung_12grad", p12, "dB", "K67 180°, 1 kHz, 3D 12°")
     stand.wert("ausloeschung_2d", p2d, "dB", "K67 180°, 1 kHz, 2D")
-    assert p12 < pv - 8.0, \
+    stand.wert("abstand_12grad_versetzt", pv - p12, "dB",
+               "K67 180°, 1 kHz, 3D: 12° tiefer als versetzt um")
+    assert p12 < pv - 3.0, \
         (f"die Auslöschung MUSS von der Lage der Kerne abhängen "
          f"(12°: {p12:.1f} dB, versetzt: {pv:.1f} dB)")
     print(f"3D-K67-Modus e) Empf. verdreht {ev:.1f} mV/Pa (2D {e2d:.1f}); "
@@ -1740,3 +1751,70 @@ def test_gp68_mittelloch_und_messgroessen_im_3d_loeser(stand):
           f"Elektrodengewicht Spannung/Volumen {ee68[0.28] / rr68[0.28]:.3f} "
           f"(Mittelloch), {e_bk / v_bk:.3f} (Lochkreis); Volumen Elektrode/"
           f"Membran {verh:.3f} gegen u(2−u) = {u68 * (2 - u68):.3f}  OK")
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+def test_gp70_zwischenspalt_muendung_im_3d_loeser(stand):
+    """Gegenprobe 70: Spalt-Mündung im Zwischenspalt der K67, 3D-Löser."""
+    # Der 1D/2D-Pfad legt die Mündung der Kerne in den Zwischenspalt je
+    # Loch in Serie (_portmuendung) — er setzt versetzte Lochbilder
+    # voraus, bei denen alle Luft durch den Film muss. Der 3D-Löser löst
+    # die Lage der Kerne auf: fluchten sie, strömt die Luft von Loch zu
+    # Loch, ohne umzulenken. Die Mündung sitzt dort deshalb auf den
+    # FILMFLÄCHEN um jede Mündung (Zusatzlänge Δ = z_ff/Z'_f, Gewichte
+    # W/(2πr) auf der Treppe, _mund_gewichte) und wirkt nur auf den
+    # Filmzufluss.
+    # a) FLUCHTEND (Grenzfall der Gegenprobe 22 a: 5 µm, rot = 0): mit der
+    #    Flächen-Mündung bleibt der einteilige Löser getroffen (< 4 %), die
+    #    Serien-Mündung (_MUENDUNG_ZWISCHEN_SERIE) sperrt den Durchgang —
+    #    der Grenzfall trennt beide Formen scharf.
+    # b) VERSETZT (automatische Verdrehung, alle Luft durch den Film):
+    #    Flächen- und Serien-Mündung stimmen auf < 20 % ihrer Wirkung
+    #    überein. Der Rest ist die Verteilung selbst: auf Flächen zählt
+    #    jede ihren Fluss im Quadrat, Σ z_k·q_k² ≥ z_ff·Q² (Cauchy-
+    #    Schwarz, Gleichheit bei gleichmäßigem Abfluss) — der Überschuss
+    #    ist die Varianz des Abflusses um die Mündung (grob 7 %, fein 11 %
+    #    der Wirkung; die Flächen-Mündung wirkt in allen Größen etwas
+    #    stärker). Die Wirkung selbst (gegen _MUENDUNG = False) muss
+    #    spürbar sein, sonst wäre b) leer.
+    if not _HAS_SCIPY:
+        return
+    deb22 = _deb22()
+    X_ein = np.array(MicrophoneCapsule(**{**deb22, "center_gap": 0.0})
+                     ._solve_3d(_OM22))
+    dev_a = {}
+    for serie in (False, True):
+        MicrophoneCapsule._MUENDUNG_ZWISCHEN_SERIE = serie
+        zwei = MicrophoneCapsule(**{**deb22, "center_gap": 5e-6,
+                                    "half_rotation_deg": 0.0})
+        dev_a[serie] = float(np.max(np.abs(
+            np.array(zwei._solve_3d(_OM22)) / X_ein - 1.0)))
+    assert dev_a[False] < 0.04, \
+        (f"fluchtende Kerne: die Flächen-Mündung muss den einteiligen "
+         f"Löser treffen ({dev_a[False]:.3f})")
+    assert dev_a[True] > 0.2, \
+        (f"die Serien-Mündung muss den Durchgang sperren — sonst trennt "
+         f"der Grenzfall die Formen nicht ({dev_a[True]:.3f})")
+    # b) versetzte Kerne
+    om70 = 2.0 * np.pi * np.array([1000.0, 10000.0])
+
+    def _x(serie, mund=True):
+        MicrophoneCapsule._MUENDUNG_ZWISCHEN_SERIE = serie
+        MicrophoneCapsule._MUENDUNG = mund
+        c = MicrophoneCapsule(**_K67_3D, half_rotation_deg=None)
+        return np.array(c._solve_3d(om70, want_rear=True, weight="volume"))
+    flaeche, serie_, ohne = _x(False), _x(True), _x(False, mund=False)
+    dev_b = float(np.max(np.abs(flaeche / serie_ - 1.0)))
+    wirkung = float(np.min(np.abs(serie_ / ohne - 1.0)))
+    assert wirkung > 0.03, \
+        f"die Mündung im Zwischenspalt muss wirken ({wirkung:.3f})"
+    assert dev_b < 0.2 * wirkung, \
+        (f"versetzte Kerne: Flächen- und Serien-Mündung müssen sich "
+         f"treffen ({dev_b:.4f} bei Wirkung {wirkung:.3f})")
+    stand.wert("flaeche_zu_serie_versetzt", dev_b / wirkung, "",
+               "K67 3D versetzt: |Fläche/Serie − 1| / Wirkung")
+    print(f"Zwischenspalt-Mündung im 3D-Löser: fluchtend 5 µm Fläche "
+          f"{100 * dev_a[False]:.2f} %, Serie {100 * dev_a[True]:.0f} % "
+          f"vom einteiligen Löser; versetzt Fläche/Serie "
+          f"{100 * dev_b:.2f} % bei {100 * wirkung:.1f} % Wirkung  OK")

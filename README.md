@@ -246,9 +246,9 @@ Markierungen: `slow` (über etwa 10 s), `feld3d` (3D-Feldlöser), `bem`
 Klassenschalter wie `MicrophoneCapsule._MASS_EXACT` werden nach jedem
 Test zurückgesetzt, auch wenn er scheitert.
 
-Laufzeit auf 4 Kernen: alle Gegenproben etwa 3 Minuten, die schnelle
-Stufe ohne die `slow`-Proben (32, 41, 43, 57, 60, 64, 66b, 67 und 68)
-gut 2 Minuten (gemessen in einer Cloud-Sitzung). Vor Gegenprobe 57 (LU-Zerlegung des 3D-Lösers) waren es knapp
+Laufzeit auf 4 Kernen: alle Gegenproben knapp 4 Minuten, die schnelle
+Stufe ohne die `slow`-Proben (32, 41, 43, 57, 60, 64, 66b, 67, 68 und
+70 im 3D-Löser) gut 2 Minuten (gemessen in einer Cloud-Sitzung). Vor Gegenprobe 57 (LU-Zerlegung des 3D-Lösers) waren es knapp
 3 Minuten. Die Gegenproben 22, 23 und 48 sind
 in unabhängige Teilprüfungen aufgeteilt (22a–e, 23a–f, 48a–g3), die
 parallel laufen; einzeln aufgerufen sind die meisten Teile in Sekunden
@@ -325,7 +325,7 @@ geschlossene Rückseite und Doppel-Backplate im quasistatischen Tiefton
 Vorher-Werte (Gegenproben 54, 55) bleiben `assert`s, denn sie belegen,
 dass eine Korrektur genau den früheren Befund erklärt.
 
-Die Basis umfasst 106 Werte aus 32 Gegenproben, davon 10 Sperrklinken.
+Die Basis umfasst 114 Werte aus 32 Gegenproben, davon 12 Sperrklinken.
 Der Prüfrahmen selbst hat eine Gegenprobe (`tests/test_stand_werte.py`).
 
 ## Offene Punkte
@@ -366,7 +366,7 @@ Schreiben.
      18,6 µm, Lochkreis 2,03 statt 1,70 mm). Am 4146 liegen 2D 0,70
      und 3D 0,83 dB daneben (`gp38.rms_2d_4146_db`; vor Gegenprobe 67
      0,87/0,73 dB, mit der Spalt-Mündung und vor dem Mittelloch-Fix
-     0,70/0,90 dB, s. Punkt 9).
+     0,70/0,90 dB, s. Punkt 8).
 
 2. **Resonanzlage gegen die FEM (Gegenprobe 32): aufgeklärt, Rest
    offen.** Die 10 % Abstand waren zum größten Teil ein Fehler im
@@ -436,15 +436,12 @@ Schreiben.
    bleibt die Niere flach (317 Hz: 2D −3,1, 3D −3,7 dB), mit Freistich
    über allen Lochkreisen wird sie tief. Den früheren 2D-Treffer gab ein
    Schalter, der allen Durchgangslöchern die entlastete Engstelle gab,
-   sobald eines im Freistich lag. Vermutet sind angefaste Mündungen,
-   die die Zeichnung nicht bemaßt (s. Geometriefragen). Zurückgestellt:
-   im Debenham-Modell selbst sind erst Ungereimtheiten zu klären.
-7. **Freistich bei gleichverteilten Löchern.** Derselbe Schalter
-   entlastet bei GLEICHVERTEILTEN Löchern weiter alle Mündungen, sobald
-   der Freistich irgendeine Zelle berührt (Lochkreise rechnet das
-   Makroelement seit Gegenprobe 60 örtlich). Kein Beispielprojekt ist
-   betroffen; richtig wäre der Anteil der Löcher im Freistich.
-8. **Freifeldkorrektur der 4134 im Hochton (Gegenprobe 64).** Gegen die
+   sobald eines im Freistich lag (seit Gegenprobe 69 ganz ersetzt: jede
+   Mündung sieht den Spalt an ihrem Ort). Vermutet sind angefaste
+   Mündungen, die die Zeichnung nicht bemaßt (s. Geometriefragen).
+   Zurückgestellt: im Debenham-Modell selbst sind erst Ungereimtheiten zu
+   klären.
+7. **Freifeldkorrektur der 4134 im Hochton (Gegenprobe 64).** Gegen die
    NBS-Messung (4134 ohne Gitter) trifft das BEM der flachen Stirnfläche
    den Tiefton auf 0,12 dB, liegt aber im Hochton bis 0,8 dB darüber
    (`gp64.rms_bem_gegen_nbs` 0,53 dB, vor Gegenprobe 65 0,58 dB).
@@ -454,7 +451,7 @@ Schreiben.
    Strahlungslast steckt seit Gegenprobe 65 richtig nur im Freifeldgang.
    Offen sind die reale Stirnform ohne Gitter (Gewinde, Fase,
    Klemmring) und der Messstab (Vorverstärker ⌀12,7 mm).
-9. **Aktuatorlast (Gegenprobe 65).** Zuckerwars Fig. 6/7 und
+8. **Aktuatorlast (Gegenprobe 65).** Zuckerwars Fig. 6/7 und
    vermutlich auch B&Ks Messmittel sind Aktuatormessungen. Der Aktuator
    belastet die Membran (Luft zwischen Gitter und Membran, Strömung
    durch die Schlitze); Capsim vergleicht dagegen den lastfreien
@@ -482,7 +479,7 @@ Schreiben.
   zugeklappter „Hinweis“ am Seitenende). Weiche Großmembran-Kapseln
   liegen fast immer im
   Warnbereich. Bei der K67 liegen 2D und 3D auf Achse bis 3,2 dB
-  (8 kHz) auseinander, mit einem Tieftonversatz von 1,4 dB, den f_hom
+  (8 kHz) auseinander, mit einem Tieftonversatz von 1,3 dB, den f_hom
   nicht erklärt (`gp22e.empf_3d_zu_2d`, Zwischenspalt-Geometrie).
 - **Lochkreise im 2D-Feld (Makroelement, Gegenprobe 60):** statisch
   exakt; dynamisch gilt die Speicherung je Zelle über das Zellmittel des
@@ -499,15 +496,17 @@ Schreiben.
   Ab 1 % Abweichung der Grundfrequenz gegen die Platte warnt das Modell
   (ohne Pfosten λ ≈ 0,06), ab einer Randschicht über ein Viertel der
   Membranbreite bricht es ab.
-- **Spalt-Mündung (Gegenprobe 67):** an allen MEMBRANseitigen
-  Mündungen (Durchgangs-, Sack-, Stufenbohrung; 1D, 2D, 3D). Die
-  Mündungen in den membranlosen K67-Zwischenspalt und in den
-  K103-Spacer tragen sie noch nicht (dort Škvor-Halbzelle bzw.
-  Flanschmasse wie bisher). Gerechnet für die von der Membran
+- **Spalt-Mündung (Gegenproben 67, 70):** an allen MEMBRANseitigen
+  Mündungen (Durchgangs-, Sack-, Stufenbohrung; 1D, 2D, 3D) und seit
+  Gegenprobe 70 auch in den membranlosen Spalten (K67-Zwischenspalt,
+  K103-Spacer beidseitig, q = 0). Gerechnet für die von der Membran
   getriebene Zelle; strömt Luft bei ruhender Membran von hinten durch
   die Löcher, ist der Fehler von der Ordnung q·ΔZ (q
   Lochflächenanteil). Die Stufenbohrung trägt sie wie den Zellterm in
-  beiden Zweigen der Senkung. Über h/a = 2 geklemmt.
+  beiden Zweigen der Senkung. Über h/a = 2 geklemmt. Im
+  K67-Zwischenspalt legt 1D/2D sie je Loch in Serie und setzt damit
+  versetzte Kerne voraus (wie schon die Škvor-Halbzelle); fluchtende
+  Kerne kann nur der 3D-Löser, der sie auf die Filmflächen legt.
 - **Elektrode und Einmodenbild (Gegenprobe 68):** die Kette wandelt die
   Modenamplitude mit Θ in Spannung; im 3D-Feld sieht die Spannung die
   Auslenkung nur über der Elektrode, die über den Löchern fehlt. Unter
@@ -543,10 +542,14 @@ Messungen der realen Kapsel.
 
 - **K67-Kernlage (Gegenprobe 22e):** wie die Kerne beider
   Elektrodenhälften im 50-µm-Zwischenspalt zueinander liegen, ist nicht
-  dokumentiert und bestimmt die Tiefe der Auslöschung: global 9°/12°
-  verdreht −18,6/−36,9 dB bei 180° und 1 kHz (`gp22e.ausloeschung_9grad`,
-  `…_12grad`), das 2D-Modell −28,1 dB dazwischen, vollständig versetzt
-  −17 dB. `half_rotation_deg` stellt sie ein.
+  dokumentiert und bestimmt die Tiefe der Auslöschung: global 9°/10,5°/
+  12° verdreht −23,2/−25,0/−22,6 dB bei 180° und 1 kHz
+  (`gp22e.ausloeschung_9grad`, `…_12grad`), vollständig versetzt
+  −14,6 dB, das 2D-Modell −21,7 dB. Seit der Spalt-Mündung im
+  Zwischenspalt (Gegenprobe 70) ist die Abhängigkeit flacher (vorher
+  9°/12° −20,4/−31,0 dB, 2D −26,4 dB): die Mündung legt vor jeden
+  Querweg einen Widerstand, der von der Kernlage nicht abhängt.
+  `half_rotation_deg` stellt sie ein.
 - **Debenham-Mündungsfasen:** s. Punkt 6 oben.
 - **K103:** die inneren Maße sind nicht veröffentlicht; die Demo ist
   eine Vorlage zum Abstimmen und zurzeit keine Niere (Laufzeitverhältnis
@@ -602,10 +605,14 @@ die Membranen und definieren die ehrliche externe Distanz
 **2D-Feldmodell** (`squeeze_2d = true`) und dem vermessenen
 Kapselkopf-Durchmesser als Beugungskörper. Ergebnis mit den nominellen
 inneren Maßen: Ruhekapazität C₀ = 50,0 pF (trifft den nachgemessenen
-Wert), Niere **−6,0/−15,5/−28,1 dB @ 90/135/180° (1 kHz)** — praktisch
-die publizierten U87-Werte (−6/−17/−26 dB) —, Minimum bei 180° von
-250 Hz bis 2 kHz, glatter Präsenzpeak +5,4 dB @ 13,9 kHz (gegen 1 kHz,
-roh), Empfindlichkeit 20,1 mV/Pa. **Wichtig für Datenblatt-Vergleiche:** das
+Wert), Niere **−5,5/−13,4/−21,7 dB @ 90/135/180° (1 kHz)**, Minimum bei
+180° von 250 Hz bis 2 kHz, glatter Präsenzpeak +5,2 dB @ 13,5 kHz (gegen
+1 kHz, roh), Empfindlichkeit 19,1 mV/Pa. Bis Gegenprobe 69 waren es
+−5,9/−15,0/−26,4 dB — praktisch die publizierten U87-Werte
+(−6/−17/−26 dB) — und 19,9 mV/Pa; seither trägt auch die Mündung der
+Kerne in den Zwischenspalt ihre Umlenkung (Gegenprobe 70). Wie tief die
+Niere der realen Kapsel ist, hängt an der nicht dokumentierten Lage der
+Kerne (s. „Geometriefragen“). **Wichtig für Datenblatt-Vergleiche:** das
 Modell rechnet die **nackte Kapsel**. Die K67 ist bewusst hell ausgelegt
 („Pre-Emphasis"), und die U87-Elektronik nimmt das über Gegenkopplung
 wieder heraus („De-Emphasis"); dazu kommt der nicht modellierte Korb.
@@ -656,7 +663,8 @@ Parametern** — es gibt keinen Fit-Koeffizienten:
 Mit beiden Korrekturen ist die Nullstelle bei 180° **unabhängig von
 Membranresonanz und Polarisationsspannung** (im Testlauf verankert), und
 die nominelle K67 erreicht die publizierte Tiefe (−26 dB @ 180°/1 kHz)
-ohne jede Kalibrierung. Der aktive Membrandurchmesser (26 mm) und der
+ohne jede Kalibrierung (bis Gegenprobe 69; mit der Spalt-Mündung im
+Zwischenspalt −21,7 dB, s. Gegenprobe 70). Der aktive Membrandurchmesser (26 mm) und der
 Außendurchmesser inklusive Klemmring (34 mm K67 / 32 mm Debenham)
 bleiben getrennte Größen: `membrane_diameter` bzw.
 `body_diameter` + `clamp_ring_width`.
@@ -959,6 +967,15 @@ ehrliche Preis. Auch gegenüber dem **3D-Feldlöser**, der die diskreten
 Löcher auflöst und deshalb Referenz ist, rückt das 2D-Modell näher:
 RMS-Abweichung des Richtdiagramms 0,83 → 0,59 dB (Debenham) und
 1,13 → 0,99 dB (Nieren-Single).
+
+*Nachtrag Gegenprobe 70:* mit der Spalt-Mündung auch im membranlosen
+Zwischenspalt liegt die K67 bei −5,5/−13,4/**−21,7** dB und 19,1 mV/Pa,
+das Minimum weiter bei 180°. Geprüft bleibt das Minimum bei 180°; die
+Tiefe ist seither ein Stand-Wert (`gp30.k67_180grad`) statt
+„< −25 dB“ — die alte Grenze lehnte sich an die publizierten −26 dB an
+und hielt nur, solange die Umlenkung im Zwischenspalt fehlte. Wie tief
+die reale Kapsel auslöscht, hängt an der nicht dokumentierten Kernlage
+(Gegenprobe 22e).
 
 **Drei Gegenproben mussten angepasst werden** (17a, 17c, 24) — alle drei
 kodierten abgelesene Werte des alten Simulationszustands, keine
@@ -2378,7 +2395,7 @@ Druckgang ohne Strahlungslast — vorher 0,58 dB RMS mit dem BEM):
 - a) Tiefton: BEM trifft die Messung innerhalb ihrer Unsicherheit
   (0,16 dB) und bis 2,5 kHz Matsuis Theorie auf 0,05 dB.
 - b) Hochton: BEM liegt bis 0,8 dB darüber; Sperrklinke
-  `gp64.rms_bem_gegen_nbs` (Ursachen offen, s. „Offene Punkte“ 8).
+  `gp64.rms_bem_gegen_nbs` (Ursachen offen, s. „Offene Punkte“ 7).
 - c) Kugel: Stand-Werte; geprüft wird die Richtung (BEM mindestens
   doppelt so gut, Kugel ab 10 kHz zu niedrig).
 - d) `pressure_response()` der Freifeldkapsel ist exakt der Druckgang
@@ -2468,7 +2485,7 @@ des Projekts): die 2D-Abweichung gegen die FEM in Gegenprobe 59
 (0,63 → 0,87 dB). Beide alten Werte enthielten die Last, die den
 Hochtonüberschuss des 2D-Modells verdeckte; das 3D-Modell trifft beide
 Referenzen ohne sie besser. Die Aktuatorlast selbst ist offen („Offene
-Punkte“ 9).
+Punkte“ 8).
 
 ### Sprachen der Oberfläche (Gegenprobe 66)
 
@@ -2596,6 +2613,92 @@ Die Filmvergleiche laufen jetzt über `filmwiderstand_3d_zu_2d` in
 `tests/basis.py` (Volumen der ganzen Membran, ohne Beugung) und geben
 die Spannung getrennt aus.
 
+### Freistich am Ort der Mündung (Gegenprobe 69)
+
+Ein Freistich (Clearance-Ring) vertieft den Spalt nur in einem Ring.
+Das 2D-Feld setzte bis hier ein Flag, sobald irgendeine Mündung im
+Freistich lag, und gab dann ALLEN Durchgangslöchern die entlastete
+Engstelle (Zellterm) und seit Gegenprobe 67 auch die entlastete
+Spalt-Mündung — bei gleichverteilten Löchern allen, sobald der
+Freistich eine Zelle berührte, bei Lochkreisen auch denen weit weg vom
+Freistich (den Film am Lochkreis rechnete das Makroelement schon
+örtlich, die Mündung nicht).
+
+Jetzt sieht jede Mündung den Spalt an ihrem Ort: gleichverteilte
+Löcher je Zelle (Freistich der Zelle, Durchbiegung wie bisher über das
+dichtegewichtete Mittel), Lochkreise am Kreisradius (Freistich und
+Durchbiegung dort). Geprüft:
+
+- **Grenzfall:** ein Freistich über die ganze Platte ist ein größerer
+  Spalt — das Zweitor gleicht dem der Kapsel mit h + Tiefe auf 10⁻⁹,
+  gleichverteilt und am Lochkreis.
+- **Örtlich:** mit einem Freistich nur am Rand sehen gleichverteilte
+  Mündungen h und h + t, ein Lochkreis innen nur h (die Spalt-Mündung
+  wird dafür im Test protokolliert).
+
+Wirkung: Debenham (Lochkreise, Freistich am Rand) interne Resonanz
+2957 → 3062 Hz (`gp18.f_h_debenham`), Laufzeitverhältnis mit Freistich
+5,32 → 5,40; an den B&K-Kapseln (Lochkreis, polarisiert) zählt nur die
+Durchbiegung am Kreisradius statt im Mittel (Pegel ≤ 0,02 dB). Damit ist der
+frühere offene Punkt „Freistich bei gleichverteilten Löchern“ erledigt.
+
+### Portseitige Mündung nach Bauform (Gegenprobe 70)
+
+Bis hier trug jede Durchgangsbohrung portseitig eine
+Freifeld-Flanschmündung (0,85·r mit Fok-Faktor und Sampson-Widerstand).
+Das stimmt nur, wo die Bohrung in ein großes Volumen (Hohlraum,
+Laufzeitglied, Gewebe) oder ins Schallfeld mündet. `_portmuendung`
+entscheidet jetzt nach Bauform:
+
+- **großes Volumen oder Freifeld:** Flansch wie bisher — die neue
+  Aufteilung (Rohr + Portmündung) gleicht der alten Form auf 10⁻¹⁶,
+  gerade und gestuft;
+- **dünner Spalt ohne Membran** (K67-Zwischenspalt, K103-Spacer): die
+  Spalt-Mündung der Gegenprobe 67 mit q = 0 (über der Öffnung liegt
+  keine Membran). Im Spacer gilt sie auch für die Löcher der
+  Rückplatte, die von der anderen Seite in denselben Film münden;
+- **einteilige Mittelelektrode** (Doppelmembran ohne Zwischenspalt):
+  keine — bis hier saßen zwei Freifeld-Mündungen mitten im Rohr. Jetzt
+  sind zwei Plattenhälften exakt das Rohr durch die volle Dicke, wie im
+  3D-Löser.
+
+**Im 3D-Löser** ist der Zwischenspalt aufgelöst. Fluchten die Kerne,
+strömt die Luft von Loch zu Loch, ohne durch den Film umzulenken; die
+Mündung je Loch in Serie (wie in 1D/2D) würde diesen Durchgang sperren.
+Sie sitzt deshalb auf den **Filmflächen** um jede Mündung: jede Fläche
+zwischen Mündungs- und Filmzelle bekommt die Zusatzlänge Δ = z_ff/Z′_f,
+gewichtet mit W/(2π·r) (W die Summe der Flächenbreiten um die Mündung
+auf der Treppe), so dass alle Flächen zusammen genau z_ff tragen.
+Geprüft (`_MUENDUNG_ZWISCHEN_SERIE` schaltet zum Vergleich die
+Serienform ein):
+
+- **fluchtend** (Grenzfall der Gegenprobe 22a, 5 µm): Flächenform
+  0,13 % vom einteiligen Löser, Serienform 68 % — der Grenzfall trennt
+  beide scharf;
+- **versetzt** (alle Luft durch den Film): Flächen- und Serienform auf
+  0,5 % gleich (fein 0,8 %) bei 7–14 % Wirkung der Mündung. Der Rest
+  ist die Verteilung selbst: auf Flächen zählt jede ihren Fluss im
+  Quadrat, Σ z_k·q_k² ≥ z_ff·Q² (Cauchy-Schwarz, Gleichheit bei
+  gleichmäßigem Abfluss); die Flächenform wirkt in allen Größen etwas
+  stärker (`gp70.flaeche_zu_serie_versetzt` 0,07 der Wirkung).
+
+**Wirkung.** K67 (2D, 1 kHz, 180°) −26,4 → −21,7 dB
+(`gp07.niere_60v`; 20 V −26,8 → −22,2 dB), interne/externe Laufzeit
+1,075 → 1,175 (`gp17.k67_verhaeltnis`; mit 45-µm-Spacer 1,344 →
+1,459), Präsenzanhebung 4,9 → 5,2 dB, Empfindlichkeit 19,9 →
+19,1 mV/Pa. Im 3D-Löser wird die Abhängigkeit der Auslöschung von der
+Kernlage flacher (s. „Geometriefragen“). K103 und die übrigen
+Doppelmembran-Proben ändern sich um ≤ 0,2 %, Einmembran-Kapseln ohne
+Spacer gar nicht.
+
+**Bewusst geändert (Entscheidung des Projekts):** Gegenprobe 30 prüft
+weiter das Minimum bei 180°, die Tiefe ist Stand-Wert statt
+„< −25 dB“. Gegenprobe 22e prüft weiter, DASS die Auslöschung von der
+Kernlage abhängt: 12° muss jetzt 3 dB statt 8 dB tiefer liegen als
+vollständig versetzt — ein Vielfaches der Gitterunsicherheit (grob/fein
+≤ 0,5 dB); gemessen sind 7,9 dB (`gp22e.abstand_12grad_versetzt`). Beide
+alten Grenzen hielten nur ohne die Umlenkung im Zwischenspalt.
+
 ## Verlustmechanismen (vollständig erfasst)
 
 Neben Zwikker–Kosten-Rohrreibung und Škvor-Spaltfilm rechnet das
@@ -2692,7 +2795,7 @@ beschreiben:
   Platte 1,029 mm, Lochkreis 3,4 mm, offener Ring 0,86 × 0,30 mm zur
   Rückkammer, 200 V). Gegen die FEM: 2D 0,31 dB, 3D 0,06 dB RMS über
   1–20 kHz; gegen B&Ks Messmittel 3D 0,37 dB RMS (Aktuatorlast nicht
-  modelliert, s. „Offene Punkte“ 9).
+  modelliert, s. „Offene Punkte“ 8).
 - *Zuckerwar 1978, Tab. I* (`_BK38["4134"]`, Gegenproben 38, 52, 54,
   58, 62): der Prüfling seiner Messung (Spalt 20,77 µm, Platte
   0,843 mm, Lochkreis 4,064 mm, Randschlitz 0,838 × 0,3048 mm, 28 V).

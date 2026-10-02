@@ -976,8 +976,16 @@ class MicrophoneCapsule:
     # (bis an den Lochrand) und voll entwickeltem Rohr fehlte die Umlenkung
     # selbst — Dreitor aus der Stokes-Zelle, s. _muendung_spalt. Wirkt an
     # allen membranseitigen Mündungen (Durchgangs-, Sack-, Stufenbohrung;
-    # 1D, 2D, 3D). Abschaltbar nur für den Vergleich.
+    # 1D, 2D, 3D) und seit Gegenprobe 70 auch in den membranlosen
+    # Spalten (K67-Zwischenspalt, K103-Spacer; s. _portmuendung).
+    # Abschaltbar nur für den Vergleich.
     _MUENDUNG = True
+    # Zwischenspalt der K67 im 3D-Löser (Gegenprobe 70): die Mündung sitzt
+    # auf den FILMFLÄCHEN um jede Mündung (nur der Filmzufluss lenkt um).
+    # True legt sie stattdessen je Loch in Serie wie im 1D/2D-Pfad — nur
+    # für den Vergleich: das sperrt bei fluchtenden Kernen den Durchgang
+    # von Loch zu Loch, den es dort gar nicht gibt.
+    _MUENDUNG_ZWISCHEN_SERIE = False
 
     # Nullstellen von J0 — die axialsymmetrischen (0,m)-Membranmoden.
     # Konstanten, deshalb ohne SciPy hinterlegt.
@@ -1706,14 +1714,12 @@ class MicrophoneCapsule:
         self._fld_dens_bh = _hole_density(self._bh_rings, self.n_bh)
 
         # CLEARANCE-RING auf dem Feldgitter (s. __init__): Relief-Karte
-        # für breite Ringe, Stub-Zelle für schmale; Flags, ob Loch-
-        # Mündungen im Relief liegen (dann entlastete Engstelle).
+        # für breite Ringe, Stub-Zelle für schmale. Die Loch-Mündungen im
+        # Relief sehen dessen Spalt ÖRTLICH, je Zelle bzw. je Lochkreis
+        # (s. _gap_field_2port; bis Gegenprobe 68 entlastete ein Flag
+        # alle Mündungen, sobald eine im Relief lag).
         self._clr_relief, self._clr_stub_cell = self._clearance_on_grid(
             r_c, dr, r0)
-        mask = self._clr_relief > 0.0
-        thr = 0.5 / float(np.sum(self._fld_area))
-        self._clr_th_relieved = bool(np.any(mask & (self._fld_dens_th > thr)))
-        self._clr_bh_relieved = bool(np.any(mask & (self._fld_dens_bh > thr)))
 
         # LOCHKREISE ALS MAKROELEMENTE (Gegenprobe 60, s. _RING_MAKRO)
         self._lochband_layout(r_f, dr, r0, N)
@@ -3283,23 +3289,57 @@ class MicrophoneCapsule:
             Z_end = 1j * omega * RHO0 * (0.85 * self.r_bh) / S
         return (Z_stub + Z_end) / count
 
-    def _through_hole_impedance(self, omega, count, radiates=False):
+    def _portmuendung(self, omega, vorn=False):
+        """Portseitige (membranferne) Mündung EINES Durchgangslochs
+        (Gegenprobe 70). Wohin die Bohrung mündet, entscheidet die Bauform:
+
+          * großes Volumen (Hohlraum, Laufzeitglied, Gewebe) oder Freifeld
+            — angeflanschte Mündung: Masse 0.85·r mit Fok-Array-Faktor und
+            viskoser Mündungswiderstand (Sampson, Zusatzlänge 3πr/16);
+          * dünner Spalt OHNE Membran (K67-Zwischenspalt, K103-Spacer) —
+            die Spalt-Mündung (:meth:`_muendung_spalt`, q = 0: über der
+            Öffnung liegt keine Membran);
+          * einteilige Mittelelektrode (dual_diaphragm, center_gap = 0) —
+            keine: die Bohrung läuft durch, jede Plattenhälfte trägt ihr
+            Rohrstück, und die Gegenseite hat ihre eigene Spalt-Mündung.
+
+        Bis Gegenprobe 69 stand hier immer die Flanschmündung; bei der
+        einteiligen Platte saßen damit zwei Freifeld-Mündungen mitten im
+        Rohr, in Zwischenspalt und Spacer Freifeld statt Film (der
+        3D-Löser rechnete schon ohne sie). ``vorn``: vordere Backplate der
+        'dual'-Bauform, deren Port das Schallfeld vor der Kapsel ist.
+        """
+        omega = np.asarray(omega, dtype=float)
+        if self.architecture == "dual_diaphragm":
+            if self.h_center > 0.0:
+                return self._muendung_spalt(omega, self.r_th, self.h_center)
+            return np.zeros(omega.shape, dtype=complex)
+        if (not vorn and self.rear_network_enabled and self.h_sp > 0.0):
+            return self._muendung_spalt(omega, self.r_th, self.h_sp)
+        S = np.pi * self.r_th**2
+        return (1j * omega * RHO0 * 0.85 * self.r_th * self._fok_th / S
+                + self._hole_impedance(omega, self.r_th,
+                                       (3.0 * np.pi / 16.0) * self.r_th, 1,
+                                       end_correction=False).real)
+
+    def _through_hole_impedance(self, omega, count, radiates=False,
+                                vorn=False):
         """Serienimpedanz der Durchgangsbohrungen der Backplate.
 
-        Normale Bohrung: Zwikker–Kosten-Rohr über die volle Plattendicke;
-        Flanschmasse und viskoser Mündungswiderstand (Sampson) zählen nur
-        AUSSENSEITIG — spaltseitig liegt die Spalt-Mündung, die
-        _backplate_gap_abcd mit dem Spalt dazusetzt (Gegenprobe 67).
+        Normale Bohrung: Zwikker–Kosten-Rohr über die volle Plattendicke
+        und die portseitige Mündung nach Bauform (:meth:`_portmuendung`);
+        membranseitig liegt die Spalt-Mündung, die _backplate_gap_abcd
+        mit dem Spalt dazusetzt (Gegenprobe 67).
         STUFENBOHRUNG: eng gebohrt ist nur die Restdicke t_bp − d_bh
-        unter der Senkung; die äußere Mündung ist angeflanscht (0.85·r,
-        mit viskosem Anteil), die innere mündet in die weite Senkung —
-        Mündungsmasse UND viskoser Mündungswiderstand tragen dort den
+        unter der Senkung; die innere Mündung öffnet in die weite Senkung
+        — Mündungsmasse UND viskoser Mündungswiderstand tragen dort den
         Karal-Faktor (1 − r_th/r_bh) der Querschnittsstufe. Das
         Senkungsvolumen selbst liegt als eigenes Ketten-Element im
         Serienpfad (s. _backplate_gap_abcd).
         """
         omega = np.asarray(omega, dtype=float)
         S = np.pi * self.r_th**2
+        Z_port = self._portmuendung(omega, vorn)
         if not self.stepped:
             # Mündungsmassen: NUR portseitig (mit Fok-Array-Faktor). Die
             # filmseitige Mündung öffnet in den engen Spalt, nicht in
@@ -3315,20 +3355,17 @@ class MicrophoneCapsule:
             # Gegenprobe 67).
             Z = self._hole_impedance(omega, self.r_th, self.t_bp, count,
                                      end_correction=False,
-                                     radiates=radiates, visc_ends=1)
-            delta = 0.85 * self.r_th * self._fok_th
-            return Z + 1j * omega * RHO0 * delta / (S * count)
+                                     radiates=radiates)
+            return Z + Z_port / count
         Z = self._hole_impedance(omega, self.r_th, self.t_th_eff, count,
-                                 end_correction=False, radiates=radiates,
-                                 visc_ends=1)
+                                 end_correction=False, radiates=radiates)
         karal = 1.0 - self.r_th / self.r_bh
-        # portseitige Mündung mit Fok-Faktor, Stufenmündung mit Karal
-        delta = 0.85 * self.r_th * (self._fok_th + karal)
-        # viskose Mündung an der Stufe (Karal-gewichtete Sampson-Länge)
-        Z_step = self._hole_impedance(
-            omega, self.r_th, (3.0 * np.pi / 16.0) * self.r_th, 1,
-            end_correction=False).real * karal
-        return Z + (1j * omega * RHO0 * delta / S + Z_step) / count
+        # Stufenmündung mit Karal: Masse und viskoser Anteil
+        Z_step = (1j * omega * RHO0 * 0.85 * self.r_th * karal / S
+                  + self._hole_impedance(
+                      omega, self.r_th, (3.0 * np.pi / 16.0) * self.r_th, 1,
+                      end_correction=False).real * karal)
+        return Z + (Z_port + Z_step) / count
 
     def _radiation_impedance_membrane(self, omega):
         """Strahlungsimpedanz der Membranaußenseite — EXAKTER Kolben.
@@ -6067,6 +6104,41 @@ class MicrophoneCapsule:
             f_a = da / np.maximum(da - b_alo - b_ahi, da / cap)
             return f_r, f_a
 
+        def _mund_gewichte(mouths):
+            # Spalt-Mündung auf den FILMFLÄCHEN einer Mündung (Gegenprobe
+            # 70, membranloser Zwischenspalt): jede Fläche zwischen
+            # Mündungs- und Filmzelle bekommt die Zusatzlänge Δ der Mündung
+            # in Serie, gewichtet mit W/(2π·r) — W ist die Summe der
+            # Flächenbreiten um die Mündung (Treppe), so dass die Flächen
+            # zusammen genau z_ff = Δ/(2π·r·K) tragen. Rückgabe: Gewichte
+            # der radialen (i|i+1) und azimutalen (j|j+1) Flächen.
+            owner = np.full(NF, -1)
+            for m, mo in enumerate(mouths):
+                owner[mo[0]] = m
+            own = owner.reshape(Nr, Np_)
+            paare = ((own[:-1, :], own[1:, :],
+                      (r_f[:-1] + 0.5 * dr)[:, None] * dphi
+                      * np.ones((1, Np_))),
+                     (own, np.roll(own, -1, axis=1),
+                      np.full((Nr, Np_), dr)))
+            W = np.zeros(len(mouths))
+            for o1, o2, w in paare:
+                for oo in (o1, o2):
+                    sel = (o1 != o2) & (oo >= 0)
+                    np.add.at(W, oo[sel], w[sel])
+            rm = np.array([mo[3] for mo in mouths])
+            fak = np.where(W > 0.0, W / (2.0 * np.pi * rm), 0.0)
+            out = []
+            for o1, o2, _w in paare:
+                gw = np.zeros(o1.shape)
+                for oo in (o1, o2):
+                    sel = (o1 != o2) & (oo >= 0)
+                    gw[sel] += fak[oo[sel]]
+                out.append(gw)
+            return tuple(out)
+
+        mund_c = _mund_gewichte(film_mouths[2]) if n_films == 3 else None
+
         if self._SHORTLEY_WELLER:
             sw = [_sw_factors(film_mouths[fi]) for fi in range(n_films)]
         else:
@@ -6122,7 +6194,7 @@ class MicrophoneCapsule:
             th_cells=th_cells, bhf_cells=bhf_cells, bhr_cells=bhr_cells,
             th_f=th_f, th_cf=th_cf, th_r=th_r, th_cr=th_cr, G_s=G_s,
             relief=relief, stub_cell=stub_cell, cells_rm=cells_rm,
-            fine_capped=fine_capped, sw=sw,
+            fine_capped=fine_capped, sw=sw, mund_c=mund_c,
             static=(np.concatenate([np.array(rows, dtype=int)] + eq_r),
                     np.concatenate([np.array(cols, dtype=int)] + eq_c),
                     np.concatenate([np.array(vals, dtype=complex)]
@@ -6374,6 +6446,7 @@ class MicrophoneCapsule:
             vals = [svals]
             K_edge_side = {}
             h_side = {}
+            om_a_film = np.array([om])
             # Filmringe (Membranseiten ggf. mit Clearance-Relief; der
             # Zwischenspalt ist eben und hat weder Relief noch Membran)
             for side, h0, mem_off, sgn in sides:
@@ -6401,11 +6474,27 @@ class MicrophoneCapsule:
                 k1_ = off + idx_all[:(Nr - 1) * Np_]
                 k2_ = k1_ + Np_
                 Gv = np.repeat(Gr, Np_) * sw_r.ravel()
+                # Zwischenspalt (K67): Spalt-Mündung auf den Filmflächen
+                # der Mündungen, Zusatzlänge Δ = z_ff/Z'_f (s.
+                # _mund_gewichte, Gegenprobe 70)
+                mund = (g["mund_c"] if side == 2 and self._MUENDUNG
+                        and not self._MUENDUNG_ZWISCHEN_SERIE else None)
+                if mund is not None:
+                    a_c = 0.5 * h0 * np.sqrt(1j * om * RHO0 / MU_AIR)
+                    K_c = h0 / (1j * om * RHO0) * (1.0 - np.tanh(a_c) / a_c)
+                    Delta = complex(self._muendung_spalt(
+                        om_a_film, self.r_th, h0)[0]
+                        * 2.0 * np.pi * self.r_th * K_c)
+                    Gv = Gv / (1.0 + mund[0].ravel() * Delta
+                               * sw_r.ravel() / dr)
                 rows += [k1_, k2_, k1_, k2_]
                 cols += [k2_, k1_, k1_, k2_]
                 vals += [-Gv, -Gv, Gv, Gv]
                 # azimutale Faces
                 Ga = np.repeat(dr / (r_f * dphi) * K, Np_) * sw_a.ravel()
+                if mund is not None:
+                    Ga = Ga / (1.0 + mund[1].ravel() * Delta * sw_a.ravel()
+                               / np.repeat(r_f * dphi, Np_))
                 k1_ = off + idx_all
                 k2_ = off + i_of * Np_ + (idx_all % Np_ + 1) % Np_
                 rows += [k1_, k2_, k1_, k2_]
@@ -6473,43 +6562,41 @@ class MicrophoneCapsule:
             if arch != "dual_diaphragm":
                 # ---- single/dual: Löcher in die Sammelknoten, Knoten-
                 # Abschlüsse aus den Lumped-Ketten -----------------------
-                # Loch-Zweitor Membranfilm -> Knoten. Membranseitige
-                # Mündung löst der Film auf; die knotenseitige trägt
-                # Fok-Mündungsmasse + viskose Mündung (visc_ends=1), wie
-                # im 1D-Pfad (_through_hole_impedance) abzüglich des
-                # filmseitigen Flanschterms.
+                # Loch-Zweitor Membranfilm -> Knoten. Membranseitig die
+                # Spalt-Mündung (s. _y_mund), knotenseitig die Mündung nach
+                # Bauform (_portmuendung, Gegenprobe 70) — wie im 1D-Pfad
+                # (_through_hole_impedance). Bei 'dual' ist der Port der
+                # vorderen Backplate das Schallfeld vor der Kapsel.
                 S_th = np.pi * self.r_th ** 2
                 vents_directly = not self.rear_network_enabled
-                if self.stepped:
-                    gcb, Zccb = self._narrow_duct_propagation(om_a,
-                                                              self.r_bh)
-                    gl = gcb[0] * self.d_bh
-                    ch, sh = np.cosh(gl), np.sinh(gl)
-                    A2, B2 = ch, Zccb[0] * sh
-                    C2, D2 = sh / Zccb[0], ch
-                    karal = 1.0 - self.r_th / self.r_bh
-                    Z_step = (1j * om * RHO0 * 0.85 * self.r_th * karal
-                              / S_th
-                              + self._hole_impedance(
-                                  om_a, self.r_th,
-                                  (3.0 * np.pi / 16.0) * self.r_th, 1,
-                                  end_correction=False)[0].real * karal)
-                    Z_core = self._hole_impedance(om_a, self.r_th,
-                                                  self.t_th_eff, 1,
-                                                  end_correction=False,
-                                                  visc_ends=1)[0]
-                    Zs = (Z_step + Z_core
-                          + 1j * om * RHO0 * 0.85 * self.r_th
-                          * self._fok_th / S_th)
-                    A1, B1 = A2, A2 * Zs + B2
-                    C1, D1 = C2, C2 * Zs + D2
-                else:
+
+                def _kette(vorn_):
+                    Z_port = complex(self._portmuendung(om_a, vorn_)[0])
+                    if self.stepped:
+                        gcb, Zccb = self._narrow_duct_propagation(
+                            om_a, self.r_bh)
+                        gl = gcb[0] * self.d_bh
+                        ch, sh = np.cosh(gl), np.sinh(gl)
+                        A2, B2 = ch, Zccb[0] * sh
+                        C2, D2 = sh / Zccb[0], ch
+                        karal = 1.0 - self.r_th / self.r_bh
+                        Z_step = (1j * om * RHO0 * 0.85 * self.r_th * karal
+                                  / S_th
+                                  + self._hole_impedance(
+                                      om_a, self.r_th,
+                                      (3.0 * np.pi / 16.0) * self.r_th, 1,
+                                      end_correction=False)[0].real * karal)
+                        Z_core = self._hole_impedance(
+                            om_a, self.r_th, self.t_th_eff, 1,
+                            end_correction=False)[0]
+                        Zs = Z_step + Z_core + Z_port
+                        return A2, A2 * Zs + B2, C2, C2 * Zs + D2
                     Zs = (self._hole_impedance(om_a, self.r_th, self.t_bp,
-                                               1, end_correction=False,
-                                               visc_ends=1)[0]
-                          + 1j * om * RHO0 * 0.85 * self.r_th
-                          * self._fok_th / S_th)
-                    A1, B1, C1, D1 = 1.0, Zs, 0.0, 1.0
+                                               1, end_correction=False)[0]
+                          + Z_port)
+                    return 1.0, Zs, 0.0, 1.0
+                kette_hinten = _kette(False)
+                kette_vorn = _kette(True) if arch == "dual" else kette_hinten
                 node1 = np.array([0])
                 # single: Film 0 -> Knoten 1 (Rückseite); dual: Film 0 ->
                 # Knoten 0 (Front), Film 1 -> Knoten 1 (Rückseite). Je Loch
@@ -6517,18 +6604,18 @@ class MicrophoneCapsule:
                 if arch == "single":
                     for cf in g["th_f"]:
                         Y11, Y12, Y22 = _y_mund(
-                            A1, B1, C1, D1, _mund(cf, 0, r_mouth3, q_th3))
+                            *kette_hinten, _mund(cf, 0, r_mouth3, q_th3))
                         _two_port_stamp(rows, cols, vals, cf, 0,
                                         node1, off_n + 1, Y11, Y12, Y22)
                 else:
                     for cf in g["th_f"]:
                         Y11, Y12, Y22 = _y_mund(
-                            A1, B1, C1, D1, _mund(cf, 0, r_mouth3, q_th3))
+                            *kette_vorn, _mund(cf, 0, r_mouth3, q_th3))
                         _two_port_stamp(rows, cols, vals, cf, 0,
                                         node1, off_n + 0, Y11, Y12, Y22)
                     for cr_ in g["th_r"]:
                         Y11, Y12, Y22 = _y_mund(
-                            A1, B1, C1, D1, _mund(cr_, 1, r_mouth3, q_th3))
+                            *kette_hinten, _mund(cr_, 1, r_mouth3, q_th3))
                         _two_port_stamp(rows, cols, vals, cr_, NF,
                                         node1, off_n + 1, Y11, Y12, Y22)
                 if ring_sides:
@@ -6651,9 +6738,19 @@ class MicrophoneCapsule:
                     Zs = self._hole_impedance(om_a, self.r_th, self.t_bp,
                                               1, end_correction=False)[0]
                     A1, B1, C1, D1 = 1.0, Zs, 0.0, 1.0
-                # Spalt-Mündung an der MEMBRANseite (Gegenprobe 67); die
-                # Mündung in den membranlosen Zwischenspalt bleibt ohne
-                # (dort fehlt die Membran über der Öffnung, s. README)
+                # Zwischenspaltseitig KEINE Mündung in Serie: der Film
+                # ist hier aufgelöst, und bei fluchtenden Kernen strömt die
+                # Luft von Loch zu Loch, ohne durch den Film umzulenken —
+                # die Spalt-Mündung gilt nur dem Filmzufluss und sitzt
+                # deshalb auf den Filmflächen der Mündungen (_mund_gewichte,
+                # Gegenprobe 70; der 1D/2D-Pfad setzt versetzte Lochbilder
+                # voraus und trägt sie in Serie). Membranseitig wie überall
+                # (Gegenprobe 67).
+                if self._MUENDUNG_ZWISCHEN_SERIE:
+                    dZc = complex(self._muendung_spalt(
+                        om_a, self.r_th, self.h_center)[0])
+                    # Serie am Ausgang: T·[[1, dZ], [0, 1]]
+                    B1, D1 = B1 + dZc * A1, D1 + dZc * C1
                 for cf, cc in zip(g["th_f"], g["th_cf"]):
                     Y11, Y12, Y22 = _y_mund(
                         A1, B1, C1, D1, _mund(cf, 0, r_mouth3, q_th3))
@@ -6961,7 +7058,7 @@ class MicrophoneCapsule:
         beide Pfade sind damit konsistent."""
         return np.array([[T[1, 1], T[0, 1]], [T[1, 0], T[0, 0]]])
 
-    def _gap_field_2port(self, omega, h_film=None, sag_w0=0.0):
+    def _gap_field_2port(self, omega, h_film=None, sag_w0=0.0, vorn=False):
         """Zweitor des Luftspalts aus der modifizierten Reynolds-Gleichung.
 
         ``h_film``: nominelle Spalthöhe (Standard: Luftspalt h_gap).
@@ -7086,28 +7183,34 @@ class MicrophoneCapsule:
             K_face[:, N] = K_cell[:, -1]
             K_face[:, 1:N] = 0.5 * (K_cell[:, :-1] + K_cell[:, 1:])
             # Loch-Eintritts-Engstellen am ÖRTLICHEN Spalt der Mündungen:
-            # Relief-Flag wie bisher (voller Freistich-Spalt), zusätzlich
-            # die statische Durchbiegung am dichte-gewichteten Lochort.
+            # der Freistich je Zelle (Gegenprobe 69 — bis dahin entlastete
+            # ein Flag ALLE Mündungen, sobald eine im Relief lag), dazu die
+            # statische Durchbiegung am dichte-gewichteten Lochort.
             def _mean_phi(dens):
                 w = dens * A
                 s = float(np.sum(w))
                 return float(np.sum(shape * w)) / s if s > 0.0 else 0.0
 
-            h_e_th = ((h + self.clearance_ring_depth
-                       if self._clr_th_relieved else h)
-                      - sag_w0 * _mean_phi(dens_th))
-            h_e_bh = ((h + self.clearance_ring_depth
-                       if self._clr_bh_relieved else h)
-                      - sag_w0 * _mean_phi(dens_bh))
-            K_entry_th = _film_props(max(h_e_th, 0.05 * h))[0]
-            K_entry_bh = _film_props(max(h_e_bh, 0.05 * h))[0]
+            h_e_th = np.maximum(h - sag_w0 * _mean_phi(dens_th)
+                                + self._clr_relief, 0.05 * h)
+            h_e_bh = np.maximum(h - sag_w0 * _mean_phi(dens_bh)
+                                + self._clr_relief, 0.05 * h)
+
+            def _K_zellen(h_arr):
+                a_ = 0.5 * h_arr[None, :] * sq[:, None]
+                return (h_arr[None, :] / (1j * omega[:, None] * RHO0)
+                        * (1.0 - np.tanh(a_) / a_))
+            K_entry_th = _K_zellen(h_e_th)                  # (Nf, N)
+            K_entry_bh = _K_zellen(h_e_bh)
+            # Lochkreise (Makroelement): Spalt am Ort des Kreises
+            h_ring = np.maximum(h - sag_w0 * shape + self._clr_relief,
+                                0.05 * h)
         else:
             K_cell = np.broadcast_to(K_f[:, None], (Nf, N))
             c_cell = np.broadcast_to(c_gap[:, None], (Nf, N))
             K_face = np.broadcast_to(K_f[:, None], (Nf, N + 1))
-            K_entry_th = K_f
-            K_entry_bh = K_f
-            h_e_th = h_e_bh = h
+            K_entry_th = K_entry_bh = K_cell
+            h_e_th = h_e_bh = h_ring = np.full(N, h)
         y_ring = np.zeros(Nf, dtype=complex)
         if self._clr_stub_cell is not None:
             r_cst = 0.5 * self.clearance_ring_diameter
@@ -7169,13 +7272,13 @@ class MicrophoneCapsule:
         # dichte) wie ein Blindloch shuntet.
         S_th = np.pi * self.r_th**2
         r_well_th = self.r_bh if self.stepped else self.r_th
-        # Portseite: Mündungsmasse (mit Fok-Array-Wechselwirkung) +
-        # viskoser Mündungswiderstand (Sampson). Ohne Durchgangslöcher
-        # (rein randbelüftete Platte) entfällt der Lochleitwert.
+        # Portseite nach Bauform (s. _portmuendung, Gegenprobe 70). Ohne
+        # Durchgangslöcher (rein randbelüftete Platte) entfällt der
+        # Lochleitwert.
         Z_core = (self._hole_impedance(omega, self.r_th, self.t_th_eff, 1,
-                                       end_correction=False, visc_ends=1)
-                  + 1j * omega * RHO0 * (0.85 * self.r_th * self._fok_th)
-                  / S_th) if self.n_th > 0 else None
+                                       end_correction=False)
+                  + self._portmuendung(omega, vorn)
+                  ) if self.n_th > 0 else None
         if self.stepped:
             # weites Senkungssegment in Serie + Karal-Stufenmündung
             # (Masse und viskoser Anteil; die filmseitige Ausbreitung
@@ -7198,12 +7301,19 @@ class MicrophoneCapsule:
         # der Zellterm; die Stufenbohrung trägt sie, wie ihn, in beiden
         # Zweigen der weiten Senkungsöffnung). Zelle wie im Zellterm:
         # Durchfluss mit den Durchgangslöchern, Aufnahme mit allen Senken.
-        dZ_th = (self._muendung_spalt(omega, r_well_th, h_e_th,
-                                      self._q_zelle(self.n_th, r_well_th))
-                 if self.n_th > 0 else 0.0)
-        dZ_bh = (self._muendung_spalt(omega, self.r_bh, h_e_bh,
-                                      self._q_zelle(n_wells, self.r_bh))
-                 if self.n_bh > 0 else 0.0)
+        # Je Zelle (gleichverteilte Löcher, örtlicher Spalt) und je
+        # Lochkreis (Makroelement, Spalt am Kreis).
+        def _dZ_zellen(r_m, h_arr, q):
+            out = np.empty((Nf, N), dtype=complex)
+            for hv in np.unique(h_arr):
+                out[:, h_arr == hv] = self._muendung_spalt(
+                    omega, r_m, float(hv), q)[:, None]
+            return out
+
+        q_th = self._q_zelle(self.n_th, r_well_th)
+        q_bh = self._q_zelle(n_wells, self.r_bh)
+        Zc_ = Z_core[:, None] if Z_core is not None else None
+        Zs_ = Z_stub1[:, None] if Z_stub1 is not None else None
         makro = self._RING_MAKRO and bool(self._fld_bands)
         if makro:
             # LOCHKREISE ALS MAKROELEMENTE (Gegenprobe 60): die Lochkreise
@@ -7220,37 +7330,41 @@ class MicrophoneCapsule:
             dens_u = live / float(np.sum(live * A))
             g_u = np.zeros(Nf, dtype=complex)
             y_u = np.zeros(Nf, dtype=complex)
+            g_u = np.zeros((Nf, N), dtype=complex)
+            y_u = np.zeros((Nf, N), dtype=complex)
             if n_uni_th > 0:
-                g_u = n_uni_th / (Z_core + _B_of(n_uni_th, r_well_th)
+                dZ_th = _dZ_zellen(r_well_th, h_e_th, q_th)
+                g_u = n_uni_th / (Zc_ + _B_of(n_uni_th, r_well_th)
                                   / (np.pi * K_entry_th) + dZ_th)
                 if self.stepped:
                     y_u = y_u + n_uni_th / (
-                        Z_stub1 + _B_of(n_uni_th + n_uni_bh, self.r_bh)
+                        Zs_ + _B_of(n_uni_th + n_uni_bh, self.r_bh)
                         / (np.pi * K_entry_th) + dZ_th)
             if n_uni_bh > 0:
+                dZ_bh = _dZ_zellen(self.r_bh, h_e_bh, q_bh)
                 y_u = y_u + n_uni_bh / (
-                    Z_stub1 + _B_of(n_uni_th + n_uni_bh, self.r_bh)
+                    Zs_ + _B_of(n_uni_th + n_uni_bh, self.r_bh)
                     / (np.pi * K_entry_bh) + dZ_bh)
-            G_h = g_u[:, None] * dens_u[None, :]
-            Y_bh = y_u[:, None] * dens_u[None, :]
+            G_h = g_u * dens_u[None, :]
+            Y_bh = y_u * dens_u[None, :]
         else:
-            Z_th1 = (Z_core + _cell_B_flow(r_well_th) / (np.pi * K_entry_th)
-                     + dZ_th if self.n_th > 0 else None)
-            g_tot = (self.n_th / Z_th1 if self.n_th > 0
-                     else np.zeros(Nf, dtype=complex))    # Gesamtleitwert (Nf,)
+            # Leitwerte je Zelle (örtlicher Spalt der Mündungen)
+            dZ_th = (_dZ_zellen(r_well_th, h_e_th, q_th)
+                     if self.n_th > 0 else 0.0)
+            dZ_bh = (_dZ_zellen(self.r_bh, h_e_bh, q_bh)
+                     if self.n_bh > 0 else 0.0)
+            G_h = (self.n_th * dens_th[None, :]
+                   / (Zc_ + _cell_B_flow(r_well_th) / (np.pi * K_entry_th)
+                      + dZ_th)
+                   if self.n_th > 0 else np.zeros((Nf, N), dtype=complex))
+            Y_bh = np.zeros((Nf, N), dtype=complex)
             if self.n_bh > 0:
-                y_tot = self.n_bh / (Z_stub1 + _cell_B(self.r_bh)
-                                     / (np.pi * K_entry_bh) + dZ_bh)
-            else:
-                y_tot = np.zeros(Nf, dtype=complex)
+                Y_bh = Y_bh + self.n_bh * dens_bh[None, :] / (
+                    Zs_ + _cell_B(self.r_bh) / (np.pi * K_entry_bh) + dZ_bh)
             if self.stepped:
                 # Senkungsvolumina der Stufenbohrungen (sitzen auf dens_th)
-                y_cb = self.n_th / (Z_stub1 + _cell_B(self.r_bh)
-                                    / (np.pi * K_entry_th) + dZ_th)
-            else:
-                y_cb = np.zeros(Nf, dtype=complex)
-            G_h = g_tot[:, None] * dens_th[None, :]
-            Y_bh = y_tot[:, None] * dens_bh[None, :] + y_cb[:, None] * dens_th[None, :]
+                Y_bh = Y_bh + self.n_th * dens_th[None, :] / (
+                    Zs_ + _cell_B(self.r_bh) / (np.pi * K_entry_th) + dZ_th)
 
         # RANDSPALT (B&K): der Filmrand bei r = a_bp ist nicht mehr dicht.
         # Eine ZUSÄTZLICHE Unbekannte p_rand (Randdruck am Plattenumfang)
@@ -7293,9 +7407,14 @@ class MicrophoneCapsule:
         if makro:
             return self._gap_field_makro(
                 omega, K_cell, K_face, c_cell, G_h, Y_bh, y_ring,
-                Z_core + dZ_th if Z_core is not None else None,
-                None if Z_stub1 is None else
-                {"th": Z_stub1 + dZ_th, "bh": Z_stub1 + dZ_bh},
+                Z_core, Z_stub1, [
+                    self._muendung_spalt(
+                        omega, G["r"],
+                        float(h_ring[int(np.argmin(np.abs(
+                            self._fld_r_c - (0.0 if G["mitte"]
+                                             else G["R"]))))]),
+                        q_th if G["typ"] == "th" else q_bh)
+                    for G in self._fld_ring_groups],
                 Sphi_tot, S_out, q_by,
                 (A_l, B_l, D_l) if ring_open else None)
         T = np.empty((2, 2, Nf), dtype=complex)
@@ -7350,8 +7469,8 @@ class MicrophoneCapsule:
         return T
 
     def _gap_field_makro(self, omega, K_cell, K_face, c_cell, G_h, Y_bh,
-                         y_ring, Z_core, Z_stub1, Sphi_tot, S_out, q_by,
-                         line):
+                         y_ring, Z_core, Z_stub1, dZ_grp, Sphi_tot, S_out,
+                         q_by, line):
         """Zweitor des Spaltfilms mit Lochkreis-MAKROELEMENTEN (Gegenprobe
         60); Filmphysik, Randspalt, Randumgehung und Extraktion wie in
         :meth:`_gap_field_2port`.
@@ -7367,8 +7486,8 @@ class MicrophoneCapsule:
         Mündungen pumpt direkt in den Lochknoten und spürt dessen Druck.
         Durchgangslöcher führen mit n/Z_core zum Rückport (Stufenbohrung:
         Senkungsvolumen n/Z_stub als Nebenschluss), Sacklöcher mit n/Z_stub
-        gegen Masse; Z_core und Z_stub1 ({'th', 'bh'}) tragen bereits die
-        Spalt-Mündung ihrer Öffnung (Gegenprobe 67). Zellen ganz im Mittelloch sind an den Lochknoten
+        gegen Masse; dazu je Lochgruppe die Spalt-Mündung ihrer Öffnung
+        am Spalt des Kreises (dZ_grp, Gegenproben 67, 69). Zellen ganz im Mittelloch sind an den Lochknoten
         gebunden. Dicht gelöst, blockweise über die Frequenzen.
         """
         N = self._fld_N
@@ -7398,11 +7517,11 @@ class MicrophoneCapsule:
         y_gnd = np.zeros((Nf, nG), dtype=complex)
         for gi, G in enumerate(grp):
             if G["typ"] == "th":
-                y_rear[:, gi] = G["n"] / Z_core
+                y_rear[:, gi] = G["n"] / (Z_core + dZ_grp[gi])
                 if self.stepped:
-                    y_gnd[:, gi] = G["n"] / Z_stub1["th"]
+                    y_gnd[:, gi] = G["n"] / (Z_stub1 + dZ_grp[gi])
             else:
-                y_gnd[:, gi] = G["n"] / Z_stub1["bh"]
+                y_gnd[:, gi] = G["n"] / (Z_stub1 + dZ_grp[gi])
         gidx = N + np.arange(nG)
         iz = np.arange(N)
         gg = self._fld_gface_geom
@@ -7495,6 +7614,9 @@ class MicrophoneCapsule:
         Membran; die Kette endet dahinter blockiert.
         """
         h_eff = self.h_gap_front if polarized else self.h_gap
+        # vordere Backplate der 'dual'-Bauform: ihr Port ist das Schallfeld
+        # vor der Kapsel (s. _portmuendung)
+        vorn = self.architecture == "dual" and outside_to_membrane
 
         # 2D-Feldmodell: das komplette Spalt-/Lochnetzwerk kommt aus der
         # Reynolds-Feldlösung (sinnvoll, sobald es einen Durchflussweg
@@ -7505,7 +7627,7 @@ class MicrophoneCapsule:
                                            or self.ring_vent_w > 0.0):
             T = self._gap_field_2port(
                 omega, h_film=self.h_gap,
-                sag_w0=(self.w0_static if polarized else 0.0))
+                sag_w0=(self.w0_static if polarized else 0.0), vorn=vorn)
             if holes_radiate and self.n_th > 0:
                 k = np.asarray(omega, float) / C_AIR
                 S_holes = self.n_th * np.pi * self.r_th**2
@@ -7549,7 +7671,8 @@ class MicrophoneCapsule:
             mats.append(self._abcd_shunt(Y_gap, omega))
             return reduce(self._mmul, mats)
         Z_holes = self._through_hole_impedance(omega, self.n_th,
-                                               radiates=holes_radiate)
+                                               radiates=holes_radiate,
+                                               vorn=vorn)
         # Spalt-Mündung (Gegenprobe 67) an der filmseitigen Öffnung: bei
         # Stufenbohrung die weite Senkung (vor deren Leitung), sonst die
         # Bohrung selbst; Zelle mit allen Senken wie Škvor
@@ -7784,16 +7907,21 @@ class MicrophoneCapsule:
             # (K103-Fall), kommt die Strahlungsimpedanz hinzu. Die äußere
             # Mündung öffnet in Freifeld/Baugruppe -> viskoser Mündungs-
             # widerstand und Fok-Array-Wechselwirkung; die innere liegt
-            # im Spacer-Film (Škvor deckt ab, Flanschmasse wie bisher —
-            # die Spalt-Mündung der Gegenprobe 67 gilt membranseitig; im
-            # membranlosen Spacer fehlt sie noch, s. README).
+            # im Spacer-Film (Škvor-Halbzelle für die Ausbreitung, die
+            # Umlenkung s. unten).
             Z_rp = self._hole_impedance(omega, self.r_rp, self.t_rp,
                                         self.n_rp, end_correction=False,
                                         radiates=self._plate_vents,
                                         visc_ends=1)
             S_rp = np.pi * self.r_rp**2
+            # äußere Mündung angeflanscht (Fok); die innere liegt im
+            # Spacer-Film: dort die Spalt-Mündung ohne Membran (q = 0,
+            # Gegenprobe 70; bis dahin eine Freifeld-Flanschmasse 0.85·r)
+            Z_innen = (self._muendung_spalt(omega, self.r_rp, self.h_sp)
+                       if self.h_sp > 0.0 else
+                       1j * omega * RHO0 * 0.85 * self.r_rp / S_rp)
             Z_rp = Z_rp + (1j * omega * RHO0 * 0.85 * self.r_rp
-                           * (1.0 + self._fok_rp) / (S_rp * self.n_rp))
+                           * self._fok_rp / S_rp + Z_innen) / self.n_rp
             mats.append(self._abcd_series(Z_rp, omega))
 
         # Gewebe hinter der Backplate/Rückplatte (überspannt die Fläche);
