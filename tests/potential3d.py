@@ -17,7 +17,9 @@ Geprüft (``python tests/potential3d.py``): Kugel gegen die exakte
 Lösung 1,5·D (0,5 %), freie Kapselscheibe und Körper koaxial dahinter
 gegen das achsensymmetrische BEM des Modells (≤ 1,2 %). Ergebnis für
 die K67 (34 × 12,28 mm, Membran 27,2 mm, Körper Ø 56 mm): mit dem Körper
-10–15 mm unter dem Kapselrand 37,4–38,6 mm statt 34,7 mm frei.
+10–15 mm unter dem Kapselrand 37,4–38,6 mm statt 34,7 mm frei. Für die
+Laufzeitfrage der K67 ist das nicht die Erklärung — die Kapsel hat ihre
+Niere auch frei (Offene Punkte 9).
 """
 import numpy as np
 

@@ -466,52 +466,52 @@ Schreiben.
    0,46/0,21 dB, 4146 2D 0,70 dB. Gegenprobe 52 d
    grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,5 dB);
    eine hergeleitete Aktuatorlast (Abstand, Schlitzgeometrie) fehlt.
-9. **K67 mit realem Bohrbild und realen Spalten: interne Laufzeit 10 %
-   zu lang — Rest im Außenweg der seitenbesprochenen U87 und in
-   Toleranzen (Gegenprobe 71).** Mit dem aus dem Foto vermessenen
-   Bohrbild (108 Senkungen auf dem 2-mm-Raster, Mitte frei, Hälften um
-   90° verdreht), Randnut, Mittenaussparung und den realen Maßen
+9. **K67 mit realem Bohrbild und realen Spalten: interne Laufzeit ~20 %
+   zu lang (Gegenprobe 71).** Mit dem aus dem Foto vermessenen Bohrbild
+   (108 Senkungen auf dem 2-mm-Raster, Mitte frei, Hälften um 90°
+   verdreht), Randnut, Mittenaussparung und den realen Maßen
    (Zwischenspacer 40 µm, Membranspalt ~50 µm, Hälfte 4,07 mm, Senkung
    3,75 mm, Kerne ohne Fase, Mittelloch verschraubt) ist die interne
-   Laufzeit im 3D-Löser 42,4 mm (feines Gitter). Die d_ext-Kugel gibt
-   18,3 mm (Verhältnis 2,30, 1 kHz −3,0/−5,4/−6,6 dB bei 90/135/180°),
-   der freie Kopf im BEM 35,0 mm (1,21, −4,6/−10,1/−12,7 dB).
-   *Untersucht:*
+   Laufzeit im 3D-Löser 42,4 mm (feines Gitter). Die Kapsel hat ihre
+   Niere auch frei, außerhalb des Gehäuses; maßgeblich ist deshalb der
+   freie Kopf: 35,0 mm (BEM), Verhältnis 1,21, 1 kHz −4,6/−10,1/−12,7 dB
+   bei 90/135/180°. (Die d_ext-Kugel, 18,3 mm, entspricht im BEM einem
+   Körper 7 mm koaxial hinter der Kapsel; sie wurde gewählt, als die
+   interne Laufzeit noch ~17 mm war, Gegenprobe 20.) Die Kapseldicke
+   stimmt: 13,3 mm mit Schraubenköpfen (Nachbau-Datenblatt) gegen
+   12,3 mm ohne. *Untersucht:*
    - **Zerlegung:** die Rückkette zerfällt exakt in Blöcke (D_r =
-     T_rück[1,1]); über 90 % trägt C_vorn·R_Zwischenspalt — das Volumen
-     der Frontsenkungen mal dem Film zwischen den versetzten Kernen. Der
-     40-µm-Spalt verdoppelt R (1/h³): 26,6 → 42 mm.
+     T_rück[1,1]); über 90 % trägt C_vorn·R_Zwischenspalt. Von Hand aus
+     den Maßen: 537 mm³ Senkungen mal dem Schachbrett-Widerstand bei
+     40 µm gibt allein 33,4 mm; dazu das Laden der reinen Sacklöcher über
+     den Frontfilm (~3,4 mm), die Spalt-Mündungen (4,5 mm, 3D) und der
+     Rückfilm (~1 mm) — das Modell ist in sich stimmig.
    - **Zwischenspalt-Film gegengerechnet:** das unendliche Schachbrett
      aus Quellen und Senken im 2-mm-Raster gibt (1/πK)·[ln(p/a) − 0,617]
      je Kernpaar; die zwei Škvor-Halbzellen des 2D-Modells liegen 19 %
      darunter, korrigiert träfe 2D den 3D-Löser (27,5 gegen 27,2 mm bei
-     65/50 µm). Für einen ebenen Spalt mit scharfkantigen 0,6-mm-Kernen
-     ist der Film richtig gerechnet.
+     65/50 µm).
    - **Trägheit fehlt nicht:** Film (exakte Stokes-Lösung in K(ω)),
      Senkungsleitungen, Kerne, Mündungsmassen und Membranen sind
-     enthalten und senken |D_r| schon von 1,27 auf 1,21. Selbst die
+     enthalten und senken |D_r| schon von 1,27 auf 1,21; selbst die
      doppelte Trägheit brächte |D_r| nur auf 1,11 und verlängerte die
-     Phase. Das Problem ist die Phase, nicht der Betrag.
-   - **Hebel im Innern (3D, intern):** Zwischenspalt 42/45/48 µm →
-     40,2/35,8/32,1 mm; Kern 0,7 mm → 38,8 mm; Senkung 3,4 mm → 41,1 mm;
-     Membranspalt 45/55 µm, Polarisation, Mittelbohrungen ≤ 2 %.
-   - **Außenweg der U87:** die d_ext-Kugel entspricht im BEM einem
-     56-mm-Körper 7 mm KOAXIAL hinter der Kapsel (Endbesprechung); sie
-     wurde gewählt, als die interne Laufzeit noch ~17 mm war (Gegenprobe
-     20). Die U87 ist seitenbesprochen: der Körper sitzt UNTER der Kapsel.
-     Eine 3D-Potentialrechnung (`tests/potential3d.py`; geprüft an der
-     Kugel, 0,5 %, und am achsensymmetrischen BEM mit freiem und koaxialem
-     Körper, ≤ 1,2 %) gibt für den Körper 10–15 mm unter dem Kapselrand
-     37,4–38,6 mm statt 34,7 mm frei: +9–11 %. Mit dem Modellwert des
-     freien Kopfes (35,0 mm) sind das ~38,5 mm, das Verhältnis sinkt auf
-     ~1,10.
+     Phase.
+   - **Empfindlichkeiten (3D, intern 43,3 mm grob):** Kern 0,7/0,8 mm →
+     38,8/~31 mm; wirksamer Zwischenspalt 42/45/48 µm → 40,2/35,8/
+     32,1 mm; Senkung Ø 1,25/1,35 mm → 41,6/45,0 mm; Senkungstiefe
+     3,4 mm → 41,1 mm; ohne alle Spalt-Mündungen 38,8 mm; Membranspalt
+     45/55 µm, Polarisation, gebohrte Mitte ≤ 2 %.
+   - **Montage:** ein Körper UNTER der Kapsel (seitenbesprochen)
+     verlängerte den Außenweg um 9–11 % (`tests/potential3d.py`, geprüft
+     an der Kugel und am achsensymmetrischen BEM) — er ist aber nicht die
+     Erklärung, weil die Kapsel frei dieselbe Niere hat.
    - **Tiefe der Null:** auch bei passender Phase bleibt sie bei 1 kHz um
      −16 dB, weil der RC-Phasenschieber den Betrag hebt (|D_r| > 1), der
      Außenweg nicht (|G| = 1,00).
-   Offen: die seitenbesprochene Montage als Körpermodell (3D-BEM über die
-   Frequenz), und die restlichen ~10 % — sie liegen in Fertigungs-
-   toleranzen (wirksamer Zwischenspalt 40 → 41,5 µm, Kern 0,6 → 0,65 mm,
-   Senkung 3,4 mm). Ein passendes Maß ohne Messung wäre ein Fit.
+   Offen: welche Eingangsgröße die ~20 % trägt. Nicht belegt ist der
+   Durchmesser der engen Durchbohrung (0,6 mm; ~0,75 mm träfe den freien
+   Kopf) und die wirksame Höhe des Zwischenspalts (Planheit der Hälften;
+   ~45 µm träfe). Ein passendes Maß ohne Messung wäre ein Fit.
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
