@@ -1682,3 +1682,82 @@ def test_gp62_randschicht_der_folie(stand):
           f"{ende62['B&K'][1]:+.3f} dB); Warren Ā = {A_w:.4f} mit a − ℓ "
           f"({A_a:.4f} mit a); K67 {k67_db:+.3f} dB; Gatter (λ = "
           f"{lam_s:.2f} bricht ab)  OK")
+
+
+def test_gp71_freistich_in_der_elektrostatik(stand):
+    """Gegenprobe 71: die Elektrostatik sieht den Freistich."""
+    # Ein Freistich (Clearance-Ring, auch eine Mittenaussparung) senkt die
+    # Elektrode um seine Tiefe t ab. Der Film sah das seit dem Freistich
+    # selbst, die Elektrostatik nicht: Kraft, Erweichung, Wandler-
+    # koeffizient und C0 rechneten dort mit dem vollen Feld des Spalts h.
+    # Jetzt gilt der örtliche Spalt h + t (über Blindlöchern h + t + d) in
+    # Statik, Pull-in, Elektrodenintegralen und dem 3D-Ausgangsgewicht.
+    # a) GRENZFALL: ein Freistich über die ganze Platte ist ein größerer
+    #    Spalt — C0, Pull-in, Θ, Nachgiebigkeit und Ruheauslenkung gleich
+    #    denen der Kapsel mit h + t (Rundung).
+    # b) ÖRTLICH: ein schmaler Ring senkt C0 um ε0·A·c·(1/g − 1/(g + t))
+    #    je Anteil (solide Fläche g = h, Blindloch g = h + d) — bis auf
+    #    die Abtastung der Ringkanten auf dem Elektrodengitter.
+    # c) RICHTUNG: der Freistich nimmt Feld weg, der Pull-in steigt.
+    h71, t71, a71 = 25e-6, 20e-6, 5.5e-3
+    k71 = dict(architecture="single", membrane_diameter=12.0e-3,
+               membrane_thickness=5e-6, membrane_resonance_hz=8000.0,
+               backplate_diameter=2 * a71, backplate_thickness=1.0e-3,
+               n_blind_holes=10, blind_hole_diameter=0.5e-3,
+               blind_hole_depth=0.3e-3, n_through_holes=40,
+               through_hole_diameter=0.5e-3, rear_network_enabled=True,
+               delay_length=0.0, cavity_length=4.0e-3, n_cavity_holes=0,
+               include_diffraction=False, squeeze_model="2d")
+
+    def _baue(**kw):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return MicrophoneCapsule(**{**k71, **kw})
+
+    # a) ganze Platte == größerer Spalt
+    voll = dict(clearance_ring_diameter=a71, clearance_ring_width=2 * a71,
+                clearance_ring_depth=t71)
+    A = _baue(air_gap=h71, bias_voltage=60.0, **voll)
+    B = _baue(air_gap=h71 + t71, bias_voltage=60.0)
+    worst_a = max(abs(getattr(A, q) / getattr(B, q) - 1.0)
+                  for q in ("C_elec_0", "U_pullin", "_theta", "C_A_eff",
+                            "w0_static"))
+    assert worst_a < 1e-9, \
+        (f"Freistich über der ganzen Platte muss elektrostatisch ein "
+         f"größerer Spalt sein ({worst_a:.1e})")
+    # b) schmaler Ring, Tiefton ohne Auslenkung (1 mV): C0-Abnahme
+    R71, w71 = 3.0e-3, 0.5e-3
+    ring = dict(clearance_ring_diameter=2 * R71, clearance_ring_width=w71,
+                clearance_ring_depth=t71)
+    C_ohne = _baue(air_gap=h71, bias_voltage=1e-3)
+    C_mit = _baue(air_gap=h71, bias_voltage=1e-3, **ring)
+    u = C_ohne._es_u
+    r = C_ohne.a_mem * np.sqrt(u)
+    c_s = float(np.interp(R71, r, C_ohne._es_c_solid))
+    c_b = float(np.interp(R71, r, C_ohne._es_c_blind))
+    A_ring = 2.0 * np.pi * R71 * w71
+    d71 = C_ohne.d_bh
+    dC_soll = EPS0 * A_ring * (c_s * (1 / h71 - 1 / (h71 + t71))
+                               + c_b * (1 / (h71 + d71)
+                                        - 1 / (h71 + t71 + d71)))
+    dC_ist = C_ohne.C_elec_0 - C_mit.C_elec_0
+    # Abtastfehler der Ringkanten: höchstens eine Gitterweite je Kante
+    du_gitter = float(u[1] - u[0])
+    du_ring = 2.0 * R71 * w71 / C_ohne.a_mem**2
+    tol_b = 2.0 * du_gitter / du_ring
+    dev_b = abs(dC_ist / dC_soll - 1.0)
+    assert dev_b < tol_b, \
+        (f"C0-Abnahme durch den Ring {dC_ist:.3e} F gegen "
+         f"{dC_soll:.3e} F (Abweichung {dev_b:.3f}, Gitter {tol_b:.3f})")
+    # c) Richtung: Pull-in steigt
+    P_ohne = _baue(air_gap=h71, bias_voltage=60.0)
+    P_mit = _baue(air_gap=h71, bias_voltage=60.0, **ring)
+    assert P_mit.U_pullin > P_ohne.U_pullin, \
+        "ein Freistich nimmt Feld weg — der Pull-in muss steigen"
+    stand.wert("pullin_anstieg_ring", P_mit.U_pullin / P_ohne.U_pullin - 1.0,
+               "", "Pull-in mit/ohne Ring (Ø 6 mm, 0.5 mm, 20 µm) − 1")
+    print(f"Freistich in der Elektrostatik: ganze Platte == Spalt h + t "
+          f"({worst_a:.0e}); Ring C0 −{dC_ist * 1e15:.1f} fF gegen "
+          f"−{dC_soll * 1e15:.1f} fF ({100 * dev_b:.2f} %, Gitter "
+          f"{100 * tol_b:.1f} %); Pull-in {P_ohne.U_pullin:.1f} → "
+          f"{P_mit.U_pullin:.1f} V  OK")

@@ -272,7 +272,11 @@ _BOOL_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, bool)}
 # p_<prefix>_ring_pcd_<i> plus Zeilenzähler <prefix>_ring_count, weil
 # Streamlit-Widgets nur skalare Zustände tragen.
 _RING_PREFIX = {"th_rings": "th", "bh_rings": "bh"}
-MAX_RINGS = 8
+# Höchstzahl der Lochkreise je Lochtyp. Das quadratische 2-mm-Raster der
+# K67 (12 × 12) liegt auf 13 Radien; bis Gegenprobe 71 waren es 8, und
+# ein Projekt mit mehr Kreisen wurde beim Laden STILL gekürzt. Jetzt
+# meldet der Lader jedes Kürzen (s. _projekt_params).
+MAX_RINGS = 16
 
 # Fehlt ein Schlüssel im Projekt, gilt die Voreinstellung (DEFAULTS =
 # K67). Für Merkmale, deren K67-Wert nicht der neutrale ist, wäre das
@@ -470,10 +474,14 @@ def _coerce(key, val):
 
 def _projekt_params(data):
     """Projekt-JSON (dict) -> (vollständiger Parametersatz, Anzahl der
-    übernommenen Projektwerte). ValueError bei defekter Datei."""
+    übernommenen Projektwerte, gekürzte Lochkreis-Listen als
+    [(Schlüssel, Anzahl in der Datei)]). ValueError bei defekter Datei."""
     if data.get("format") != "capsim-project":
         raise ValueError(tr("err_format"))
     params_in = data.get("params", {})
+    gekuerzt = [(key, len(params_in[key])) for key in _RING_PREFIX
+                if isinstance(params_in.get(key), list)
+                and len(params_in[key]) > MAX_RINGS]
     # Erst alles validieren (staged), dann atomar anwenden — eine
     # defekte Datei lässt den aktuellen Zustand unangetastet.
     staged = {key: _coerce(key, val) for key, val in params_in.items()
@@ -490,7 +498,7 @@ def _projekt_params(data):
     # enthaltene Parameter fallen auf die Voreinstellung zurück
     # (ältere Projekte kennen z. B. Spacer/Rückplatte noch nicht).
     return ({key: staged.get(key, _FEHLT_IM_PROJEKT.get(key, default))
-             for key, default in DEFAULTS.items()}, len(staged))
+             for key, default in DEFAULTS.items()}, len(staged), gekuerzt)
 
 
 def _load_project():
@@ -501,13 +509,20 @@ def _load_project():
     if up is None:
         return
     try:
-        params, n = _projekt_params(json.load(up))
+        params, n, gekuerzt = _projekt_params(json.load(up))
         for key, val in params.items():
             if key in _RING_PREFIX:
                 _set_ring_state(_RING_PREFIX[key], val)
             else:
                 st.session_state["p_" + key] = val
-        st.session_state["_load_msg"] = ("success", tr("load_ok", n=n))
+        msg = tr("load_ok", n=n)
+        # gekürzte Lochkreis-Listen nie still übergehen
+        for key, n_datei in gekuerzt:
+            msg += " " + tr("load_rings_cut", max=MAX_RINGS, n=n_datei,
+                            typ=tr("md_through" if key == "th_rings"
+                                   else "md_blind"))
+        st.session_state["_load_msg"] = (
+            "warning" if gekuerzt else "success", msg)
     except Exception as exc:  # defekte Datei darf die App nicht stoppen
         st.session_state["_load_msg"] = (
             "error", tr("load_fail", exc=exc))
@@ -1224,7 +1239,8 @@ with st.sidebar:
                        width="stretch", on_click=_cancel_reset)
     if "_load_msg" in st.session_state:
         kind, msg = st.session_state.pop("_load_msg")
-        (st.success if kind == "success" else st.error)(msg)
+        {"success": st.success, "warning": st.warning}.get(
+            kind, st.error)(msg)
 
     # ---------------- Membran ------------------------------------------
     with st.expander(tr("exp_membrane"), expanded=True):

@@ -1598,7 +1598,11 @@ class MicrophoneCapsule:
         # und ENTLASTEN die Mündungs-Engstellen dort sitzender Bohrungen
         # (entscheidend für die Nierentiefe bei wenigen engen Durchgangs-
         # löchern, z. B. Debenham); schmalere Ringe wirken als
-        # konzentrierter Schlitz-Stub. Nur im 2D-Feldmodell.
+        # konzentrierter Schlitz-Stub. Den Film tragen 2D-Feld und
+        # 3D-Löser (der 1D-Pfad nicht); die Elektrostatik sieht den
+        # tieferen Spalt in allen Modellen (Gegenprobe 71). Ein Ring mit
+        # Innenkante am Pfosten bzw. bei r = 0 beschreibt eine
+        # Mittenaussparung (K67).
         self.clearance_ring_diameter = float(clearance_ring_diameter)
         self.clearance_ring_width = float(clearance_ring_width)
         self.clearance_ring_depth = float(clearance_ring_depth)
@@ -2049,6 +2053,12 @@ class MicrophoneCapsule:
         self._es_phi = self._form(u_es) / self._phi_max
         self._es_c_solid = 1.0 - tot * scale
         self._es_c_blind = p_bh * scale
+        # FREISTICH (Clearance-Ring, Mittenaussparung): dort liegt die
+        # Elektrode um die Freistichtiefe t tiefer, das Feld sieht den
+        # Spalt h + t (über Blindlöchern h + t + d). Bis Gegenprobe 70
+        # rechnete die Elektrostatik im Freistich mit dem vollen Feld des
+        # Spalts h — nur der Film sah ihn (Gegenprobe 71).
+        self._es_t = self._freistich_tiefe(r_es)
 
         # ------------------------------------------------------------------
         # ELEKTROSTATIK: ELEKTRODENGEOMETRIE, ARBEITSPUNKT UND PULL-IN
@@ -2110,8 +2120,8 @@ class MicrophoneCapsule:
             # erweichen; Pull-in = Eigenwertkriterium am Ruhespalt
             lam_pi = self._st_dual_pullin_lambda()
             w_st = np.zeros(st["u"].size)
-            soft = lam_b * 2.0 * (st["cs"] / self.h_gap**3
-                                  + st["cb"] / (self.h_gap + self.d_bh)**3)
+            soft = lam_b * 2.0 * (st["cs"] / st["h0"]**3
+                                  + st["cb"] / (st["h0"] + self.d_bh)**3)
             stable = lam_b < lam_pi
         else:
             lam_pi = self._st_branch()[1]
@@ -2815,6 +2825,8 @@ class MicrophoneCapsule:
         on = u <= self._ub + 1e-12
         cs = np.where(on, np.interp(u, self._es_u, self._es_c_solid), 0.0)
         cb = np.where(on, np.interp(u, self._es_u, self._es_c_blind), 0.0)
+        # örtlicher Ruhespalt der Elektrode (Freistich, Gegenprobe 71)
+        h0 = self.h_gap + self._freistich_tiefe(self.a_mem * np.sqrt(u))
         tension = (np.pi * self.a_mem**4 * self._ring_g
                    / (8.0 * self.C_A_mem))
         g = (4.0 * tension / self.a_mem**2) * 0.5 * (u[:-1] + u[1:]) / du
@@ -2825,8 +2837,8 @@ class MicrophoneCapsule:
         L[1, 1:] -= g
         # dynamische Modenform (die der Kette) auf demselben Gitter
         psi = self._form(u) / self._phi_max
-        self._st = dict(u=u, vol=vol, cs=cs, cb=cb, L=L, tension=tension,
-                        ring=self.u_post > 0.0, psi=psi,
+        self._st = dict(u=u, vol=vol, cs=cs, cb=cb, h0=h0, L=L,
+                        tension=tension, ring=self.u_post > 0.0, psi=psi,
                         S=np.pi * self.a_mem**2)
 
     def _st_system(self, w, lam, sides=1.0):
@@ -2835,8 +2847,8 @@ class MicrophoneCapsule:
         λ·∂p̂/∂w (sides = 2: Gegentakt bei w = 0)."""
         st = self._st
         L, vol = st["L"], st["vol"]
-        g1 = self.h_gap - w
-        g2 = self.h_gap + self.d_bh - w
+        g1 = st["h0"] - w
+        g2 = st["h0"] + self.d_bh - w
         f = 0.5 * (st["cs"] / g1**2 + st["cb"] / g2**2)
         fp = sides * (st["cs"] / g1**3 + st["cb"] / g2**3)
         Lw = L[1] * w
@@ -2868,7 +2880,8 @@ class MicrophoneCapsule:
             dw = x1 - dl * x2
             w = w + dw
             lam = lam + dl
-            if not np.all(np.isfinite(w)) or np.max(w) >= 0.999 * self.h_gap:
+            if (not np.all(np.isfinite(w))
+                    or np.any(w >= 0.999 * self._st["h0"])):
                 return None, None
             if np.max(np.abs(dw)) < 1e-13 * self.h_gap:
                 return w, lam
@@ -2881,7 +2894,7 @@ class MicrophoneCapsule:
         if cached is not None:
             return cached
         vol = self._st["vol"]
-        V_full = self.h_gap * float(np.sum(vol))
+        V_full = float(np.sum(self._st["h0"] * vol))   # Spaltvolumen
         w = np.zeros(vol.size)
         lam = 0.0
         pts = [(0.0, 0.0, w.copy())]
@@ -2946,7 +2959,7 @@ class MicrophoneCapsule:
         # Falte abwandert (dort ist J fast singulär)
         F, _, _, _ = self._st_system(w, lam)
         if (not np.all(np.isfinite(w)) or np.max(np.abs(F[:-1])) > 1e-6
-                or np.max(w) >= 0.999 * self.h_gap):
+                or np.any(w >= 0.999 * self._st["h0"])):
             lo, hi = V0, V1
             wv, lv = w0_, l0
             for _ in range(80):
@@ -2981,8 +2994,8 @@ class MicrophoneCapsule:
         (Potenziteration auf (−L)⁻¹·K̂, K̂ ≥ 0)."""
         st = self._st
         _, J, _, _ = self._st_system(np.zeros(st["u"].size), 0.0)
-        Khat = 2.0 * (st["cs"] / self.h_gap**3
-                      + st["cb"] / (self.h_gap + self.d_bh)**3) * st["vol"]
+        Khat = 2.0 * (st["cs"] / st["h0"]**3
+                      + st["cb"] / (st["h0"] + self.d_bh)**3) * st["vol"]
         Khat[-1] = 0.0
         if st["ring"]:
             Khat[0] = 0.0
@@ -3009,7 +3022,8 @@ class MicrophoneCapsule:
         """Elektrodenintegrale über dem statischen Spaltprofil.
 
         In Modenkoordinate u = r²/a_mem² (dS = S_mem·du, Elektrode bis
-        u <= ub) mit lokalem Spalt g = h − w(u):
+        u <= ub) mit lokalem Spalt g = h + t(u) − w(u) (t: Freistich,
+        Gegenprobe 71):
             I_F = Int psi/g²  dS   (Kraft-/Kapazitätsmodulation)
             I_k = Int psi²/g³ dS   (negative Steifigkeit, Ein-Moden-Bild)
             I_C = Int 1/g     dS   (Ruhekapazität)
@@ -3026,8 +3040,9 @@ class MicrophoneCapsule:
         u = self._es_u
         v = self._es_phi                          # Modenprofil psi (max 1)
         w = w0 * v if profile is None else np.asarray(profile, float)
-        g_s = self.h_gap - w                      # Spalt, solide Elektrode
-        g_b = self.h_gap + self.d_bh - w          # Feldweg über Blindloch
+        h0 = self.h_gap + self._es_t              # Ruhespalt (Freistich)
+        g_s = h0 - w                              # Spalt, solide Elektrode
+        g_b = h0 + self.d_bh - w                  # Feldweg über Blindloch
         c_s = self._es_c_solid
         c_b = self._es_c_blind
         S = self.S_mem
@@ -3064,8 +3079,9 @@ class MicrophoneCapsule:
         for sign in signs:
             prof = sign * self._es_w
             I_F, _, I_C = self._electrode_integrals(profile=prof)
-            dens = (self._es_c_solid / (self.h_gap - prof) ** 2
-                    + self._es_c_blind / (self.h_gap + self.d_bh - prof) ** 2)
+            h0 = self.h_gap + self._es_t
+            dens = (self._es_c_solid / (h0 - prof) ** 2
+                    + self._es_c_blind / (h0 + self.d_bh - prof) ** 2)
             num += np.where(inside, np.interp(u, self._es_u, dens), 0.0) / I_C
             den += (1.0 / self._phi_m1) * I_F / (self.S_mem * I_C)
         return num / den
@@ -5522,6 +5538,22 @@ class MicrophoneCapsule:
         n_r = int(getattr(self, "_n_r_3d", 0))
         n_p = int(getattr(self, "_n_phi_3d", 0))
         return (n_r if n_r > 0 else Nr), (n_p if n_p > 0 else Np)
+
+    def _freistich_tiefe(self, r):
+        """Zusatztiefe des Clearance-Rings (Freistich) am Radius ``r``
+        [m] aus der exakten Ringgeometrie — für die Elektrostatik, die den
+        örtlichen Spalt h + Tiefe sieht (Gegenprobe 71); unabhängig vom
+        Feldgitter, also auch für schmale Ringe, die der Film als
+        Schlitz-Stub rechnet. Außerhalb des Rings 0."""
+        r = np.asarray(r, dtype=float)
+        if not (self.clearance_ring_width > 0.0
+                and self.clearance_ring_depth > 0.0
+                and self.clearance_ring_diameter > 0.0):
+            return np.zeros(r.shape)
+        r_ring = 0.5 * self.clearance_ring_diameter
+        return np.where(np.abs(r - r_ring)
+                        <= 0.5 * self.clearance_ring_width,
+                        self.clearance_ring_depth, 0.0)
 
     def _clearance_on_grid(self, r_c, dr, r0):
         """Clearance-Ring auf einem Radialgitter (Zellmitten r_c, Zell-

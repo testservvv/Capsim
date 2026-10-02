@@ -466,6 +466,17 @@ Schreiben.
    0,46/0,21 dB, 4146 2D 0,70 dB. Gegenprobe 52 d
    grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,5 dB);
    eine hergeleitete Aktuatorlast (Abstand, Schlitzgeometrie) fehlt.
+9. **K67 mit realem Bohrbild: interne Laufzeit zu lang (Gegenprobe
+   71).** Mit dem aus dem Foto vermessenen Bohrbild (108 Senkungen auf
+   dem 2-mm-Raster, Mitte frei, Hälften um 90° verdreht), Randnut und
+   Mittenaussparung liegt die Auslöschung bei 1 kHz im 3D-Löser bei
+   −14,2 dB statt der publizierten −26 dB; das Laufzeitverhältnis
+   intern/extern ist 1,49 (2D 1,30, die alte gleichverteilte Basis 1,18).
+   Größter Hebel ist der Spacer zwischen den Hälften: eine Quelle nennt
+   40 µm — das verlängert die Laufzeit weiter (2,26, −7,0 dB), 70 µm
+   gäbe 0,76 und −16,4 dB. Ein passender Spacer allein wäre ein Fit;
+   offen ist, welches Maß oder welche Physik des inneren Netzwerks
+   (Zwischenspalt, Kerne, Mündungen) die Laufzeit zu lang macht.
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
@@ -542,16 +553,19 @@ Schreiben.
 Diese Punkte kann das Modell nicht entscheiden; sie brauchen Maße oder
 Messungen der realen Kapsel.
 
-- **K67-Kernlage (Gegenprobe 22e):** wie die Kerne beider
-  Elektrodenhälften im 50-µm-Zwischenspalt zueinander liegen, ist nicht
-  dokumentiert und bestimmt die Tiefe der Auslöschung: global 9°/10,5°/
-  12° verdreht −23,2/−25,0/−22,6 dB bei 180° und 1 kHz
-  (`gp22e.ausloeschung_9grad`, `…_12grad`), vollständig versetzt
-  −14,6 dB, das 2D-Modell −21,7 dB. Seit der Spalt-Mündung im
+- **K67-Kernlage (Gegenprobe 22e):** bestimmt die Tiefe der
+  Auslöschung: global 9°/10,5°/12° verdreht −23,2/−25,0/−22,6 dB bei
+  180° und 1 kHz (`gp22e.ausloeschung_9grad`, `…_12grad`), vollständig
+  versetzt −14,6 dB, das 2D-Modell −21,7 dB. Seit der Spalt-Mündung im
   Zwischenspalt (Gegenprobe 70) ist die Abhängigkeit flacher (vorher
-  9°/12° −20,4/−31,0 dB, 2D −26,4 dB): die Mündung legt vor jeden
-  Querweg einen Widerstand, der von der Kernlage nicht abhängt.
-  `half_rotation_deg` stellt sie ein.
+  9°/12° −20,4/−31,0 dB, 2D −26,4 dB). *Seit Gegenprobe 71 aus einem Foto
+  bekannt:* quadratisches 2-mm-Raster mit Schachbrett-Durchbohrung, die
+  zweite Hälfte um 90° verdreht — kein Kern fluchtet, jeder sieht den
+  nächsten Kern der Gegenseite 2 mm entfernt. Das ist der vollständig
+  versetzte Fall; mit exakter Rasterlage im 3D-Löser −13,7 dB
+  (`examples/k67_experimentell_bohrbild.json`). Offen bleibt damit nicht
+  mehr die Kernlage, sondern warum die Laufzeit zu lang ist (s. „Offene
+  Punkte“ 9).
 - **Debenham-Mündungsfasen:** s. Punkt 6 oben.
 - **K103:** die inneren Maße sind nicht veröffentlicht; die Demo ist
   eine Vorlage zum Abstimmen und zurzeit keine Niere (Laufzeitverhältnis
@@ -637,6 +651,19 @@ bei 180°, wird aber flacher (−15,6/−17,0/−17,1/−15,6 dB @
 zeigt damit die Über-Verzögerung; die Niere entsteht auch hier
 vollständig aus den akustischen Parametern (s. Abschnitt
 „Nierenbildung").
+
+`examples/k67_experimentell_bohrbild.json` — **experimentell**: die K67
+mit dem realen Bohrbild, der Randnut und der Mittenaussparung, vermessen
+aus einem Foto zweier Backplate-Hälften (s. „K67-Bohrbild aus dem Foto
+und Freistich in der Elektrostatik (Gegenprobe 71)“). Gegenüber
+`u87_k67_projekt.json` geändert: 108 Senkungen auf dem quadratischen
+2-mm-Raster als 13 Lochkreise (54 durchgebohrt, Mitte frei), Elektrode
+25,4 mm, Membran 27,2 mm, Mittenterminierung 1 mm und eine 5-mm-
+Aussparung in der Mitte. Auslöschung bei 1 kHz (tiefste Stelle, jeweils
+bei 180°): 3D −14,2 dB (feines Gitter, Referenz), 2D −17,4 dB — das
+2D-Modell warnt hier selbst (lochfreie Mitte). Voreingestellt ist 2D;
+den Referenzwert liefert das 3D-Feldmodell (in der App ~6 min bei 100
+Punkten).
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 
@@ -2720,6 +2747,85 @@ Kernlage abhängt: 12° muss jetzt 3 dB statt 8 dB tiefer liegen als
 vollständig versetzt — ein Vielfaches der Gitterunsicherheit (grob/fein
 ≤ 0,5 dB); gemessen sind 7,9 dB (`gp22e.abstand_12grad_versetzt`). Beide
 alten Grenzen hielten nur ohne die Umlenkung im Zwischenspalt.
+
+### K67-Bohrbild aus dem Foto und Freistich in der Elektrostatik (Gegenprobe 71)
+
+**Vermessung.** Ein Foto zweier K67-Backplate-Hälften (Messing, 16
+Flanschbohrungen je Seite, davon 14 zum Spannen der Membran) zeigt das
+Bohrbild, eine Ringnut am Rand der Elektrodenfläche und eine lochfreie,
+abgesetzte Mitte mit einem kleinen Mittelloch. Eine veröffentlichte
+Zeichnung gibt es nicht; die Literatur nennt nur das Raster (12 × 12,
+2 mm, Zeilen 6, 8, 10, 12, …, 6) und dass jedes zweite Loch durchgebohrt
+und die zweite Hälfte um 90° verdreht ist. Auf dem Foto wurden die
+Lochmitten automatisch erkannt und ein 2-mm-Raster samt Perspektive
+(Homographie) angepasst: Restfehler median 0,04 mm, beide Hälften
+gleich. Der Maßstab aus der Teilung ist unabhängig bestätigt — Senkungen
+1,28/1,39 mm (Projekt 1,3 mm), Plattenaußen-Ø 34,3 mm (K67: 34 mm).
+Gemessen:
+
+| Merkmal | linke / rechte Hälfte | im Modell |
+|---|---|---|
+| fehlende Rasterpunkte in der Mitte | 12 / 12 (r = 1,41 und 3,16 mm) | 108 Senkungen, 54 durch |
+| Mittenaussparung Ø | 4,7 / 5,2 mm | 5,0 mm |
+| Mittelloch Ø | ~1,0 mm | Mittenterminierung 1,0 mm (Annahme) |
+| Elektrodenfläche Ø (Nut innen) | 25,8 / 25,1 mm | 25,4 mm |
+| Nut außen Ø | 27,2 / 27,0 mm | Membran 27,2 mm |
+
+**Einbettung.** Das Raster geht als 13 Lochkreise nach Radius ein; je
+Radius ist genau die Hälfte durchgebohrt (die Spiegelung a → −a kehrt
+die Schachbrett-Parität um), beide Hälften haben also dieselben Listen,
+und um 90° gedreht fluchtet kein einziger Kern. Im 3D-Löser ändert die
+exakte Rasterlage (Gegenhälfte global um 90° gedreht, Fußabdrücke auf
+0,07 mm an den Rasterpunkten) die Auslöschung gegenüber gleichverteilten
+Kreisen um 0,1 dB — ein eigenes Raster-Bohrbild braucht das Modell
+nicht. Die Randnut ist der tiefe Ringraum zwischen Plattenrand und
+Einspannung, den das Modell schon kennt (Gegenprobe 52). Die Mitte trägt
+die Mittenterminierung (die K67 ist mittenterminiert) und einen
+Freistich von r = 0,5 bis 2,5 mm, 0,2 mm tief (Tiefe nicht messbar;
+0,05/0,5 mm ändern die 3D-Auslöschung um ≤ 0,2 dB).
+
+**Freistich in der Elektrostatik (Gegenprobe 71).** Bis hier sah nur der
+Film einen Freistich; Kraft, Erweichung, Wandlerkoeffizient und C0
+rechneten dort mit dem vollen Feld des Spalts h — für eine Aussparung,
+über der fast kein Feld steht, falsch. Jetzt gilt der örtliche Spalt
+h + t (über Blindlöchern h + t + d) in Statik, Pull-in, Elektroden-
+integralen und dem 3D-Ausgangsgewicht. Geprüft:
+- **Grenzfall:** ein Freistich über die ganze Platte ist elektrostatisch
+  ein größerer Spalt — C0, Pull-in, Θ, Nachgiebigkeit und Ruhe-
+  auslenkung gleich auf 7·10⁻¹⁴;
+- **örtlich:** ein schmaler Ring senkt C0 um ε0·A·c·(1/g − 1/(g + t))
+  (1308 gegen 1331 fF, 1,7 % bei 5 % Abtastgrenze der Ringkanten);
+- **Richtung:** der Freistich nimmt Feld weg, der Pull-in steigt
+  (`gp71.pullin_anstieg_ring`).
+
+Ohne Freistich ändert sich nichts. Mit Freistich: Debenham (Rand-
+Freistich) interne Resonanz 3062 → 3016 Hz (`gp18.f_h_debenham`),
+Laufzeitverhältnis 2D 5,40 → 5,33, 3D 2,56 → 2,88 (`gp17.debenham_3d`);
+die B&K 4134 mit geschlossener Ringnut trifft die Phase von Fig. 6
+besser (10,1° → 9,0°, `gp58.rms_4134_ringnut_grad`).
+
+**Lochkreise beim Laden (Gegenprobe 63 d).** Der Projekt-Lader übernahm
+höchstens 8 Lochkreise je Lochtyp und verwarf den Rest still — das
+K67-Raster kam mit 32 statt 54 Durchgangslöchern an (2D-Auslöschung
+−11,6 statt −13,4 dB für das Raster allein). Jetzt sind 16 Kreise
+erlaubt, und ein Kürzen meldet der Lader als Warnung.
+
+**Ergebnis bei 1 kHz** (tiefste Stelle, jeweils bei 180°):
+
+| Schritt | 2D | 3D |
+|---|---|---|
+| `u87_k67_projekt.json` (gleichverteilt 120/60) | −21,7 dB | −14,6 dB |
+| + reales Raster (108/54, Mitte frei) | −13,4 dB | |
+| + Randnut (Elektrode 25,4, Membran 27,2 mm) | −14,2 dB | |
+| + Mittenterminierung 1 mm | −17,8 dB | |
+| + Mittenaussparung = `k67_experimentell_bohrbild.json` | −17,4 dB | −13,6 dB (fein −14,2 dB) |
+
+Die 2D-Werte nach dem Raster liegen außerhalb der Homogenisierung (das
+Modell warnt: lochfreie Mitte bis 4,3 mm); maßgeblich ist 3D. Dort ändert
+das reale Bohrbild die Auslöschung gegenüber der gleichverteilten Basis
+nur um rund 1 dB. Die publizierten −26 dB erreicht keine der beiden
+Rechnungen; das Laufzeitverhältnis intern/extern ist 1,49 (s. „Offene
+Punkte“ 9).
 
 ## Verlustmechanismen (vollständig erfasst)
 

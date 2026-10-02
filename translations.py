@@ -61,6 +61,14 @@ TR = {
         "en": "Project loaded — {n} parameters applied.",
         "de": "Projekt geladen — {n} Parameter übernommen.",
     },
+    "load_rings_cut": {
+        "en": "**Only the first {max} pitch circles of “{typ}” were "
+              "applied** ({n} in the file) — the capsule computed here "
+              "has fewer holes than the project.",
+        "de": "**Von „{typ}“ wurden nur die ersten {max} Lochkreise "
+              "übernommen** ({n} in der Datei) — die hier gerechnete "
+              "Kapsel hat weniger Löcher als das Projekt.",
+    },
     "err_format": {
         "en": "not a Capsim project file",
         "de": "kein Capsim-Projektformat",

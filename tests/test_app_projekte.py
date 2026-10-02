@@ -255,6 +255,37 @@ def _texte(at):
     return out
 
 
+def test_gp63d_lochkreise_nicht_still_gekuerzt(app):
+    """Gegenprobe 63 d: Lochkreis-Listen werden beim Laden nicht still
+    gekürzt."""
+    # Bis Gegenprobe 71 übernahm der Projekt-Lader höchstens 8 Lochkreise
+    # je Lochtyp und verwarf den Rest ohne Meldung. Das quadratische
+    # 2-mm-Raster der K67 liegt auf 13 Radien: geladen wurden 32 statt 54
+    # Durchgangslöcher, und die App rechnete eine andere Kapsel als die im
+    # Projekt (das Raster allein: 2D-Auslöschung bei 1 kHz −11.6 statt
+    # −13.4 dB).
+    # a) Das K67-Projekt mit 13 Kreisen kommt vollständig an.
+    # b) Eine Liste über der Höchstzahl wird gekürzt UND als gekürzt
+    #    gemeldet (der Lader zeigt das als Warnung).
+    A = app
+    data, p = _projekt(A, os.path.join(_WURZEL, "examples",
+                                       "k67_experimentell_bohrbild.json"))
+    assert len(p["th_rings"]) == len(data["params"]["th_rings"]) == 13
+    assert _projekt_gekuerzt(A, data) == []
+    n_th = sum(n for n, _ in p["th_rings"])
+    assert n_th == 54, f"54 Durchgangslöcher erwartet ({n_th})"
+    zu_viel = json.loads(json.dumps(data))
+    zu_viel["params"]["bh_rings"] = [[2, 10.0]] * (A.MAX_RINGS + 4)
+    assert _projekt_gekuerzt(A, zu_viel) == [("bh_rings", A.MAX_RINGS + 4)]
+    print(f"Lochkreise beim Laden: 13 Kreise vollständig ({n_th} "
+          f"Durchgangslöcher), {A.MAX_RINGS + 4} Kreise gekürzt und "
+          f"gemeldet  OK")
+
+
+def _projekt_gekuerzt(A, data):
+    return A._projekt_params(data)[2]
+
+
 def test_gp66_uebersetzungen(app):
     """Gegenprobe 66: Übersetzungstabellen vollständig und benutzt."""
     # a) Jeder Eintrag in TR und LABEL_TR hat genau Englisch und Deutsch,
