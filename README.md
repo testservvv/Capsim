@@ -385,6 +385,19 @@ Schreiben.
    die der Potentialströmung (Gegenprobe 67); im Kerbenband fehlt also
    anderswo Nachgiebigkeit, oder es ist Masse zu viel. Dasselbe Band
    zeigt Gegenprobe 34 (Punkt 4).
+   *Untersucht:* die 3D-Minima sind gitterkonvergent (fein 3358/4116 Hz,
+   Nr 90 × Np 288 3359/4117 Hz). Nötig wären d ln f = +0,043 / +0,022.
+   Empfindlichkeiten (d ln f je Änderung, erstes/zweites Minimum):
+   Spaltnachgiebigkeit +10 % −0,031/−0,004, Filmleitwert +10 %
+   (Filmmasse und -widerstand −9 %) +0,015/+0,010, portseitige
+   Flanschmasse ganz weg +0,038/+0,014, Lochrohr −10 % +0,017/+0,004,
+   Spalt adiabat statt polytrop +0,021/−0,000, Spalt-Mündung aus
+   +0,020/+0,005, Membranmasse +10 % (gleiche Resonanz) +0,005/+0,010,
+   Rückvolumen +20 % −0,002/−0,000. Keine einzelne Größe trifft das
+   Muster; das zweite Minimum hängt auch an der Membran. Die FEM-Werte
+   (3500/4200 Hz, Maximum 3860 Hz) sind auf 100 Hz gerundete Ablesungen
+   aus Fig. 4 der Arbeit (±1–2 %); weiter eingrenzen lässt sich das erst
+   mit genaueren FEM-Daten.
 
 3. **Kolben- statt Modenkonvention im 1D-Pfad (Gegenproben 8, 29).**
    Der 1D-Pfad rechnet den Filmwiderstand für gleichförmigen

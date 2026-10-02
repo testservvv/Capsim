@@ -55,11 +55,12 @@ def test_gp32_externe_referenz_fem_veroffentlicht(stand):
     # REST: der Film ist noch um ~0.5 dB zu schwach bedämpft (die FEM
     # rechnet thermoviskos, Gegenprobe 58), und das Dublett der vier
     # Bohrungen (FEM 3500/4200 Hz) liegt im 3D-Löser bei 3350/4110 Hz —
-    # die Mündungsmasse hat es um 2 % gesenkt (vorher 3421/4127 Hz). Im
-    # Kerbenband trägt der Lochzweig damit 4…9 % zu viel Masse oder zu
-    # wenig Nachgiebigkeit. An der Mündung liegt das nicht: ihre Masse
-    # ist im Trägheitsgrenzfall die der Potentialströmung (Gegenprobe
-    # 67). Offen.
+    # die Mündungsmasse hat es um 2 % gesenkt (vorher 3421/4127 Hz;
+    # gitterkonvergent 3359/4117 Hz). An der Mündung liegt das nicht:
+    # ihre Masse ist im Trägheitsgrenzfall die der Potentialströmung
+    # (Gegenprobe 67). Die Empfindlichkeiten beider Minima (README,
+    # „Offene Punkte" 2) passen zu keiner einzelnen Modellgröße; die
+    # FEM-Werte sind auf 100 Hz gerundete Ablesungen. Offen.
     #
     # DUBLETT. Die FEM zeigt im Kerbenband ZWEI Minima; der homogeni-
     # sierende 2D-Pfad kann nur eines haben, der 3D-Feldlöser, der die
