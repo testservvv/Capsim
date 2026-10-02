@@ -466,17 +466,42 @@ Schreiben.
    0,46/0,21 dB, 4146 2D 0,70 dB. Gegenprobe 52 d
    grenzt eine reine Luftmasse vor der Membran ein (höchstens +0,5 dB);
    eine hergeleitete Aktuatorlast (Abstand, Schlitzgeometrie) fehlt.
-9. **K67 mit realem Bohrbild: interne Laufzeit zu lang (Gegenprobe
-   71).** Mit dem aus dem Foto vermessenen Bohrbild (108 Senkungen auf
-   dem 2-mm-Raster, Mitte frei, Hälften um 90° verdreht), Randnut und
-   Mittenaussparung liegt die Auslöschung bei 1 kHz im 3D-Löser bei
-   −14,2 dB statt der publizierten −26 dB; das Laufzeitverhältnis
-   intern/extern ist 1,49 (2D 1,30, die alte gleichverteilte Basis 1,18).
-   Größter Hebel ist der Spacer zwischen den Hälften: eine Quelle nennt
-   40 µm — das verlängert die Laufzeit weiter (2,26, −7,0 dB), 70 µm
-   gäbe 0,76 und −16,4 dB. Ein passender Spacer allein wäre ein Fit;
-   offen ist, welches Maß oder welche Physik des inneren Netzwerks
-   (Zwischenspalt, Kerne, Mündungen) die Laufzeit zu lang macht.
+9. **K67 mit realem Bohrbild: Laufzeitverhältnis 1,49 — Ursache ist
+   die externe Bezugslaufzeit (Gegenprobe 71).** Mit dem aus dem Foto
+   vermessenen Bohrbild (108 Senkungen auf dem 2-mm-Raster, Mitte frei,
+   Hälften um 90° verdreht), Randnut und Mittenaussparung liegt die
+   Auslöschung bei 1 kHz im 3D-Löser bei −14,2 dB statt der
+   publizierten −26 dB; intern/extern 1,49 (26,6 gegen 18,3 mm).
+   *Untersucht:*
+   - **Die interne Laufzeit stimmt.** Die Rückkette zerfällt exakt in
+     Blöcke (D_r = T_rück[1,1]); über 90 % trägt C_vorn·R_Zwischenspalt
+     — das Volumen der Frontsenkungen mal dem Film zwischen den
+     versetzten Kernen. Den Film prüft eine unabhängige Lösung: das
+     unendliche Schachbrett aus Quellen und Senken im 2-mm-Raster gibt
+     (1/πK)·[ln(p/a) − 0,617] je Kernpaar; die zwei Škvor-Halbzellen des
+     2D-Modells liegen 19 % darunter. Damit korrigiert käme 2D auf
+     ≈ 27,5 mm — der 3D-Löser rechnet 27,2 mm (fein 26,6 mm).
+   - **Die externe Bezugslaufzeit passt nicht zur U87.** Die d_ext-Kugel
+     (18,3 mm) entspricht im BEM einem 56-mm-Körper 7 mm KOAXIAL hinter
+     der Kapsel. Die U87 ist seitenbesprochen; hinter der Rückmembran
+     sitzt nur der Korb. Die freie Scheibe gibt 32,2 mm (Sphäroid,
+     exakt), der freie Kopf im BEM 34,9 mm; dagegen ist die interne
+     Laufzeit 18–22 % zu KURZ (0,82/0,78): 1 kHz −6,9/−22,3 dB bei
+     90/135°, tiefste Stelle −27 dB bei 141–145°, 180° −17 bis −19 dB.
+     Gewählt wurde die Kugel, als die interne Laufzeit noch ~17 mm war
+     (Gegenprobe 20: „freie Scheibe ergäbe eine Superniere bei 123°") —
+     zwei Fehler hoben sich auf; mit Spalt-Mündung, exaktem Zwischenspalt
+     und realem Bohrbild ist die interne Seite vollständig, und die
+     Kompensation kippt.
+   - **Tiefe der Null: auch der Betrag.** Der Außenweg ist eine reine
+     Laufzeit (|G(180°)| = 1,00), das innere RC-Netzwerk hebt den Betrag
+     (|D_r| = 1,05; bei reinem RC 1/cos φ). Das allein begrenzt die Null
+     auf −20…−26 dB: mit freier Scheibe und 45-µm-Spacer passt die Phase
+     (1,04), die Null bleibt bei −19,5 dB.
+   Offen: welche externe Laufzeit der Korb und die Halterung der U87
+   wirklich ergeben, und ob dem inneren Netzwerk Trägheit fehlt, die es
+   von einem RC-Glied zu einer Laufzeit macht. Ein passender Spacer allein
+   wäre ein Fit.
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
