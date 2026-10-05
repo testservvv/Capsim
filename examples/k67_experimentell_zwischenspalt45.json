@@ -1,0 +1,192 @@
+{
+  "format": "capsim-project",
+  "version": 2,
+  "saved": "2026-10-05",
+  "_kommentar": [
+    "VARIANTE von examples/k67_experimentell_bohrbild.json (dort Bohrbild,",
+    "Masse und Quellen). ANPASSUNG, KEIN MESSWERT: wirksamer Zwischenspalt",
+    "45 um statt des Spacers von 40 um. Damit trifft die interne Laufzeit",
+    "den freien Kopf (3D 35.1 gegen 35.0 mm). Ob die Haelften wirklich",
+    "45 um auseinander stehen (Planheit, Grat) oder eine andere Groesse die",
+    "~20 % traegt (z. B. Kern 0.75 statt 0.6 mm), ist NICHT belegt.",
+    "AUSSENWEG: BEM, freier Kopf ohne Koerper (die Kapsel hat ihre Niere",
+    "auch frei). Mit der voreingestellten d_ext-Kugel (18.5 mm) passt",
+    "die Laufzeit NICHT.",
+    "ERGEBNIS 180 Grad (3D fein; 2D in Klammern) gegen das U87-Ai-",
+    "Polardiagramm (real): 125 Hz -12.1 (-15.1) / -11; 250 Hz -15.0 (-19.4)",
+    "/ -12; 500 Hz -17.1 (-22.0) / -19; 1 kHz -17.3 (-21.7) / -23 dB.",
+    "1 kHz 90/135 Grad: -5.6/-13.9 (2D -5.9/-15.8), real -6.7/-15.5 dB.",
+    "2 kHz Minimum -16.2 dB bei 148 Grad (2D -19.3 bei 154), real -24 dB",
+    "bei 142 Grad. Projekt mit 40 um und freiem Kopf: 1 kHz 180 Grad",
+    "-12.7 dB (3D).",
+    "REST: bei 1 kHz fehlen in 3D ~6 dB Tiefe. Die Rueckkette hat",
+    "|D_r| 1.19 statt <= 1.10 (RC mit Traegheit, thermische Relaxation",
+    "der Senkungen, Formanpassung der Membranen). S. README, Offene",
+    "Punkte 9.",
+    "BERECHNUNG: 2D voreingestellt (Sekunden), liegt bei der Null aber zu",
+    "tief (Einmodenbild). Referenz ist das 3D-Feldmodell (in der App",
+    "~6 min bei 100 Frequenzpunkten)."
+  ],
+  "params": {
+    "material": "PET (Mylar)",
+    "use_f_res": true,
+    "f_res_hz": 1700.0,
+    "mem_diameter_mm": 27.2,
+    "mem_thickness_um": 6.0,
+    "mem_tension_npm": 13.7,
+    "air_gap_um": 50.0,
+    "bp_diameter_mm": 25.4,
+    "bp_thickness_mm": 4.07,
+    "bias_v": 60.0,
+    "architecture": "Doppelmembran (K67-Bauform)",
+    "center_gap_um": 45.0,
+    "d_through_mm": 0.6,
+    "th_rings": [
+      [
+        2,
+        8.485
+      ],
+      [
+        4,
+        10.198
+      ],
+      [
+        4,
+        11.662
+      ],
+      [
+        6,
+        14.142
+      ],
+      [
+        4,
+        15.232
+      ],
+      [
+        4,
+        17.205
+      ],
+      [
+        4,
+        18.111
+      ],
+      [
+        4,
+        18.974
+      ],
+      [
+        2,
+        19.799
+      ],
+      [
+        4,
+        20.591
+      ],
+      [
+        4,
+        22.091
+      ],
+      [
+        8,
+        22.804
+      ],
+      [
+        4,
+        24.166
+      ]
+    ],
+    "th_stepped": true,
+    "d_blind_mm": 1.3,
+    "blind_depth_mm": 3.75,
+    "bh_rings": [
+      [
+        4,
+        8.485
+      ],
+      [
+        8,
+        10.198
+      ],
+      [
+        8,
+        11.662
+      ],
+      [
+        12,
+        14.142
+      ],
+      [
+        8,
+        15.232
+      ],
+      [
+        8,
+        17.205
+      ],
+      [
+        8,
+        18.111
+      ],
+      [
+        8,
+        18.974
+      ],
+      [
+        4,
+        19.799
+      ],
+      [
+        8,
+        20.591
+      ],
+      [
+        8,
+        22.091
+      ],
+      [
+        16,
+        22.804
+      ],
+      [
+        8,
+        24.166
+      ]
+    ],
+    "clamp_ring_mm": 2.0,
+    "clamp_width_mm": 3.4,
+    "clr_dia_mm": 3.0,
+    "clr_width_mm": 2.0,
+    "clr_depth_mm": 0.2,
+    "rear_enabled": true,
+    "spacer_um": 0.0,
+    "rearplate_mm": 0.0,
+    "n_rearplate": 0,
+    "d_rearplate_mm": 1.0,
+    "delay_mm": 1.0,
+    "cavity_length_mm": 5.0,
+    "cavity_wall_mm": 1.5,
+    "hole_position": "Umfang",
+    "n_cavity": 200,
+    "d_cavity_mm": 0.25,
+    "cavity_axial_mm": 2.5,
+    "fabric_front_rayl": 0.0,
+    "fabric_rear_rayl": 0.0,
+    "diffraction_on": true,
+    "body_diameter_mm": 34.0,
+    "squeeze_2d": true,
+    "n_points": 400,
+    "normalize_1khz": true,
+    "dir_freqs": [
+      125,
+      250,
+      500,
+      1000,
+      2000,
+      4000
+    ],
+    "center_post_mm": 1.0,
+    "squeeze_3d": false,
+    "axial_body": "BEM (Kopf + Körper)",
+    "bem_body_dia_mm": 0.0
+  }
+}

@@ -732,6 +732,17 @@ Außenweg), mit dem freien Kopf −4,6/−10,1/−12,7 dB; 2D −3,2/−6,0/
 −7,5 dB — s. „Offene Punkte“ 9. Voreingestellt ist 2D; den Referenzwert liefert
 das 3D-Feldmodell (in der App ~6 min bei 100 Punkten).
 
+`examples/k67_experimentell_zwischenspalt45.json` — **Variante mit
+Anpassung, kein Messwert**: wie oben, aber wirksamer Zwischenspalt
+45 µm statt der 40 µm des Spacers und als Außenweg der freie Kopf (BEM
+ohne Körper). Damit trifft die interne Laufzeit den Außenweg (3D 35,1
+gegen 35,0 mm). Ob die Hälften wirklich so weit auseinander stehen oder
+eine andere Größe die ~20 % trägt, ist nicht belegt. 180° bei
+125/250/500/1000 Hz: 3D −12,1/−15,0/−17,1/−17,3 dB, 2D −15,1/−19,4/
+−22,0/−21,7 dB, real (U87 Ai) −11/−12/−19/−23 dB; 1 kHz 90/135°: 3D
+−5,6/−13,9 dB, real −6,7/−15,5 dB; 2 kHz Minimum bei 148° (real 142°).
+Bei 1 kHz fehlen in 3D noch ~6 dB Tiefe (s. „Offene Punkte“ 9).
+
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 
 Die Niere der Doppelmembran-Bauform entsteht, wenn die **interne**
