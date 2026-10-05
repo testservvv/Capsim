@@ -505,13 +505,40 @@ Schreiben.
      verlängerte den Außenweg um 9–11 % (`tests/potential3d.py`, geprüft
      an der Kugel und am achsensymmetrischen BEM) — er ist aber nicht die
      Erklärung, weil die Kapsel frei dieselbe Niere hat.
-   - **Tiefe der Null:** auch bei passender Phase bleibt sie bei 1 kHz um
-     −16 dB, weil der RC-Phasenschieber den Betrag hebt (|D_r| > 1), der
-     Außenweg nicht (|G| = 1,00).
+   - **Tiefe der Null (1 kHz, 180°):** real −23 dB (Sennheiser-Polar-
+     diagramm U87 Ai, Niere, ausgelesen; die Skala endet bei −25 dB;
+     dazu 90°/135° −6,7/−15,5 dB, 180° bei 125/250/500 Hz −11/−12/−19 dB,
+     2 kHz Minimum −24 dB bei 142°). Modell 3D fein, freier Kopf:
+     −12,7 dB. Die Null verlangt D_r = G(180°); der Außenweg hat
+     |G| = 1,006, die Rückkette |D_r| = 1,33 — der Betrag fehlt mehr als
+     die Phase: nur der Betragsfehler gäbe −12,9 dB, nur der Phasenfehler
+     −19,7 dB. Beides hat EINE Ursache: im RC-Phasenschieber wächst der
+     Betrag mit der Phase (eine Stufe: 1/cos φ), zu viel Laufzeit heißt
+     auch zu viel Betrag. Bei angepasster Laufzeit (nur als Probe:
+     Zwischenspalt 45 µm, 3D 35,1 mm) bleibt |D_r| = 1,19 und damit
+     −17,3 dB (2D: 1,11, −21,7 dB). Diesen Rest tragen bei 1 kHz (45 µm,
+     grobes Gitter): RC-Kette mit Trägheit 1,07 (2D, adiabatisch),
+     thermische Relaxation der Senkungen +0,04 (2D 1,071 → 1,108, 3D
+     1,153 → 1,195; Gegenprobe: F_t = 0) und die Formanpassung der
+     Membranen +0,08 — die 3D-Membran weicht oberhalb von ~100 Hz dem
+     Filmdruck aus, ihr Schwerpunkt wandert vom Bereich um r ≈ 5 mm nach
+     außen. Das ist das Einmodenbild von 2D (s. Modellgrenzen). Probe: mit
+     steiferen Membranen (Resonanz 1700/4000/8000 Hz) fällt die interne
+     Laufzeit in 3D zwischen Tiefton und 1 kHz um 16/9/3 %, in 2D
+     gar nicht. Für −23 dB bräuchte es |D_r| ≲ 1,10 bei ~37°.
+     Die bisherige K67 (−21,7 dB, `gp30.k67_180grad`) traf nur, weil
+     interne (21,5 mm) und äußere Laufzeit (Kugel 18,5 mm) beide zu kurz
+     waren: bei ~20° ist der Betragsfehler klein. Mit dem freien Kopf
+     gäbe dieselbe Geometrie −11,9 dB. Unabhängiger Hinweis auf die zu
+     lange interne Laufzeit: das 2-kHz-Minimum liegt real bei 142°, im
+     Projekt bei 156°, mit angepasster Laufzeit bei 148° (Zwischenspalt
+     45 µm) bzw. 138° (Kern 0,75 mm).
    Offen: welche Eingangsgröße die ~20 % trägt. Nicht belegt ist der
    Durchmesser der engen Durchbohrung (0,6 mm; ~0,75 mm träfe den freien
    Kopf) und die wirksame Höhe des Zwischenspalts (Planheit der Hälften;
-   ~45 µm träfe). Ein passendes Maß ohne Messung wäre ein Fit.
+   ~45 µm träfe). Ein passendes Maß ohne Messung wäre ein Fit. Offen ist
+   außerdem der Betragsrest der Rückkette bei angepasster Laufzeit
+   (3D |D_r| = 1,19 gegen ≲ 1,10 für die reale Null).
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
@@ -520,7 +547,9 @@ Schreiben.
   60 V und 1 kHz: Spannung 3D/1D `gp23c.spannung_1khz` 0,92). Mehrere
   2D-Moden helfen nicht, weil sie sich einen Spaltknoten teilen. Bei
   weicher Membran mit Randspalt liegt 3D bis 8 dB über 2D (Gegenprobe
-  29).
+  29). Bei der K67 hebt dieselbe Formanpassung den Betrag der
+  Rückübertragung bei 1 kHz um ~0,08 (|D_r|) und kostet die 180°-Null
+  einige dB („Offene Punkte“ 9).
 - **Homogenisierung der Löcher:** gilt bis f_hom bzw. bis zur
   Lochkreis-Grenze f_ring (Gegenproben 48, 53); darüber warnen Modell
   und GUI (beide Grenzen sind vorsichtige Schätzungen und stehen nur als
