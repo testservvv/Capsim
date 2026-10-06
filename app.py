@@ -439,6 +439,21 @@ def _init_state():
             st.session_state.setdefault("p_" + key, val)
 
 
+def _halte_ausgeblendete():
+    """Ausgeblendete Felder behalten ihren Wert (Gegenprobe 63 e).
+
+    Streamlit räumt den Zustand eines Widgets ab, das in einem Lauf nicht
+    gezeichnet wird; _init_state setzte dann die Voreinstellung ein. So
+    kam nach BEM → Kugel → BEM der Körper Ø 56 mm zurück, obwohl das
+    Projekt den freien Kopf (0 mm) wollte — mit drei Feldern und einem
+    vielfach teureren BEM. Zu Beginn jedes Laufs zurückgeschrieben, sind
+    die Werte Sitzungswerte und überstehen das Aufräumen (dokumentierter
+    Weg, gilt für alle unterstützten Streamlit-Versionen)."""
+    for key in DEFAULTS:
+        if key not in _RING_PREFIX and "p_" + key in st.session_state:
+            st.session_state["p_" + key] = st.session_state["p_" + key]
+
+
 def _current_params():
     return {k: (_rings_from_state(_RING_PREFIX[k]) if k in _RING_PREFIX
                 else st.session_state["p_" + k])
@@ -1188,6 +1203,7 @@ def polar_figure(di):
 # Sidebar: Projekt + Parameter
 # ---------------------------------------------------------------------------
 _init_state()
+_halte_ausgeblendete()
 _heal_canonical_state()   # Selbstheilung nach Sprachwechsel (s. oben)
 
 with st.sidebar:

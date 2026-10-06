@@ -2890,6 +2890,20 @@ K67-Raster kam mit 32 statt 54 Durchgangslöchern an (2D-Auslöschung
 −11,6 statt −13,4 dB für das Raster allein). Jetzt sind 16 Kreise
 erlaubt, und ein Kürzen meldet der Lader als Warnung.
 
+**Ausgeblendete Felder behalten ihren Wert (Gegenprobe 63 e).** Streamlit
+räumt den Zustand eines Felds ab, das in einem Lauf nicht gezeichnet
+wird, und die App setzte danach die Voreinstellung ein. Im Projekt
+`k67_experimentell_zwischenspalt45.json` (BEM, freier Kopf, Körper-Ø 0)
+brachte BEM → Kugel → BEM deshalb den Körper Ø 56 mm, 15 mm Abstand und
+80 mm Länge zurück. Damit rechnete die App einen anderen Außenweg
+(24,5 statt 35,0 mm; 2D bei 1 kHz −14,6 statt −21,7 dB). Das BEM mit der
+viel längeren Kontur brauchte im 2D-Lauf mit 400 Punkten ~390 s statt
+~50 s (Kugel: ~1 s). Betroffen war jedes bedingte Feld (Klemmring nur bei
+der K67, Randspalt nur ohne, Körperlänge, Verdrehwinkel). Jetzt schreibt
+die App alle Parameter zu Beginn jedes Laufs in den Sitzungszustand
+zurück (`_halte_ausgeblendete`). Die Probe bedient die Widgets selbst:
+Klemmringbreite 2,5 mm, K67 → Single → K67, vorher 4,0 mm zurück.
+
 **Ergebnis bei 1 kHz** (tiefste Stelle, jeweils bei 180°):
 
 | Schritt | 2D | 3D |

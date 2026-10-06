@@ -286,6 +286,51 @@ def _projekt_gekuerzt(A, data):
     return A._projekt_params(data)[2]
 
 
+def test_gp63e_ausgeblendete_felder_behalten_wert(app):
+    """Gegenprobe 63 e: ausgeblendete Felder behalten ihren Wert."""
+    # Streamlit räumt den Zustand eines Widgets ab, das in einem Lauf nicht
+    # gezeichnet wird, und die App setzte dann die Voreinstellung ein. Im
+    # Projekt k67_experimentell_zwischenspalt45 (BEM, freier Kopf 0 mm)
+    # brachte BEM → Kugel → BEM den Körper Ø 56 mm zurück: drei Felder,
+    # Außenweg 24.5 statt 35.0 mm und 2D-Rechenzeit ~390 statt ~50 s.
+    # Derselbe Weg trifft jedes bedingte Feld; geprüft wird er hier am
+    # Klemmring, der nur bei der K67-Bauform zu sehen ist (die BEM-Läufe
+    # mit Körper kosten Minuten). Bedient wird über die Widgets selbst —
+    # direkt in den Session-State geschriebene Werte sind Sitzungswerte
+    # und verdecken den Fehler.
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                           default_timeout=600)
+    at.session_state["p_n_points"] = _NPTS
+    at.session_state["p_squeeze_2d"] = False
+
+    def lauf():
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            at.run()
+        assert not at.exception, at.exception
+
+    def feld(key):
+        return [w for w in list(at.number_input) + list(at.radio)
+                if w.key == key][0]
+    lauf()
+    assert at.session_state["p_architecture"] == app.K67_LABEL
+    feld("p_clamp_width_mm").set_value(2.5)
+    lauf()
+    feld("p_architecture").set_value("Single Backplate")
+    lauf()
+    assert not [w for w in at.number_input if w.key == "p_clamp_width_mm"]
+    feld("p_architecture").set_value(app.K67_LABEL)
+    lauf()
+    wert = at.session_state["p_clamp_width_mm"]
+    assert wert == 2.5, f"Klemmringbreite nach Aus-/Einblenden {wert}"
+    assert app._halte_ausgeblendete.__module__ == app.__name__
+    assert {"bem_body_dia_mm", "bem_body_gap_mm",
+            "bem_body_len_mm"} <= set(app.DEFAULTS)
+    print("Ausgeblendete Felder: Klemmringbreite 2.5 mm übersteht K67 → "
+          "Single → K67 (dieselbe Haltung gilt für die BEM-Körpermaße)  OK")
+
+
 def test_gp66_uebersetzungen(app):
     """Gegenprobe 66: Übersetzungstabellen vollständig und benutzt."""
     # a) Jeder Eintrag in TR und LABEL_TR hat genau Englisch und Deutsch,
