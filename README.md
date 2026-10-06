@@ -741,7 +741,9 @@ eine andere Größe die ~20 % trägt, ist nicht belegt. 180° bei
 125/250/500/1000 Hz: 3D −12,1/−15,0/−17,1/−17,3 dB, 2D −15,1/−19,4/
 −22,0/−21,7 dB, real (U87 Ai) −11/−12/−19/−23 dB; 1 kHz 90/135°: 3D
 −5,6/−13,9 dB, real −6,7/−15,5 dB; 2 kHz Minimum bei 148° (real 142°).
-Bei 1 kHz fehlen in 3D noch ~6 dB Tiefe (s. „Offene Punkte“ 9).
+Bei 1 kHz fehlen in 3D noch ~6 dB Tiefe (s. „Offene Punkte“ 9). Auf
+Achse (3D, fein): 20,9 mV/Pa bei 1 kHz (40 µm: 18,6), Überhöhung bei
+9 kHz +4,9 dB (40 µm: +6,1 dB).
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 
