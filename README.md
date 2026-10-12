@@ -539,6 +539,33 @@ Schreiben.
    ~45 µm träfe). Ein passendes Maß ohne Messung wäre ein Fit. Offen ist
    außerdem der Betragsrest der Rückkette bei angepasster Laufzeit
    (3D |D_r| = 1,19 gegen ≲ 1,10 für die reale Null).
+   - **Ruhekapazität und Membranspalt:** mit 50 µm Membranspalt liefert
+     das Modell 69,0 pF bei 60 V (U/U_PI = 0,81; die statische
+     Durchbiegung bringt +11 %) und 61,9 pF bei 0 V. Die Elektrode
+     (Ø 25,4 mm, 363 mm² solide nach Abzug der 108 Senkungen) ist dabei
+     aus dem Foto belegt. Genannt werden 50 pF je Seite (Neumann-
+     Schaltplan) und ≤ 53 pF an alten K67 (Forenmessungen, meist bei
+     0 V; spätere K87 65–75 pF). Streukapazität käme im gemessenen Wert
+     noch dazu. Das passt erst zu einem wirksamen Membranspalt von
+     60–65 µm (0 V: 51,8/47,8 pF; Resonanz jeweils für denselben
+     Pull-in-Abstand, 1297/1150 Hz).
+   - **Membranspalt als Hebel der Null (3D fein, freier Kopf):** in 3D
+     verkürzt er die interne Laufzeit kaum (40 µm Zwischenspalt:
+     50/60/65/70 µm → 42,4/41,2/40,9/40,6 mm; 2D rechnet dagegen
+     40,8 → 36,2 mm). Die Laufzeit trägt der Zwischenspalt. Bei
+     angepasster Laufzeit gilt:
+     - 50/45 µm, 1700 Hz: |D_r| 1,186, −17,3 dB, 20,9 mV/Pa;
+     - 65/44 µm, 1150 Hz: |D_r| 1,144, −19,3 dB, 16,8 mV/Pa,
+       C0 53,2 pF (0 V 47,8 pF).
+     Zerlegung von |D_r| − 1 bei 1 kHz (50/45 gegen 65/44): RC-Kette mit
+     Trägheit und Rückmembran-Steifigkeit 0,071/0,038 (2D, adiabatisch;
+     der Steifigkeitsanteil geht mit der Spannung), thermische Relaxation
+     der Senkungen 0,04/0,04, Formanpassung der Membranen in 3D
+     0,08/0,07. Resonanz 1000–1500 Hz und Senkungstiefe 3,4 mm (bei
+     angepasster Laufzeit) ändern |D_r| um ≤ 0,01. Ein koaxialer Körper
+     lässt |G(180°)| bei 1 kHz bei 1,00. Es bleiben ~4 dB bis −23 dB.
+     Bei 125/250 Hz liegt das Modell dagegen TIEFER als das reale
+     Mikrofon (−15,6/−18,5 gegen −11/−12 dB).
 ### Modellgrenzen (dokumentiert, nicht behoben)
 
 - **Einmodenbild von 1D/2D:** die Membran kann dem Filmdruck nicht
