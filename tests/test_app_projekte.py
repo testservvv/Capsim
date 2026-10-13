@@ -394,6 +394,30 @@ def test_gp63f_gespeicherte_voreinstellung(app):
         'def f(x):\n    """Doku."""\n    # Kommentar\n    return x + 1\n')
     assert V._baum_hash(code) != V._baum_hash(
         "def f(x):\n    return x + 2\n")
+    # ... und ist von der Python-Version unabhängig: ast.dump gab unter
+    # 3.11, 3.12 und 3.13 drei verschiedene Werte, Streamlit Cloud hielt
+    # die Datei deshalb für veraltet. Verglichen wird mit jedem hier
+    # installierten Interpreter (der Fingerabdruck braucht nur die
+    # Standardbibliothek).
+    import shutil
+    import subprocess
+    import sys
+    with open(V._MODELL, encoding="utf-8") as fh:
+        h_hier = V._baum_hash(fh.read()).hex()
+    versionen = []
+    for v in ("3.9", "3.10", "3.11", "3.12", "3.13", "3.14"):
+        exe = shutil.which(f"python{v}")
+        if exe is None:
+            continue
+        prog = ("import sys; sys.path.insert(0, sys.argv[1]); "
+                "import voreinstellung as V; "
+                "print(V._baum_hash(open(V._MODELL, encoding='utf-8')"
+                ".read()).hex())")
+        aus = subprocess.run([exe, "-I", "-c", prog, _WURZEL],
+                             capture_output=True, text=True, timeout=120)
+        assert aus.returncode == 0, (v, aus.stderr[-500:])
+        assert aus.stdout.strip() == h_hier, f"Python {v}: anderer Hash"
+        versionen.append(v)
     anders = A._ergebnis_schluessel(dict(A.DEFAULTS, bias_v=59.0))
     assert A._voreinstellung_einsetzen(anders) is None
     assert V.laden(anders, V.fingerabdruck(
@@ -416,7 +440,8 @@ def test_gp63f_gespeicherte_voreinstellung(app):
                               for e in at.info), [e.value for e in at.info]
     assert dauer < 60.0, f"App-Start {dauer:.0f} s — rechnet sie doch?"
     print(f"Gespeicherte Voreinstellung (erzeugt {meta['erzeugt']}, "
-          f"{meta['rechenzeit_s'] / 60:.0f} min): Fingerabdruck gültig, "
+          f"{meta['rechenzeit_s'] / 60:.0f} min): Fingerabdruck gültig "
+          f"und gleich unter Python {'/'.join(versionen) or sys.version[:4]}, "
           f"Stichprobe {f[i]:.0f} Hz und 1-kHz-Richtdiagramm gleich, "
           f"App-Start {dauer:.1f} s  OK")
 

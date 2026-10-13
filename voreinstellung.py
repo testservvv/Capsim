@@ -34,8 +34,6 @@ import sys
 import textwrap
 import time
 
-import numpy as np
-
 _WURZEL = os.path.dirname(os.path.abspath(__file__))
 DATEI = os.path.join(_WURZEL, "assets", "voreinstellung.json")
 _MODELL = os.path.join(_WURZEL, "microphone_capsule.py")
@@ -56,10 +54,28 @@ def _ohne_docstrings(baum):
     return baum
 
 
+def _kanonisch(knoten):
+    """Syntaxbaum als verschachtelte Liste, UNABHÄNGIG von der Python-
+    Version: ast.dump schreibt ab 3.12 neue leere Felder (type_params) und
+    lässt ab 3.13 leere/None-Felder weg — dieselbe Quelle hatte unter
+    3.11, 3.12 und 3.13 drei verschiedene Fingerabdrücke (Streamlit Cloud
+    rechnete deshalb neu). Hier zählen nur belegte Felder."""
+    if isinstance(knoten, ast.AST):
+        teile = [type(knoten).__name__]
+        for feld in knoten._fields:
+            wert = getattr(knoten, feld, None)
+            if wert is None or (isinstance(wert, list) and not wert):
+                continue
+            teile.append([feld, _kanonisch(wert)])
+        return teile
+    if isinstance(knoten, list):
+        return [_kanonisch(w) for w in knoten]
+    return repr(knoten)
+
+
 def _baum_hash(quelltext):
     baum = _ohne_docstrings(ast.parse(textwrap.dedent(quelltext)))
-    return hashlib.sha256(
-        ast.dump(baum, include_attributes=False).encode()).digest()
+    return hashlib.sha256(repr(_kanonisch(baum)).encode()).digest()
 
 
 def fingerabdruck(schluessel, funktionen):
@@ -78,6 +94,7 @@ def _kodieren(x):
     """Ergebnisbaum -> JSON-taugliche Form, verlustfrei (Gleitkommazahlen
     über repr, komplexe Felder als Real-/Imaginärteil, Wörterbücher als
     Paarlisten, weil die Richtdiagramme Gleitkomma-Schlüssel haben)."""
+    import numpy as np
     if isinstance(x, np.ndarray):
         if np.iscomplexobj(x):
             return {"__re__": x.real.tolist(), "__im__": x.imag.tolist()}
@@ -96,6 +113,7 @@ def _kodieren(x):
 
 
 def _dekodieren(x):
+    import numpy as np
     if isinstance(x, dict):
         if "__arr__" in x:
             return np.asarray(x["__arr__"], dtype=float)
@@ -147,6 +165,7 @@ def laden(schluessel, abdruck, datei=DATEI):
 
 def _gleich(a, b):
     """Bitgleichheit zweier Ergebnisbäume (NaN gleich NaN)."""
+    import numpy as np
     if isinstance(a, dict):
         return (isinstance(b, dict) and a.keys() == b.keys()
                 and all(_gleich(a[k], b[k]) for k in a))

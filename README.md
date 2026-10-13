@@ -795,7 +795,11 @@ Parametersatz ein; jede Änderung rechnet sie live, und die Kapsel selbst
 Fingerabdruck stimmt. Er umfasst den Ergebnisschlüssel, die Modellquelle
 und die Bau- und Rechenfunktionen der App, jeweils als Syntaxbaum ohne
 Kommentare und Docstrings. Eine Kommentaränderung lässt die Datei also
-gültig, jede Codeänderung nicht. Dann rechnet die App neu und meldet
+gültig, jede Codeänderung nicht. Der Baum wird kanonisch geschrieben
+(nur belegte Felder): `ast.dump` gab für dieselbe Quelle unter Python
+3.11, 3.12 und 3.13 drei verschiedene Werte, und Streamlit Cloud hielt
+die lokal erzeugte Datei deshalb für veraltet. Jetzt gilt sie unabhängig
+von Python-, NumPy- und SciPy-Version; lokal erzeugen und pushen genügt. Dann rechnet die App neu und meldet
 das; veraltete Ergebnisse erscheinen nie still. Neu erzeugen mit
 `python voreinstellung.py`: Das Werkzeug rechnet durch dieselben
 App-Funktionen und liest die Datei zur Kontrolle bitgleich zurück.
@@ -808,7 +812,9 @@ Die Probe prüft:
 - b) eine frisch gerechnete Stichprobe (Frequenzpunkt nahe 1 kHz,
   1-kHz-Richtdiagramm, Empfindlichkeit) gegen die gespeicherten Werte;
 - c) dass Kommentare den Fingerabdruck nicht ändern, Code ihn aber
-  ändert und ein anderer Parametersatz nichts Gespeichertes bekommt;
+  ändert, dass er unter jeder installierten Python-Version gleich ist
+  (hier 3.10–3.13) und dass ein anderer Parametersatz nichts
+  Gespeichertes bekommt;
 - d) den Start der echten App: Hinweis sichtbar, keine Rechnung.
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
