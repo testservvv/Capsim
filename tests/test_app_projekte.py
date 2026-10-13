@@ -362,7 +362,11 @@ def test_gp63f_gespeicherte_voreinstellung(app):
     #    gespeicherten Werten (bis auf die Rundung der Faktorisierung).
     # c) Der Fingerabdruck sieht Code, aber keine Kommentare/Docstrings,
     #    und jeder andere Parametersatz bekommt nichts Gespeichertes.
-    # d) Die App zeigt die Voreinstellung ohne Rechnung, mit Hinweis.
+    # d) Die App zeigt die Voreinstellung ohne Rechnung und ohne die Kapsel
+    #    zu bauen (Kennwerte aus der Datei), mit Hinweis.
+    # e) Passt die Datei nicht, startet die Stundenrechnung NICHT von
+    #    selbst (in der Streamlit Cloud drosselte das die App): Grund und
+    #    Knopf, keine Diagramme. Der Schlüssel ist typnormiert.
     import time
     import voreinstellung as V
     A = app
@@ -388,6 +392,7 @@ def test_gp63f_gespeicherte_voreinstellung(app):
         assert abs(neu - alt) <= 1e-9 * abs(alt), (name, neu, alt)
     assert np.allclose(di["patterns"][1000.0]["db"],
                        erg["di"]["patterns"][1000.0]["db"], atol=1e-9)
+    assert A._kennwerte(kapsel) == meta["kennwerte"], "Kennwerte"
     # c)
     code = "def f(x):\n    return x + 1\n"
     assert V._baum_hash(code) == V._baum_hash(
@@ -439,11 +444,35 @@ def test_gp63f_gespeicherte_voreinstellung(app):
     assert not at.info or all("Voreinstellung" not in e.value
                               for e in at.info), [e.value for e in at.info]
     assert dauer < 60.0, f"App-Start {dauer:.0f} s — rechnet sie doch?"
+    assert ("_capsule_cache" not in at.session_state
+            or not at.session_state["_capsule_cache"]), "Kapsel doch gebaut"
+    # e)
+    assert A._ergebnis_schluessel(dict(A.DEFAULTS, n_points=400.0,
+                                       bias_v=60)) == key
+    echt = V.laden
+    try:
+        V.laden = lambda *a, **k: (None, None, "veraltet")
+        at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                               default_timeout=120)
+        at.session_state["ui_lang"] = "de"
+        t0 = time.time()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            at.run()
+        dauer_e = time.time() - t0
+    finally:
+        V.laden = echt
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("passen nicht mehr zum Modellcode" in e.value
+               for e in at.info), [e.value for e in at.info]
+    assert [b for b in at.button if "jetzt rechnen" in b.label]
+    assert not at.get("plotly_chart") and dauer_e < 60.0, dauer_e
     print(f"Gespeicherte Voreinstellung (erzeugt {meta['erzeugt']}, "
           f"{meta['rechenzeit_s'] / 60:.0f} min): Fingerabdruck gültig "
           f"und gleich unter Python {'/'.join(versionen) or sys.version[:4]}, "
-          f"Stichprobe {f[i]:.0f} Hz und 1-kHz-Richtdiagramm gleich, "
-          f"App-Start {dauer:.1f} s  OK")
+          f"Stichprobe {f[i]:.0f} Hz, 1-kHz-Richtdiagramm und Kennwerte "
+          f"gleich, App-Start {dauer:.1f} s ohne Kapselbau; veraltet: "
+          f"Knopf statt Rechnung ({dauer_e:.1f} s)  OK")
 
 
 def test_gp66_uebersetzungen(app):

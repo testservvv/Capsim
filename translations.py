@@ -1688,20 +1688,31 @@ TR = {
     },
     "info_default_stale": {
         "en": "The stored results of the default model no longer match "
-              "the model code — computing anew (fine 3D field model, over "
-              "an hour). Regenerate them with `python voreinstellung.py`.",
-        "de": "Die gespeicherten Ergebnisse der Voreinstellung passen "
-              "nicht mehr zum Modellcode — es wird neu gerechnet (feines "
-              "3D-Feldmodell, über eine Stunde). Neu erzeugen mit "
-              "`python voreinstellung.py`.",
+              "the model code. Regenerate them with `python "
+              "voreinstellung.py` (~1.5 h) and push them — or compute the "
+              "default here (fine 3D field model, over an hour). For quick "
+              "results choose 2D in the sidebar.",
+        "de": "Die gespeicherten Ergebnisse der Voreinstellung passen nicht "
+              "mehr zum Modellcode. Neu erzeugen mit `python "
+              "voreinstellung.py` (~1,5 h) und pushen — oder die "
+              "Voreinstellung hier rechnen (feines 3D-Feldmodell, über eine "
+              "Stunde). Für schnelle Ergebnisse in der Seitenleiste 2D "
+              "wählen.",
     },
     "info_default_missing": {
-        "en": "No stored results for the default model — computing anew "
-              "(fine 3D field model, over an hour). Generate them with "
-              "`python voreinstellung.py`.",
-        "de": "Keine gespeicherten Ergebnisse für die Voreinstellung — es "
-              "wird neu gerechnet (feines 3D-Feldmodell, über eine "
-              "Stunde). Erzeugen mit `python voreinstellung.py`.",
+        "en": "No usable stored results for the default model. Generate "
+              "them with `python voreinstellung.py` (~1.5 h) — or compute "
+              "the default here (fine 3D field model, over an hour). For "
+              "quick results choose 2D in the sidebar.",
+        "de": "Keine passenden gespeicherten Ergebnisse für die "
+              "Voreinstellung. Erzeugen mit `python voreinstellung.py` "
+              "(~1,5 h) — oder die Voreinstellung hier rechnen (feines "
+              "3D-Feldmodell, über eine Stunde). Für schnelle Ergebnisse in "
+              "der Seitenleiste 2D wählen.",
+    },
+    "btn_default_compute": {
+        "en": "Compute the default now (over an hour)",
+        "de": "Voreinstellung jetzt rechnen (über eine Stunde)",
     },
     "info_no_dr": {
         "en": "Rear side closed (pressure transducer) — there is no "

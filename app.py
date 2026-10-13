@@ -982,15 +982,70 @@ def compute_results(cache_key, capsule, progress=None):
 def _ergebnis_schluessel(params):
     """Cache-Schlüssel: alle Parameter, die Physik oder berechnete Daten
     ändern. Reine Darstellungsoptionen (Normierungs-Toggle) bleiben
-    draußen, damit ihr Umschalten keine Neuberechnung auslöst."""
-    key_params = {**params, "dir_freqs": sorted(params["dir_freqs"])}
-    key_params.pop("normalize_1khz", None)
+    draußen, damit ihr Umschalten keine Neuberechnung auslöst. Die Typen
+    folgen DEFAULTS: liefert ein Widget derselben Einstellung einmal 400
+    und einmal 400.0 (je nach Streamlit-Version), bleibt der Schlüssel
+    gleich — sonst träfe die gespeicherte Voreinstellung nicht."""
+    key_params = {}
+    for k, v in params.items():
+        if k == "normalize_1khz":
+            continue
+        if k in _RING_PREFIX:
+            v = [[int(n), float(d)] for n, d in v]
+        elif k == "dir_freqs":
+            v = sorted(int(f) for f in v)
+        elif k in _BOOL_KEYS:
+            v = bool(v)
+        elif k in _FLOAT_KEYS:
+            v = float(v)
+        elif k in _INT_KEYS:
+            v = int(v)
+        key_params[k] = v
     return json.dumps(key_params, sort_keys=True)
+
+
+def _kennwerte(capsule):
+    """Die Kennwerte der Kapsel, die der Hauptbereich zeigt — mit der
+    gespeicherten Voreinstellung abgelegt, damit der App-Start die Kapsel
+    gar nicht bauen muss (3D fein: ~6 s und ~400 MB, in der gedrosselten
+    Cloud ein Vielfaches)."""
+    g3d = getattr(capsule, "_g3d", None) or {}
+    return {
+        "f_res": float(capsule.f_res),
+        "f_res_from_tension": float(capsule.f_res_from_tension),
+        "C_elec_0": float(capsule.C_elec_0),
+        "n_bp": int(capsule.n_bp),
+        "U_pullin": float(capsule.U_pullin),
+        "softening_ratio": float(capsule.softening_ratio),
+        "w0_static": float(capsule.w0_static),
+        "h_min_static": float(capsule.h_min_static),
+        "squeeze_model": capsule.squeeze_model,
+        "architecture": capsule.architecture,
+        "axial_body_model": capsule.axial_body_model,
+        "include_diffraction": bool(capsule.include_diffraction),
+        "rear_open": bool(capsule.rear_open),
+        "d_ext": float(capsule.d_ext),
+        "cavity_hole_position": capsule.cavity_hole_position,
+        "_g3d": {"fine_capped": bool(g3d.get("fine_capped", False)),
+                 "cells_rm": float(g3d.get("cells_rm", 0.0))},
+    }
+
+
+class _GespeicherteKapsel:
+    """Stellvertreter der Kapsel für die gespeicherte Voreinstellung: die
+    Kennwerte aus der Datei, die Klassenkonstanten vom Modell."""
+    _F_BAND_TOP = MicrophoneCapsule._F_BAND_TOP
+    _GRID_FINE_MAX = MicrophoneCapsule._GRID_FINE_MAX
+    _GRID_FINE_CELLS = MicrophoneCapsule._GRID_FINE_CELLS
+    _RING_REPR_DB = MicrophoneCapsule._RING_REPR_DB
+
+    def __init__(self, kennwerte):
+        self.__dict__.update(kennwerte)
 
 
 # Was die gespeicherten Ergebnisse der Voreinstellung erzeugt hat — ihr
 # Fingerabdruck enthält diese Funktionen (s. voreinstellung.py)
-_VOREINSTELLUNG_FUNKTIONEN = (build_capsule, compute_results)
+_VOREINSTELLUNG_FUNKTIONEN = (build_capsule, compute_results, _kennwerte)
 
 
 def _voreinstellung_einsetzen(cache_key):
@@ -1560,21 +1615,32 @@ def _hauptbereich():
                                           pct=100 * frac))
 
 
-    try:
-        capsule = get_capsule(params, _show_progress)
-    except ValueError as exc:
-        _prog_slot.empty()
-        st.error(tr("err_params", exc=meldung(exc)))
-        st.stop()
-
     _cache_key = _ergebnis_schluessel(params)
     # Voreinstellung: gespeicherte Ergebnisse statt einer Stunde 3D-Rechnung
     # (nur genau für ihren Parametersatz und nur, solange sie zum Modell
-    # passen, s. _voreinstellung_einsetzen)
+    # passen, s. _voreinstellung_einsetzen). Dann wird auch die Kapsel
+    # nicht gebaut — ihre Kennwerte stehen in der Datei.
     _gespeichert = _voreinstellung_einsetzen(_cache_key)
-    if isinstance(_gespeichert, str):
+    if isinstance(_gespeichert, str) and not st.session_state.get(
+            "_voreinstellung_rechnen"):
+        # Passt die Datei nicht, startet die Stundenrechnung NIE von selbst
+        # (in der Streamlit Cloud drosselte das die App): Grund zeigen, auf
+        # Knopfdruck rechnen; jede andere Einstellung rechnet wie immer.
         st.info(tr("info_default_stale" if _gespeichert == "veraltet"
                    else "info_default_missing"))
+        st.button(tr("btn_default_compute"),
+                  on_click=lambda: st.session_state.update(
+                      _voreinstellung_rechnen=True))
+        st.stop()
+    if isinstance(_gespeichert, dict):
+        capsule = _GespeicherteKapsel(_gespeichert["kennwerte"])
+    else:
+        try:
+            capsule = get_capsule(params, _show_progress)
+        except ValueError as exc:
+            _prog_slot.empty()
+            st.error(tr("err_params", exc=meldung(exc)))
+            st.stop()
 
     # Auch eine Rechnung kann an den Maßen scheitern (etwa eine nicht lösbare
     # BEM-Randintegralgleichung) — dann dieselbe Meldung statt eines

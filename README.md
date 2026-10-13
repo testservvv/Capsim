@@ -10,7 +10,7 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 | `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung); `python microphone_capsule.py` startet den Selbsttest |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
 | `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
-| `voreinstellung.py`, `assets/voreinstellung.json` | Gespeicherte Ergebnisse der App-Voreinstellung (feines 3D, ~1,5 h Rechenzeit) mit Fingerabdruck; `python voreinstellung.py` erzeugt sie neu (Gegenprobe 63 f) |
+| `voreinstellung.py`, `assets/voreinstellung.json` | Gespeicherte Ergebnisse und Kennwerte der App-Voreinstellung (feines 3D, ~1,5 h Rechenzeit) mit Fingerabdruck; `python voreinstellung.py` erzeugt sie neu (Gegenprobe 63 f) |
 | `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures, `stand.py` und `basis_werte.json` die Stand-Werte und Sperrklinken, `stokes_zelle.py` und `stokes_eben.py` die Referenzlöser der Spalt-Mündung (Gegenprobe 67), `potential3d.py` den 3D-Gegenlöser für den Front-Rück-Weg nicht achsensymmetrischer Montagen (Offene Punkte 9) |
 
 ## Sprache / Language
@@ -789,18 +789,27 @@ ist dieser Parametersatz die **Voreinstellung beim App-Start**.
 kostet im feinen 3D-Modell ~13 s je Frequenzpunkt, mit 400 Punkten also
 ~1,5 h. Ihre Ergebnisse liegen deshalb fertig in
 `assets/voreinstellung.json`: Frequenzgang, Richtdiagramme, Diagnose und
-Summary in beiden Sprachen. Die App setzt sie NUR für genau diesen
-Parametersatz ein; jede Änderung rechnet sie live, und die Kapsel selbst
-(~1 s) baut sie immer neu. Gültig ist die Datei, solange ihr
+Summary in beiden Sprachen und die Kennwerte der Kapsel für die Anzeige
+(Resonanz, C0, Pull-in …). Die App setzt sie NUR für genau diesen
+Parametersatz ein; jede Änderung rechnet sie live. Beim Start baut sie
+die Kapsel nicht: im feinen 3D kostete allein das ~6 s und ~450 MB. Der
+Start braucht jetzt ~1,7 s Rechenzeit und ~210 MB, in der Streamlit
+Cloud entschied das über Laden oder Drosseln. Der Ergebnisschlüssel ist
+typnormiert: 400 und 400.0 aus verschiedenen Streamlit-Versionen treffen
+dieselbe Datei. Gültig ist die Datei, solange ihr
 Fingerabdruck stimmt. Er umfasst den Ergebnisschlüssel, die Modellquelle
 und die Bau- und Rechenfunktionen der App, jeweils als Syntaxbaum ohne
 Kommentare und Docstrings. Eine Kommentaränderung lässt die Datei also
-gültig, jede Codeänderung nicht. Der Baum wird kanonisch geschrieben
+gültig, jede Codeänderung nicht. Den Baum-Hash des Modells rechnet die
+App einmal je Serverprozess. Der Baum wird kanonisch geschrieben
 (nur belegte Felder): `ast.dump` gab für dieselbe Quelle unter Python
 3.11, 3.12 und 3.13 drei verschiedene Werte, und Streamlit Cloud hielt
 die lokal erzeugte Datei deshalb für veraltet. Jetzt gilt sie unabhängig
-von Python-, NumPy- und SciPy-Version; lokal erzeugen und pushen genügt. Dann rechnet die App neu und meldet
-das; veraltete Ergebnisse erscheinen nie still. Neu erzeugen mit
+von Python-, NumPy- und SciPy-Version; lokal erzeugen und pushen genügt. Passt der Fingerabdruck nicht, zeigt
+die App den Grund und rechnet die Voreinstellung erst auf Knopfdruck:
+Veraltete Ergebnisse erscheinen nie still, und eine Stundenrechnung
+startet nie von selbst (das drosselte die App in der Streamlit Cloud).
+Neu erzeugen mit
 `python voreinstellung.py`: Das Werkzeug rechnet durch dieselben
 App-Funktionen und liest die Datei zur Kontrolle bitgleich zurück.
 Damit die Proben die App ohne Rechnung importieren können, läuft der
@@ -815,7 +824,9 @@ Die Probe prüft:
   ändert, dass er unter jeder installierten Python-Version gleich ist
   (hier 3.10–3.13) und dass ein anderer Parametersatz nichts
   Gespeichertes bekommt;
-- d) den Start der echten App: Hinweis sichtbar, keine Rechnung.
+- d) den Start der echten App: Hinweis sichtbar, keine Rechnung, keine
+  Kapsel gebaut, Kennwerte gleich denen einer frisch gebauten Kapsel;
+- e) bei unpassender Datei: Grund und Knopf, keine Rechnung.
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 

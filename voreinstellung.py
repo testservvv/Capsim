@@ -4,7 +4,8 @@
 Die Voreinstellung der App ist die experimentelle K67 mit 45 µm
 Zwischenspalt im FEINEN 3D-Feldmodell: ~13 s je Frequenzpunkt, beim Start
 also weit über eine Stunde. Ihre Ergebnisse (Frequenzgang, Richt-
-diagramme, Diagnose, Summary in beiden Sprachen) liegen deshalb fertig in
+diagramme, Diagnose, Summary in beiden Sprachen und die Kennwerte der
+Kapsel für die Anzeige) liegen deshalb fertig in
 ``assets/voreinstellung.json`` — NUR für genau diesen Parametersatz. Jede
 andere Einstellung rechnet die App wie bisher.
 
@@ -13,12 +14,15 @@ Gültig ist die Datei nur, solange ihr Fingerabdruck stimmt:
 * der Ergebnisschlüssel der App (alle physikrelevanten Parameter),
 * die Modellquelle ``microphone_capsule.py``,
 * die Bau- und Rechenfunktionen der App (``build_capsule``,
-  ``compute_results``),
+  ``compute_results``, ``_kennwerte``),
 
 jeweils als Syntaxbaum ohne Kommentare und Docstrings: eine reine
 Kommentaränderung lässt die Datei gültig, jede Codeänderung macht sie
-ungültig. Dann rechnet die App neu und sagt das — veraltete Ergebnisse
-erscheinen nie still.
+ungültig. Dann zeigt die App den Grund und rechnet die Voreinstellung
+erst auf Knopfdruck — veraltete Ergebnisse erscheinen nie still, und eine
+Stundenrechnung startet nie von selbst (in der Streamlit Cloud drosselte
+das die App). Beim Start baut die App die Kapsel nicht: ihre Kennwerte
+für die Anzeige stehen mit in der Datei.
 
 Neu erzeugen (nach jeder Modelländerung; ~1,5 h):
 
@@ -37,7 +41,7 @@ import time
 _WURZEL = os.path.dirname(os.path.abspath(__file__))
 DATEI = os.path.join(_WURZEL, "assets", "voreinstellung.json")
 _MODELL = os.path.join(_WURZEL, "microphone_capsule.py")
-FORMAT = 1
+FORMAT = 2          # 2: mit den Kennwerten der Kapsel (Start ohne Bau)
 
 
 def _ohne_docstrings(baum):
@@ -78,13 +82,28 @@ def _baum_hash(quelltext):
     return hashlib.sha256(repr(_kanonisch(baum)).encode()).digest()
 
 
+_MODELL_HASH = {}
+
+
+def _modell_hash():
+    """Baum-Hash der Modellquelle, EINMAL je Prozess und Dateistand: das
+    Zerlegen der ~9000 Zeilen kostet ~1 s (in der gedrosselten Cloud ein
+    Vielfaches) und fiele sonst bei jeder Sitzung an."""
+    st_ = os.stat(_MODELL)
+    marke = (st_.st_mtime_ns, st_.st_size)
+    if marke not in _MODELL_HASH:
+        with open(_MODELL, encoding="utf-8") as fh:
+            _MODELL_HASH.clear()
+            _MODELL_HASH[marke] = _baum_hash(fh.read())
+    return _MODELL_HASH[marke]
+
+
 def fingerabdruck(schluessel, funktionen):
     """Fingerabdruck aus Ergebnisschlüssel, Modellquelle und den
     übergebenen App-Funktionen (s. Moduldoku)."""
     h = hashlib.sha256()
     h.update(schluessel.encode())
-    with open(_MODELL, encoding="utf-8") as fh:
-        h.update(_baum_hash(fh.read()))
+    h.update(_modell_hash())
     for fn in funktionen:
         h.update(_baum_hash(inspect.getsource(fn)))
     return h.hexdigest()
@@ -130,13 +149,15 @@ def _dekodieren(x):
 
 
 def speichern(schluessel, abdruck, ergebnis, zusammenfassungen,
-              rechenzeit_s, datei=DATEI):
+              kennwerte, rechenzeit_s, datei=DATEI, erzeugt=None):
     daten = {
         "format": FORMAT,
-        "erzeugt": _dt.datetime.now().isoformat(timespec="seconds"),
+        "erzeugt": erzeugt or _dt.datetime.now().isoformat(
+            timespec="seconds"),
         "rechenzeit_s": round(float(rechenzeit_s), 1),
         "fingerabdruck": abdruck,
         "schluessel": schluessel,
+        "kennwerte": _kodieren(kennwerte),
         "zusammenfassung": zusammenfassungen,
         "ergebnis": _kodieren(ergebnis),
     }
@@ -148,7 +169,8 @@ def speichern(schluessel, abdruck, ergebnis, zusammenfassungen,
 
 
 def laden(schluessel, abdruck, datei=DATEI):
-    """(ergebnis, zusammenfassungen, meta) bei passendem Fingerabdruck,
+    """(ergebnis, zusammenfassungen, meta) bei passendem Fingerabdruck —
+    meta mit Erzeugungsdatum, Rechenzeit und den Kennwerten der Kapsel —,
     sonst (None, None, grund) mit grund 'fehlt', 'parameter' oder
     'veraltet'."""
     if not os.path.exists(datei):
@@ -159,7 +181,8 @@ def laden(schluessel, abdruck, datei=DATEI):
         return None, None, "parameter"
     if daten.get("fingerabdruck") != abdruck:
         return None, None, "veraltet"
-    meta = {"erzeugt": daten["erzeugt"], "rechenzeit_s": daten["rechenzeit_s"]}
+    meta = {"erzeugt": daten["erzeugt"], "rechenzeit_s": daten["rechenzeit_s"],
+            "kennwerte": _dekodieren(daten["kennwerte"])}
     return _dekodieren(daten["ergebnis"]), daten["zusammenfassung"], meta
 
 
@@ -197,11 +220,14 @@ def erzeugen(datei=DATEI):
     kapsel = A.build_capsule(p)
     ergebnis = A.compute_results(schluessel, kapsel, fortschritt)
     zusammenfassungen = {sp: kapsel.summary(lang=sp) for sp in ("de", "en")}
+    kennwerte = A._kennwerte(kapsel)
     dauer = time.time() - t0
-    speichern(schluessel, abdruck, ergebnis, zusammenfassungen, dauer, datei)
+    speichern(schluessel, abdruck, ergebnis, zusammenfassungen, kennwerte,
+              dauer, datei)
     zurueck, zus, meta = laden(schluessel, abdruck, datei)
     if zurueck is None or not _gleich(ergebnis, zurueck) \
-            or zus != zusammenfassungen:
+            or zus != zusammenfassungen \
+            or not _gleich(kennwerte, meta["kennwerte"]):
         raise RuntimeError("Gespeicherte Voreinstellung liest sich nicht "
                            "bitgleich zurück")
     print(f"Voreinstellung gespeichert: {datei} "
