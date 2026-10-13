@@ -1678,6 +1678,31 @@ TR = {
     },
 
     # ------------------------- Hauptbereich -----------------------------
+    "cap_default_stored": {
+        "en": "Default model: stored results of the fine 3D field model "
+              "(generated {datum}, {min:.0f} min of computation). Any "
+              "change is computed live.",
+        "de": "Voreinstellung: gespeicherte Ergebnisse des feinen "
+              "3D-Feldmodells (erzeugt {datum}, {min:.0f} min Rechenzeit). "
+              "Jede Änderung wird live gerechnet.",
+    },
+    "info_default_stale": {
+        "en": "The stored results of the default model no longer match "
+              "the model code — computing anew (fine 3D field model, over "
+              "an hour). Regenerate them with `python voreinstellung.py`.",
+        "de": "Die gespeicherten Ergebnisse der Voreinstellung passen "
+              "nicht mehr zum Modellcode — es wird neu gerechnet (feines "
+              "3D-Feldmodell, über eine Stunde). Neu erzeugen mit "
+              "`python voreinstellung.py`.",
+    },
+    "info_default_missing": {
+        "en": "No stored results for the default model — computing anew "
+              "(fine 3D field model, over an hour). Generate them with "
+              "`python voreinstellung.py`.",
+        "de": "Keine gespeicherten Ergebnisse für die Voreinstellung — es "
+              "wird neu gerechnet (feines 3D-Feldmodell, über eine "
+              "Stunde). Erzeugen mit `python voreinstellung.py`.",
+    },
     "info_no_dr": {
         "en": "Rear side closed (pressure transducer) — there is no "
               "internal phase-shifter path and therefore no D_r.",

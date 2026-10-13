@@ -27,6 +27,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from microphone_capsule import MicrophoneCapsule, ParameterFehler
 from translations import TR, LABEL_TR
@@ -160,13 +161,14 @@ FAB_POS_LABELS = {"An der Backplate": "backplate",
 DIRECTIVITY_OPTIONS = [50, 100, 125, 250, 500, 1000, 2000, 4000,
                        5000, 8000, 10000, 12500, 16000, 20000]
 
-# (key, Widget-Art, Default) — Gruppen s. Sidebar-Aufbau weiter unten
-# Voreinstellungen beim Start: die K67/K870-Kapsel (U87Ai, Nierenmodus)
-# in der echten Doppelmembran-Bauform mit zweiteiliger Elektrode und
-# Stufenbohrungen, gerechnet im 2D-Feldmodell — identisch zu
-# examples/u87_k67_projekt.json (dort ausführlich dokumentiert).
-# Die Debenham-Kapsel liegt weiter unter examples/.
-DEFAULTS = {
+# Fehlwerte beim Projekt-Laden: fehlt einem Projekt ein Schlüssel, gilt
+# dieser Wert (s. _projekt_params). Das ist die Voreinstellung der App bis
+# zur 3D-K67 (identisch zu examples/u87_k67_projekt.json, 2D, d_ext-Kugel)
+# und bleibt eingefroren: ältere Projekte kennen z. B. Mittenterminierung,
+# BEM-Körper oder 3D-Schalter nicht und meinten deren damaligen Wert —
+# die heutige Voreinstellung (3D, freier Kopf, Pfosten 1 mm) würde sie
+# still zu einer anderen Kapsel machen.
+_PROJEKT_FEHLWERTE = {
     # Membran
     "material": "PET (Mylar)",
     "use_f_res": True,
@@ -262,6 +264,46 @@ DEFAULTS = {
     "dir_freqs": [125, 1000, 4000, 8000, 16000],
 }
 
+# (key, Widget-Art, Default) — Gruppen s. Sidebar-Aufbau weiter unten
+# Voreinstellung beim Start: die experimentelle K67 (U87 Ai, Nierenmodus)
+# mit dem Bohrbild aus dem Foto und 45 µm wirksamem Zwischenspalt, im
+# FEINEN 3D-Feldmodell mit dem freien Kopf als Außenweg — identisch zu
+# examples/k67_experimentell_zwischenspalt45.json (dort Maße, Quellen und
+# die ANPASSUNG: 45 statt 40 µm ist kein Messwert), nur mit 3D. Gerechnet
+# ~1,5 h; die App setzt deshalb gespeicherte Ergebnisse ein, solange
+# Modell und Parameter dazu passen (voreinstellung.py, Gegenprobe 63 f).
+# Die übrigen Kapseln liegen unter examples/.
+DEFAULTS = {
+    **_PROJEKT_FEHLWERTE,
+    "f_res_hz": 1700.0,
+    "mem_diameter_mm": 27.2,
+    "center_post_mm": 1.0,
+    "air_gap_um": 50.0,
+    "bp_diameter_mm": 25.4,
+    "bp_thickness_mm": 4.07,
+    "center_gap_um": 45.0,
+    # 2-mm-Raster der K67 auf 13 Radien (s. Projektdatei): 54 Kerne,
+    # 108 Senkungen 1.3 x 3.75 mm
+    "th_rings": [[2, 8.485], [4, 10.198], [4, 11.662], [6, 14.142],
+                 [4, 15.232], [4, 17.205], [4, 18.111], [4, 18.974],
+                 [2, 19.799], [4, 20.591], [4, 22.091], [8, 22.804],
+                 [4, 24.166]],
+    "blind_depth_mm": 3.75,
+    "bh_rings": [[4, 8.485], [8, 10.198], [8, 11.662], [12, 14.142],
+                 [8, 15.232], [8, 17.205], [8, 18.111], [8, 18.974],
+                 [4, 19.799], [8, 20.591], [8, 22.091], [16, 22.804],
+                 [8, 24.166]],
+    "clamp_width_mm": 3.4,
+    "clr_dia_mm": 3.0,
+    "clr_width_mm": 2.0,
+    "clr_depth_mm": 0.2,
+    "axial_body": "BEM (Kopf + Körper)",
+    "bem_body_dia_mm": 0.0,
+    "squeeze_3d": True,
+    "grid_3d_fine": True,
+    "dir_freqs": [125, 250, 500, 1000, 2000, 4000],
+}
+
 _FLOAT_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, float)}
 _INT_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, int)
              and not isinstance(v, bool)}
@@ -278,8 +320,8 @@ _RING_PREFIX = {"th_rings": "th", "bh_rings": "bh"}
 # meldet der Lader jedes Kürzen (s. _projekt_params).
 MAX_RINGS = 16
 
-# Fehlt ein Schlüssel im Projekt, gilt die Voreinstellung (DEFAULTS =
-# K67). Für Merkmale, deren K67-Wert nicht der neutrale ist, wäre das
+# Fehlt ein Schlüssel im Projekt, gilt _PROJEKT_FEHLWERTE (die frühere
+# 2D-K67). Für Merkmale, deren K67-Wert nicht der neutrale ist, wäre das
 # falsch: ein Projekt ohne den Schlüssel stammt aus der Zeit vor dem
 # Merkmal und kann es nicht gemeint haben. Ohne diese Regel bekam das
 # Debenham-Beispiel beim Laden Stufenbohrungen (12 der 46 Sacklöcher
@@ -510,10 +552,12 @@ def _projekt_params(data):
         staged["bh_rings"] = [[int(params_in["n_blind"]),
                                float(params_in.get("bh_pcd_mm", 0.0))]]
     # Ein Projekt beschreibt die KOMPLETTE Kapsel: im Projekt nicht
-    # enthaltene Parameter fallen auf die Voreinstellung zurück
-    # (ältere Projekte kennen z. B. Spacer/Rückplatte noch nicht).
-    return ({key: staged.get(key, _FEHLT_IM_PROJEKT.get(key, default))
-             for key, default in DEFAULTS.items()}, len(staged), gekuerzt)
+    # enthaltene Parameter fallen auf die eingefrorenen Fehlwerte zurück
+    # (ältere Projekte kennen z. B. Spacer/Rückplatte noch nicht), NICHT
+    # auf die heutige Voreinstellung (s. _PROJEKT_FEHLWERTE).
+    return ({key: staged.get(key, _FEHLT_IM_PROJEKT.get(
+                key, _PROJEKT_FEHLWERTE[key]))
+             for key in DEFAULTS}, len(staged), gekuerzt)
 
 
 def _load_project():
@@ -933,6 +977,48 @@ def compute_results(cache_key, capsule, progress=None):
     while len(store) > _RESULTS_CACHE_MAX:
         store.pop(next(iter(store)))
     return result
+
+
+def _ergebnis_schluessel(params):
+    """Cache-Schlüssel: alle Parameter, die Physik oder berechnete Daten
+    ändern. Reine Darstellungsoptionen (Normierungs-Toggle) bleiben
+    draußen, damit ihr Umschalten keine Neuberechnung auslöst."""
+    key_params = {**params, "dir_freqs": sorted(params["dir_freqs"])}
+    key_params.pop("normalize_1khz", None)
+    return json.dumps(key_params, sort_keys=True)
+
+
+# Was die gespeicherten Ergebnisse der Voreinstellung erzeugt hat — ihr
+# Fingerabdruck enthält diese Funktionen (s. voreinstellung.py)
+_VOREINSTELLUNG_FUNKTIONEN = (build_capsule, compute_results)
+
+
+def _voreinstellung_einsetzen(cache_key):
+    """Gespeicherte Ergebnisse der Voreinstellung in die Session-Caches
+    setzen (Gegenprobe 63 f) — NUR für genau ihren Parametersatz.
+
+    Rückgabe: None (andere Parameter), die Metadaten der Datei (Treffer)
+    oder der Grund, warum sie nicht passt ('veraltet', 'fehlt',
+    'parameter'). Geprüft wird einmal je Sitzung; die geladenen Daten
+    bleiben in der Sitzung und werden wieder eingesetzt, falls der
+    begrenzte Ergebnis-Cache sie verdrängt hat."""
+    if cache_key != _ergebnis_schluessel(DEFAULTS):
+        return None
+    store = _session_store("_voreinstellung")
+    if "status" not in store:
+        import voreinstellung
+        abdruck = voreinstellung.fingerabdruck(cache_key,
+                                               _VOREINSTELLUNG_FUNKTIONEN)
+        erg, zus, meta = voreinstellung.laden(cache_key, abdruck)
+        store.update(status=meta, ergebnis=erg, zusammenfassung=zus)
+    if store["ergebnis"] is not None:
+        results = _session_store("_results_cache")
+        if cache_key not in results:
+            results[cache_key] = store["ergebnis"]
+        summaries = _session_store("_summary_cache")
+        for lang, text in store["zusammenfassung"].items():
+            summaries.setdefault(f"{lang}|{cache_key}", text)
+    return store["status"]
 
 
 def get_summary(cache_key, capsule, lang):
@@ -1457,256 +1543,271 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Berechnung
 # ---------------------------------------------------------------------------
-params = _current_params()
+def _hauptbereich():
+    """Berechnung und Hauptbereich. Läuft nur mit Streamlit-Laufzeit
+    (App, AppTest): als Modul importiert (Proben, voreinstellung.py)
+    liefert das Skript nur seine Definitionen und rechnet nichts — die
+    Voreinstellung ist ein 3D-Lauf von über einer Stunde."""
+    params = _current_params()
 
-# Platzhalter VOR dem Modellaufbau: schon der Konstruktor (Elektrostatik,
-# bei 3D der Gitteraufbau) soll als Fortschritt sichtbar sein.
-_prog_slot = st.empty()
+    # Platzhalter VOR dem Modellaufbau: schon der Konstruktor (Elektrostatik,
+    # bei 3D der Gitteraufbau) soll als Fortschritt sichtbar sein.
+    _prog_slot = st.empty()
 
 
-def _show_progress(frac, label):
-    _prog_slot.progress(frac, text=tr("prog_fmt", label=label,
-                                      pct=100 * frac))
+    def _show_progress(frac, label):
+        _prog_slot.progress(frac, text=tr("prog_fmt", label=label,
+                                          pct=100 * frac))
 
 
-try:
-    capsule = get_capsule(params, _show_progress)
-except ValueError as exc:
+    try:
+        capsule = get_capsule(params, _show_progress)
+    except ValueError as exc:
+        _prog_slot.empty()
+        st.error(tr("err_params", exc=meldung(exc)))
+        st.stop()
+
+    _cache_key = _ergebnis_schluessel(params)
+    # Voreinstellung: gespeicherte Ergebnisse statt einer Stunde 3D-Rechnung
+    # (nur genau für ihren Parametersatz und nur, solange sie zum Modell
+    # passen, s. _voreinstellung_einsetzen)
+    _gespeichert = _voreinstellung_einsetzen(_cache_key)
+    if isinstance(_gespeichert, str):
+        st.info(tr("info_default_stale" if _gespeichert == "veraltet"
+                   else "info_default_missing"))
+
+    # Auch eine Rechnung kann an den Maßen scheitern (etwa eine nicht lösbare
+    # BEM-Randintegralgleichung) — dann dieselbe Meldung statt eines
+    # Tracebacks. Andere Fehler bleiben sichtbar, wie sie sind.
+    try:
+        _res = compute_results(_cache_key, capsule, _show_progress)
+    except ParameterFehler as exc:
+        _prog_slot.empty()
+        st.error(tr("err_params", exc=meldung(exc)))
+        st.stop()
     _prog_slot.empty()
-    st.error(tr("err_params", exc=meldung(exc)))
-    st.stop()
+    fr, di, aux = _res["fr"], _res["di"], _res["aux"]
+    sens_1k, delay = _res["sens_1k"], _res["delay"]
+    noise = _res.get("noise")
+    summary_text = get_summary(_cache_key, capsule, _lang())
 
-# Cache-Schlüssel: alle Parameter, die Physik oder berechnete Daten ändern.
-# Reine Darstellungsoptionen (Normierungs-Toggle) bleiben draußen, damit
-# ihr Umschalten keine Neuberechnung auslöst.
-_key_params = {**params, "dir_freqs": sorted(params["dir_freqs"])}
-_key_params.pop("normalize_1khz", None)
-_cache_key = json.dumps(_key_params, sort_keys=True)
+    # ---------------------------------------------------------------------------
+    # Hauptbereich
+    # ---------------------------------------------------------------------------
+    st.title(tr("app_title"))
+    st.caption(tr("app_caption"))
+    if isinstance(_gespeichert, dict):
+        st.caption(tr("cap_default_stored",
+                      datum=_gespeichert["erzeugt"][:10],
+                      min=_gespeichert["rechenzeit_s"] / 60.0))
 
-# Auch eine Rechnung kann an den Maßen scheitern (etwa eine nicht lösbare
-# BEM-Randintegralgleichung) — dann dieselbe Meldung statt eines
-# Tracebacks. Andere Fehler bleiben sichtbar, wie sie sind.
-try:
-    _res = compute_results(_cache_key, capsule, _show_progress)
-except ParameterFehler as exc:
-    _prog_slot.empty()
-    st.error(tr("err_params", exc=meldung(exc)))
-    st.stop()
-_prog_slot.empty()
-fr, di, aux = _res["fr"], _res["di"], _res["aux"]
-sens_1k, delay = _res["sens_1k"], _res["delay"]
-noise = _res.get("noise")
-summary_text = get_summary(_cache_key, capsule, _lang())
+    # Werte außerhalb ihres Feldbereichs (geladenes Projekt, abhängige
+    # Grenze): geklemmt und gerechnet, aber nie stillschweigend (s. _BEREICH).
+    if _KLEMM_MELDUNGEN:
+        st.warning(tr("warn_clamp", items="; ".join(_KLEMM_MELDUNGEN)))
 
-# ---------------------------------------------------------------------------
-# Hauptbereich
-# ---------------------------------------------------------------------------
-st.title(tr("app_title"))
-st.caption(tr("app_caption"))
+    # BEM mit offenem Rückeinlass: gerechnet, aber mit Modellgrenze — der
+    # Bohrungskranz sitzt als idealer Ring bei seiner Einbautiefe auf einer
+    # glatten Zylinderkontur (s. Gegenprobe 44).
+    if capsule.axial_body_model == "bem" and capsule.rear_open \
+            and capsule.architecture != "dual_diaphragm":
+        st.warning(tr("warn_bem_gradient", d=capsule.d_ext * 1e3,
+                      wo=tr("warn_bem_end"
+                            if capsule.cavity_hole_position == "end"
+                            else "warn_bem_circ")))
 
-# Werte außerhalb ihres Feldbereichs (geladenes Projekt, abhängige
-# Grenze): geklemmt und gerechnet, aber nie stillschweigend (s. _BEREICH).
-if _KLEMM_MELDUNGEN:
-    st.warning(tr("warn_clamp", items="; ".join(_KLEMM_MELDUNGEN)))
+    # Kugel als Körper einer Ein-Membran-Kapsel: der Druckstau der flachen
+    # Stirnfläche fehlt bis zu 3.8 dB (B&K 4134 gegen NBS, Gegenprobe 64).
+    if (capsule.include_diffraction and capsule.axial_body_model == "sphere"
+            and capsule.architecture != "dual_diaphragm"):
+        st.warning(tr("warn_sphere_flat"))
 
-# BEM mit offenem Rückeinlass: gerechnet, aber mit Modellgrenze — der
-# Bohrungskranz sitzt als idealer Ring bei seiner Einbautiefe auf einer
-# glatten Zylinderkontur (s. Gegenprobe 44).
-if capsule.axial_body_model == "bem" and capsule.rear_open \
-        and capsule.architecture != "dual_diaphragm":
-    st.warning(tr("warn_bem_gradient", d=capsule.d_ext * 1e3,
-                  wo=tr("warn_bem_end"
-                        if capsule.cavity_hole_position == "end"
-                        else "warn_bem_circ")))
+    # Homogenisierungsgrenze der 1D/2D-Modelle: gerechnet wird trotzdem, aber
+    # oberhalb f_hom bzw. f_ring ist das Ergebnis nicht mehr gegen den
+    # 3D-Löser abgesichert (Gegenproben 48, 53, 60). Beide Grenzen sind
+    # vorsichtige Schätzungen und stehen deshalb nur als zugeklappter
+    # Hinweis am Seitenende.
+    _hinweis_hom = None
+    if capsule.squeeze_model in ("1d", "2d"):
+        _hom = capsule.homogenization_limit()
+        if _hom["f_limit"] < capsule._F_BAND_TOP and _hom["cause"] == "ring":
+            _hinweis_hom = tr("warn_ring_repr",
+                              model=capsule.squeeze_model.upper(),
+                              f=_hom["f_ring"] / 1e3, db=capsule._RING_REPR_DB)
+        elif _hom["f_hom"] < capsule._F_BAND_TOP:
+            _hinweis_hom = tr("warn_sparse_holes",
+                              model=capsule.squeeze_model.upper(),
+                              f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3)
 
-# Kugel als Körper einer Ein-Membran-Kapsel: der Druckstau der flachen
-# Stirnfläche fehlt bis zu 3.8 dB (B&K 4134 gegen NBS, Gegenprobe 64).
-if (capsule.include_diffraction and capsule.axial_body_model == "sphere"
-        and capsule.architecture != "dual_diaphragm"):
-    st.warning(tr("warn_sphere_flat"))
+    # Feines 3D-Gitter an der Obergrenze: die kleinste Mündung ist dann
+    # schlechter aufgelöst als die Regel verlangt (s. Gegenprobe 50).
+    if capsule.squeeze_model == "3d" and capsule._g3d["fine_capped"]:
+        st.warning(tr("warn_grid_capped", n=capsule._GRID_FINE_MAX,
+                      c=capsule._g3d["cells_rm"], k=capsule._GRID_FINE_CELLS))
 
-# Homogenisierungsgrenze der 1D/2D-Modelle: gerechnet wird trotzdem, aber
-# oberhalb f_hom bzw. f_ring ist das Ergebnis nicht mehr gegen den
-# 3D-Löser abgesichert (Gegenproben 48, 53, 60). Beide Grenzen sind
-# vorsichtige Schätzungen und stehen deshalb nur als zugeklappter
-# Hinweis am Seitenende.
-_hinweis_hom = None
-if capsule.squeeze_model in ("1d", "2d"):
-    _hom = capsule.homogenization_limit()
-    if _hom["f_limit"] < capsule._F_BAND_TOP and _hom["cause"] == "ring":
-        _hinweis_hom = tr("warn_ring_repr",
-                          model=capsule.squeeze_model.upper(),
-                          f=_hom["f_ring"] / 1e3, db=capsule._RING_REPR_DB)
-    elif _hom["f_hom"] < capsule._F_BAND_TOP:
-        _hinweis_hom = tr("warn_sparse_holes",
-                          model=capsule.squeeze_model.upper(),
-                          f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(tr("met_sens"), f"{sens_1k * 1e3:.1f} mV/Pa",
+              help=tr("help_met_sens", db=20 * np.log10(max(sens_1k, 1e-12))))
+    m2.metric(tr("met_fres"), f"{capsule.f_res:.0f} Hz",
+              help=tr("help_met_fres", f=capsule.f_res_from_tension))
+    m3.metric(tr("met_c0"), f"{capsule.C_elec_0 * 1e12:.1f} pF",
+              help=tr("help_met_c0", n=capsule.n_bp))
+    _upi = (f"{capsule.U_pullin:.0f} V" if np.isfinite(capsule.U_pullin)
+            else "> 20 kV")
+    m4.metric(tr("met_soft"),
+              f"{capsule.softening_ratio * 100:.1f} %",
+              help=tr("help_met_soft", upi=_upi,
+                      w0=capsule.w0_static * 1e6,
+                      hmin=capsule.h_min_static * 1e6))
 
-# Feines 3D-Gitter an der Obergrenze: die kleinste Mündung ist dann
-# schlechter aufgelöst als die Regel verlangt (s. Gegenprobe 50).
-if capsule.squeeze_model == "3d" and capsule._g3d["fine_capped"]:
-    st.warning(tr("warn_grid_capped", n=capsule._GRID_FINE_MAX,
-                  c=capsule._g3d["cells_rm"], k=capsule._GRID_FINE_CELLS))
+    # Laufzeit-Anpassung des Nieren-Phasenschiebers: die 180°-Null entsteht,
+    # wenn die interne Rück-Übertragung D_r des Netzwerks die externe
+    # Front-Rück-Übertragung (Körperbeugung) trifft. Beide als äquivalente
+    # Laufzeit bei 1 kHz ausgewertet (s. delay_diagnostics; die interne
+    # Laufzeit ist frequenzabhängig — RC-Glied, kein reines Laufzeitglied).
+    if delay is not None:
+        l1, l2, l3, l4 = st.columns(4)
+        l1.metric(tr("met_tau_ext"),
+                  f"{delay['tau_ext_s'] * 1e6:.1f} µs",
+                  help=tr("help_tau_ext", f=delay['f_probe_hz'],
+                          d=delay['dist_ext_m'] * 1e3))
+        l2.metric(tr("met_tau_int"),
+                  f"{delay['tau_int_s'] * 1e6:.1f} µs",
+                  help=tr("help_tau_int", f=delay['f_probe_hz'],
+                          d=delay['dist_int_m'] * 1e3))
+        _ratio = delay["ratio"]
+        l3.metric(tr("met_ratio"), f"{_ratio:.2f}",
+                  delta=tr("delta_ratio", d=(_ratio - 1.0) * 100),
+                  delta_color="off",
+                  help=tr("help_ratio"))
+        _fh = aux["f_helmholtz_hz"]
+        l4.metric(tr("met_fh"),
+                  f"{_fh / 1000:.2f} kHz" if _fh is not None else "> 25 kHz",
+                  delta=None if _fh is None or _fh > 8000.0
+                  else tr("fh_band"),
+                  delta_color="off",
+                  help=tr("help_fh"))
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric(tr("met_sens"), f"{sens_1k * 1e3:.1f} mV/Pa",
-          help=tr("help_met_sens", db=20 * np.log10(max(sens_1k, 1e-12))))
-m2.metric(tr("met_fres"), f"{capsule.f_res:.0f} Hz",
-          help=tr("help_met_fres", f=capsule.f_res_from_tension))
-m3.metric(tr("met_c0"), f"{capsule.C_elec_0 * 1e12:.1f} pF",
-          help=tr("help_met_c0", n=capsule.n_bp))
-_upi = (f"{capsule.U_pullin:.0f} V" if np.isfinite(capsule.U_pullin)
-        else "> 20 kV")
-m4.metric(tr("met_soft"),
-          f"{capsule.softening_ratio * 100:.1f} %",
-          help=tr("help_met_soft", upi=_upi,
-                  w0=capsule.w0_static * 1e6,
-                  hmin=capsule.h_min_static * 1e6))
+    # Eigenrauschen: thermisch-akustischer Ersatzgeräuschpegel + Pfad-Anteile
+    if noise is not None:
+        sn = noise["self"]
+        n1, n2, n3, n4 = st.columns(4)
+        # dominanter Rauschpfad (Front/Membranfilm/Rückpfad)
+        _paths = [(sn["spl_a_front_db"], tr("noise_path_front")),
+                  (sn["spl_a_mem_db"], tr("noise_path_mem")),
+                  (sn["spl_a_rear_db"], tr("noise_path_rear"))]
+        _dom = max(_paths, key=lambda t: t[0])
+        n1.metric(tr("met_noise_a"), f"{sn['spl_a_db']:.1f} dB(A)",
+                  help=tr("help_noise_a"))
+        n2.metric(tr("met_noise_z"), f"{sn['spl_z_db']:.1f} dB",
+                  help=tr("help_noise_z"))
+        n3.metric(tr("met_snr"),
+                  f"{94.0 - sn['spl_a_db']:.1f} dB(A)",
+                  help=tr("help_snr"))
+        n4.metric(tr("met_noise_dom"), _dom[1],
+                  delta=f"{_dom[0]:.1f} dB(A)", delta_color="off",
+                  help=tr("help_noise_dom",
+                          f=sn["spl_a_front_db"], m=sn["spl_a_mem_db"],
+                          r=sn["spl_a_rear_db"]))
 
-# Laufzeit-Anpassung des Nieren-Phasenschiebers: die 180°-Null entsteht,
-# wenn die interne Rück-Übertragung D_r des Netzwerks die externe
-# Front-Rück-Übertragung (Körperbeugung) trifft. Beide als äquivalente
-# Laufzeit bei 1 kHz ausgewertet (s. delay_diagnostics; die interne
-# Laufzeit ist frequenzabhängig — RC-Glied, kein reines Laufzeitglied).
-if delay is not None:
-    l1, l2, l3, l4 = st.columns(4)
-    l1.metric(tr("met_tau_ext"),
-              f"{delay['tau_ext_s'] * 1e6:.1f} µs",
-              help=tr("help_tau_ext", f=delay['f_probe_hz'],
-                      d=delay['dist_ext_m'] * 1e3))
-    l2.metric(tr("met_tau_int"),
-              f"{delay['tau_int_s'] * 1e6:.1f} µs",
-              help=tr("help_tau_int", f=delay['f_probe_hz'],
-                      d=delay['dist_int_m'] * 1e3))
-    _ratio = delay["ratio"]
-    l3.metric(tr("met_ratio"), f"{_ratio:.2f}",
-              delta=tr("delta_ratio", d=(_ratio - 1.0) * 100),
-              delta_color="off",
-              help=tr("help_ratio"))
-    _fh = aux["f_helmholtz_hz"]
-    l4.metric(tr("met_fh"),
-              f"{_fh / 1000:.2f} kHz" if _fh is not None else "> 25 kHz",
-              delta=None if _fh is None or _fh > 8000.0
-              else tr("fh_band"),
-              delta_color="off",
-              help=tr("help_fh"))
-
-# Eigenrauschen: thermisch-akustischer Ersatzgeräuschpegel + Pfad-Anteile
-if noise is not None:
-    sn = noise["self"]
-    n1, n2, n3, n4 = st.columns(4)
-    # dominanter Rauschpfad (Front/Membranfilm/Rückpfad)
-    _paths = [(sn["spl_a_front_db"], tr("noise_path_front")),
-              (sn["spl_a_mem_db"], tr("noise_path_mem")),
-              (sn["spl_a_rear_db"], tr("noise_path_rear"))]
-    _dom = max(_paths, key=lambda t: t[0])
-    n1.metric(tr("met_noise_a"), f"{sn['spl_a_db']:.1f} dB(A)",
-              help=tr("help_noise_a"))
-    n2.metric(tr("met_noise_z"), f"{sn['spl_z_db']:.1f} dB",
-              help=tr("help_noise_z"))
-    n3.metric(tr("met_snr"),
-              f"{94.0 - sn['spl_a_db']:.1f} dB(A)",
-              help=tr("help_snr"))
-    n4.metric(tr("met_noise_dom"), _dom[1],
-              delta=f"{_dom[0]:.1f} dB(A)", delta_color="off",
-              help=tr("help_noise_dom",
-                      f=sn["spl_a_front_db"], m=sn["spl_a_mem_db"],
-                      r=sn["spl_a_rear_db"]))
-
-col_bode, col_polar = st.columns([11, 9], gap="medium")
-with col_bode:
-    st.plotly_chart(bode_figure(fr, params["normalize_1khz"]),
-                    width="stretch",
-                    config={"displayModeBar": False})
-with col_polar:
-    st.plotly_chart(polar_figure(di), width="stretch",
-                    config={"displayModeBar": False})
-
-# Auslegungs-Diagnose: Richtwirkung über die Frequenz + Phasenschieber D_r
-col_rear, col_dr = st.columns(2, gap="medium")
-with col_rear:
-    st.plotly_chart(rear_bode_figure(fr, aux), width="stretch",
-                    config={"displayModeBar": False})
-with col_dr:
-    if aux["D_r"] is not None:
-        st.plotly_chart(dr_figure(fr, aux), width="stretch",
+    col_bode, col_polar = st.columns([11, 9], gap="medium")
+    with col_bode:
+        st.plotly_chart(bode_figure(fr, params["normalize_1khz"]),
+                        width="stretch",
                         config={"displayModeBar": False})
-    else:
-        st.info(tr("info_no_dr"))
+    with col_polar:
+        st.plotly_chart(polar_figure(di), width="stretch",
+                        config={"displayModeBar": False})
 
-# Eigenrauschen: äquivalente Eingangs-Rauschdichte über die Frequenz
-if noise is not None:
-    st.plotly_chart(noise_figure(noise), width="stretch",
-                    config={"displayModeBar": False})
-elif capsule.squeeze_model == "3d":
-    st.info(tr("noise_no_3d"))
+    # Auslegungs-Diagnose: Richtwirkung über die Frequenz + Phasenschieber D_r
+    col_rear, col_dr = st.columns(2, gap="medium")
+    with col_rear:
+        st.plotly_chart(rear_bode_figure(fr, aux), width="stretch",
+                        config={"displayModeBar": False})
+    with col_dr:
+        if aux["D_r"] is not None:
+            st.plotly_chart(dr_figure(fr, aux), width="stretch",
+                            config={"displayModeBar": False})
+        else:
+            st.info(tr("info_no_dr"))
 
-with st.expander(tr("exp_diag")):
-    # gecachter Text: summary() enthält eine Netzwerkauswertung und
-    # liefe sonst bei jedem Rerun mit
-    st.code(summary_text, language=None)
+    # Eigenrauschen: äquivalente Eingangs-Rauschdichte über die Frequenz
+    if noise is not None:
+        st.plotly_chart(noise_figure(noise), width="stretch",
+                        config={"displayModeBar": False})
+    elif capsule.squeeze_model == "3d":
+        st.info(tr("noise_no_3d"))
 
-# ---------------------------------------------------------------------------
-# Datenansicht & CSV-Export
-# ---------------------------------------------------------------------------
-st.subheader(tr("hd_data"))
+    with st.expander(tr("exp_diag")):
+        # gecachter Text: summary() enthält eine Netzwerkauswertung und
+        # liefe sonst bei jedem Rerun mit
+        st.code(summary_text, language=None)
 
-df_fr = pd.DataFrame({
-    tr("col_freq"): fr["frequency_hz"],
-    tr("col_sens"): np.abs(fr["sensitivity_v_pa"]) * 1e3,
-    tr("col_amp"): fr["amplitude_db"],
-    tr("col_ampn"): fr["amplitude_db_norm"],
-    tr("col_phase"): fr["phase_deg"],
-    tr("col_l90"): aux["level_90_db"],
-    tr("col_l180"): aux["level_180_db"],
-})
-if "pressure_db" in fr:
-    df_fr[tr("col_pressure")] = fr["pressure_db"]
-if aux["D_r"] is not None:
-    df_fr[tr("col_drmag")] = np.abs(aux["D_r"])
-    df_fr[tr("col_drph")] = np.rad2deg(np.unwrap(np.angle(aux["D_r"])))
-df_di = pd.DataFrame({tr("col_angle"): di["angles_deg"]})
-for f, pat in sorted(di["patterns"].items()):
-    tag = f"{f:.0f}hz"
-    df_di[tr("col_lvl_prefix") + tag] = pat["db"]
-    df_di[tr("col_lin_prefix") + tag] = pat["linear"]
+    # ---------------------------------------------------------------------------
+    # Datenansicht & CSV-Export
+    # ---------------------------------------------------------------------------
+    st.subheader(tr("hd_data"))
 
-tab_fr, tab_di = st.tabs([tr("tab_fr"), tr("tab_di")])
-with tab_fr:
-    st.dataframe(df_fr, height=240, width="stretch", hide_index=True)
-with tab_di:
-    st.dataframe(df_di, height=240, width="stretch", hide_index=True)
+    df_fr = pd.DataFrame({
+        tr("col_freq"): fr["frequency_hz"],
+        tr("col_sens"): np.abs(fr["sensitivity_v_pa"]) * 1e3,
+        tr("col_amp"): fr["amplitude_db"],
+        tr("col_ampn"): fr["amplitude_db_norm"],
+        tr("col_phase"): fr["phase_deg"],
+        tr("col_l90"): aux["level_90_db"],
+        tr("col_l180"): aux["level_180_db"],
+    })
+    if "pressure_db" in fr:
+        df_fr[tr("col_pressure")] = fr["pressure_db"]
+    if aux["D_r"] is not None:
+        df_fr[tr("col_drmag")] = np.abs(aux["D_r"])
+        df_fr[tr("col_drph")] = np.rad2deg(np.unwrap(np.angle(aux["D_r"])))
+    df_di = pd.DataFrame({tr("col_angle"): di["angles_deg"]})
+    for f, pat in sorted(di["patterns"].items()):
+        tag = f"{f:.0f}hz"
+        df_di[tr("col_lvl_prefix") + tag] = pat["db"]
+        df_di[tr("col_lin_prefix") + tag] = pat["linear"]
 
-exp1, exp2, exp3 = st.columns([2, 2, 3])
-# Kanonische Werte ("intl"/"excel_de") im Session-State, damit ein
-# Sprachwechsel die Auswahl nicht ungültig macht (die Anzeige übersetzt
-# format_func — Sprache zur Renderzeit eingefroren, s. _label_formatter).
-_csv_disp = {"intl": tr("csv_intl"), "excel_de": tr("csv_excel_de")}
-sep_choice = exp3.selectbox(
-    tr("lbl_csv"), ["intl", "excel_de"],
-    format_func=lambda c: _csv_disp.get(c, c),
-    key="csv_format",
-)
-_sep, _dec = (";", ",") if sep_choice == "excel_de" else (",", ".")
+    tab_fr, tab_di = st.tabs([tr("tab_fr"), tr("tab_di")])
+    with tab_fr:
+        st.dataframe(df_fr, height=240, width="stretch", hide_index=True)
+    with tab_di:
+        st.dataframe(df_di, height=240, width="stretch", hide_index=True)
+
+    exp1, exp2, exp3 = st.columns([2, 2, 3])
+    # Kanonische Werte ("intl"/"excel_de") im Session-State, damit ein
+    # Sprachwechsel die Auswahl nicht ungültig macht (die Anzeige übersetzt
+    # format_func — Sprache zur Renderzeit eingefroren, s. _label_formatter).
+    _csv_disp = {"intl": tr("csv_intl"), "excel_de": tr("csv_excel_de")}
+    sep_choice = exp3.selectbox(
+        tr("lbl_csv"), ["intl", "excel_de"],
+        format_func=lambda c: _csv_disp.get(c, c),
+        key="csv_format",
+    )
+    _sep, _dec = (";", ",") if sep_choice == "excel_de" else (",", ".")
 
 
-def _to_csv(df):
-    buf = io.StringIO()
-    df.to_csv(buf, index=False, sep=_sep, decimal=_dec)
-    return buf.getvalue().encode("utf-8-sig")  # BOM: Umlaute in Excel
+    def _to_csv(df):
+        buf = io.StringIO()
+        df.to_csv(buf, index=False, sep=_sep, decimal=_dec)
+        return buf.getvalue().encode("utf-8-sig")  # BOM: Umlaute in Excel
 
 
-exp1.download_button(tr("btn_csv_fr"), _to_csv(df_fr),
-                     file_name=tr("csv_fr_name"), mime="text/csv",
-                     width="stretch")
-exp2.download_button(tr("btn_csv_di"), _to_csv(df_di),
-                     file_name=tr("csv_di_name"), mime="text/csv",
-                     width="stretch")
+    exp1.download_button(tr("btn_csv_fr"), _to_csv(df_fr),
+                         file_name=tr("csv_fr_name"), mime="text/csv",
+                         width="stretch")
+    exp2.download_button(tr("btn_csv_di"), _to_csv(df_di),
+                         file_name=tr("csv_di_name"), mime="text/csv",
+                         width="stretch")
 
-st.caption(tr("footer"))
+    st.caption(tr("footer"))
 
-# Homogenisierungsgrenze des 1D/2D-Modells (Lochbild bzw. Lochkreise):
-# zugeklappt, ganz unten
-if _hinweis_hom is not None:
-    with st.expander(tr("exp_hint"), expanded=False):
-        st.markdown(_hinweis_hom)
+    # Homogenisierungsgrenze des 1D/2D-Modells (Lochbild bzw. Lochkreise):
+    # zugeklappt, ganz unten
+    if _hinweis_hom is not None:
+        with st.expander(tr("exp_hint"), expanded=False):
+            st.markdown(_hinweis_hom)
+
+
+if get_script_run_ctx() is not None:
+    _hauptbereich()

@@ -10,6 +10,7 @@ Kondensatormikrofonkapsel mit Streamlit-Oberfläche.
 | `microphone_capsule.py` | Physik-Klasse `MicrophoneCapsule` (ABCD-Kettenmatrizen, Zwikker–Kosten-Lochimpedanzen, Škvor-Squeeze-Film **oder** 2D-Reynolds-Feldmodell **oder** 3D-(r,φ)-Feldlöser mit diskreten Löchern, elektrostatische Wandlung mit Pull-in, Gehäusebeugung); `python microphone_capsule.py` startet den Selbsttest |
 | `app.py` | Streamlit-GUI: Parameter-Seitenleiste, Bode-Plot, Polardiagramm, Projekt speichern/laden (JSON), CSV-Export |
 | `translations.py` | Übersetzungstabelle der GUI (Englisch/Deutsch) |
+| `voreinstellung.py`, `assets/voreinstellung.json` | Gespeicherte Ergebnisse der App-Voreinstellung (feines 3D, ~1,5 h Rechenzeit) mit Fingerabdruck; `python voreinstellung.py` erzeugt sie neu (Gegenprobe 63 f) |
 | `tests/` | Die Gegenproben (pytest), thematisch gruppiert; `basis.py` hält die gemeinsamen Referenzkapseln und Messdaten, `conftest.py` die Fixtures, `stand.py` und `basis_werte.json` die Stand-Werte und Sperrklinken, `stokes_zelle.py` und `stokes_eben.py` die Referenzlöser der Spalt-Mündung (Gegenprobe 67), `potential3d.py` den 3D-Gegenlöser für den Front-Rück-Weg nicht achsensymmetrischer Montagen (Offene Punkte 9) |
 
 ## Sprache / Language
@@ -224,6 +225,16 @@ winkelunabhängigen a, b — beim 3D-Modell keine Mehrkosten).
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
+```
+
+Die App startet mit der experimentellen K67 (45 µm Zwischenspalt) im
+feinen 3D-Feldmodell. Deren Rechnung dauert ~1,5 h; die App zeigt
+deshalb gespeicherte Ergebnisse, solange Modellcode und Parameter dazu
+passen (s. „Gespeicherte Voreinstellung (Gegenprobe 63 f)“). Nach jeder
+Änderung am Modellcode neu erzeugen:
+
+```bash
+python voreinstellung.py      # ~1,5 h, schreibt assets/voreinstellung.json
 ```
 
 Die Gegenproben in `tests/` laufen lassen (das Physikmodell;
@@ -694,8 +705,9 @@ Messungen der realen Kapsel.
 Parametersatz einer Neumann-K67/K870-Kapsel (U87Ai, Nierenmodus) in der
 echten Doppelmembran-Bauform: zwei 26-mm-Membranen (6 µm Mylar) außen,
 zwei innenliegende Backplate-Hälften (je ~4 mm) mit 50-µm-Spacer, 60 V.
-Dieser Parametersatz (im 2D-Feldmodell) ist zugleich die
-**Voreinstellung beim App-Start**.
+Dieser Parametersatz (im 2D-Feldmodell) war bis Gegenprobe 63 f die
+Voreinstellung beim App-Start; seine Werte gelten weiter für Schlüssel,
+die einem älteren Projekt fehlen (`_PROJEKT_FEHLWERTE`).
 Die passive Rückmembran bildet das Phasenschiebernetzwerk, und das
 Lochbild ist die verifizierte **Stufenbohr-Geometrie**: je Seite 120
 Bohrungen ⌀1,3 mm × 3,7 mm tief, jede zweite mit konzentrischem
@@ -770,7 +782,34 @@ eine andere Größe die ~20 % trägt, ist nicht belegt. 180° bei
 −5,6/−13,9 dB, real −6,7/−15,5 dB; 2 kHz Minimum bei 148° (real 142°).
 Bei 1 kHz fehlen in 3D noch ~6 dB Tiefe (s. „Offene Punkte“ 9). Auf
 Achse (3D, fein): 20,9 mV/Pa bei 1 kHz (40 µm: 18,6), Überhöhung bei
-9 kHz +4,9 dB (40 µm: +6,1 dB).
+9 kHz +4,9 dB (40 µm: +6,1 dB). Mit eingeschaltetem feinem 3D-Modell
+ist dieser Parametersatz die **Voreinstellung beim App-Start**.
+
+**Gespeicherte Voreinstellung (Gegenprobe 63 f).** Die Voreinstellung
+kostet im feinen 3D-Modell ~13 s je Frequenzpunkt, mit 400 Punkten also
+~1,5 h. Ihre Ergebnisse liegen deshalb fertig in
+`assets/voreinstellung.json`: Frequenzgang, Richtdiagramme, Diagnose und
+Summary in beiden Sprachen. Die App setzt sie NUR für genau diesen
+Parametersatz ein; jede Änderung rechnet sie live, und die Kapsel selbst
+(~1 s) baut sie immer neu. Gültig ist die Datei, solange ihr
+Fingerabdruck stimmt. Er umfasst den Ergebnisschlüssel, die Modellquelle
+und die Bau- und Rechenfunktionen der App, jeweils als Syntaxbaum ohne
+Kommentare und Docstrings. Eine Kommentaränderung lässt die Datei also
+gültig, jede Codeänderung nicht. Dann rechnet die App neu und meldet
+das; veraltete Ergebnisse erscheinen nie still. Neu erzeugen mit
+`python voreinstellung.py`: Das Werkzeug rechnet durch dieselben
+App-Funktionen und liest die Datei zur Kontrolle bitgleich zurück.
+Damit die Proben die App ohne Rechnung importieren können, läuft der
+Hauptbereich nur mit Streamlit-Laufzeit. Fehlt einem älteren Projekt ein
+Schlüssel, gilt weiter der Wert der früheren 2D-Voreinstellung
+(`_PROJEKT_FEHLWERTE`); alle Beispielprojekte laden unverändert.
+Die Probe prüft:
+- a) den Fingerabdruck;
+- b) eine frisch gerechnete Stichprobe (Frequenzpunkt nahe 1 kHz,
+  1-kHz-Richtdiagramm, Empfindlichkeit) gegen die gespeicherten Werte;
+- c) dass Kommentare den Fingerabdruck nicht ändern, Code ihn aber
+  ändert und ein anderer Parametersatz nichts Gespeichertes bekommt;
+- d) den Start der echten App: Hinweis sichtbar, keine Rechnung.
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 

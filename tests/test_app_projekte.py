@@ -301,8 +301,11 @@ def test_gp63e_ausgeblendete_felder_behalten_wert(app):
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
                            default_timeout=600)
+    # Schnell rechnen: 1D und Kugel statt der 3D-Voreinstellung mit BEM
     at.session_state["p_n_points"] = _NPTS
     at.session_state["p_squeeze_2d"] = False
+    at.session_state["p_squeeze_3d"] = False
+    at.session_state["p_axial_body"] = "Kugel (d_ext, montiert)"
 
     def lauf():
         with warnings.catch_warnings():
@@ -315,6 +318,7 @@ def test_gp63e_ausgeblendete_felder_behalten_wert(app):
                 if w.key == key][0]
     lauf()
     assert at.session_state["p_architecture"] == app.K67_LABEL
+    assert app.DEFAULTS["clamp_width_mm"] != 2.5
     feld("p_clamp_width_mm").set_value(2.5)
     lauf()
     feld("p_architecture").set_value("Single Backplate")
@@ -329,6 +333,92 @@ def test_gp63e_ausgeblendete_felder_behalten_wert(app):
             "bem_body_len_mm"} <= set(app.DEFAULTS)
     print("Ausgeblendete Felder: Klemmringbreite 2.5 mm übersteht K67 → "
           "Single → K67 (dieselbe Haltung gilt für die BEM-Körpermaße)  OK")
+
+
+def _voreinstellung_gueltig(A):
+    """Gespeicherte Ergebnisse der Voreinstellung laden — oder sofort mit
+    der Anleitung abbrechen (sonst rechnete die App über eine Stunde)."""
+    import voreinstellung as V
+    key = A._ergebnis_schluessel(A.DEFAULTS)
+    erg, zus, meta = V.laden(key, V.fingerabdruck(
+        key, A._VOREINSTELLUNG_FUNKTIONEN))
+    if erg is None:
+        pytest.fail(f"Gespeicherte Voreinstellung: {meta} — neu erzeugen "
+                    f"mit `python voreinstellung.py` (~1,5 h)")
+    return key, erg, zus, meta
+
+
+@pytest.mark.slow
+@pytest.mark.feld3d
+@pytest.mark.bem
+def test_gp63f_gespeicherte_voreinstellung(app):
+    """Gegenprobe 63 f: die gespeicherte Voreinstellung ist das Modell."""
+    # Die Voreinstellung (K67, 45 µm, feines 3D) kostet ~1,5 h; die App
+    # setzt deshalb gespeicherte Ergebnisse ein (voreinstellung.py).
+    # a) Ihr Fingerabdruck passt zum heutigen Modell, Parametersatz und
+    #    den Rechenfunktionen der App.
+    # b) Stichprobe: ein Frequenzpunkt nahe 1 kHz, das 1-kHz-Richtdiagramm
+    #    und die Empfindlichkeit, frisch gerechnet, gleichen den
+    #    gespeicherten Werten (bis auf die Rundung der Faktorisierung).
+    # c) Der Fingerabdruck sieht Code, aber keine Kommentare/Docstrings,
+    #    und jeder andere Parametersatz bekommt nichts Gespeichertes.
+    # d) Die App zeigt die Voreinstellung ohne Rechnung, mit Hinweis.
+    import time
+    import voreinstellung as V
+    A = app
+    key, erg, zus, meta = _voreinstellung_gueltig(A)
+    assert set(zus) == {"de", "en"}
+    # b)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        kapsel = A.build_capsule(dict(A.DEFAULTS))
+        f = erg["fr"]["frequency_hz"]
+        i = int(np.argmin(np.abs(np.log(f / 1000.0))))
+        r = kapsel.angle_responses(f[i:i + 1])
+        di = kapsel.directivity(frequencies_hz=(1000.0,))
+        s1k = float(abs(kapsel.transfer_function(np.array([1000.0]))[0]))
+    # komplex, wo gespeichert; der 180°-Pegel und S(1 kHz) als Betrag
+    paare = [("H 0°", r["H"][0.0][0], erg["fr"]["sensitivity_v_pa"][i]),
+             ("D_r", r["D_r"][0], erg["aux"]["D_r"][i]),
+             ("|H 180°|", abs(r["H"][180.0][0]),
+              abs(erg["fr"]["sensitivity_v_pa"][i])
+              * 10 ** (erg["aux"]["level_180_db"][i] / 20.0)),
+             ("S 1 kHz", s1k, erg["sens_1k"])]
+    for name, neu, alt in paare:
+        assert abs(neu - alt) <= 1e-9 * abs(alt), (name, neu, alt)
+    assert np.allclose(di["patterns"][1000.0]["db"],
+                       erg["di"]["patterns"][1000.0]["db"], atol=1e-9)
+    # c)
+    code = "def f(x):\n    return x + 1\n"
+    assert V._baum_hash(code) == V._baum_hash(
+        'def f(x):\n    """Doku."""\n    # Kommentar\n    return x + 1\n')
+    assert V._baum_hash(code) != V._baum_hash(
+        "def f(x):\n    return x + 2\n")
+    anders = A._ergebnis_schluessel(dict(A.DEFAULTS, bias_v=59.0))
+    assert A._voreinstellung_einsetzen(anders) is None
+    assert V.laden(anders, V.fingerabdruck(
+        anders, A._VOREINSTELLUNG_FUNKTIONEN))[2] == "parameter"
+    # d)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                           default_timeout=120)
+    at.session_state["ui_lang"] = "de"
+    t0 = time.time()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        at.run()
+    dauer = time.time() - t0
+    assert not at.exception, [e.value for e in at.exception]
+    hinweis = [c.value for c in at.caption
+               if c.value.startswith("Voreinstellung: gespeicherte")]
+    assert hinweis, "Hinweis auf die gespeicherten Ergebnisse fehlt"
+    assert not at.info or all("Voreinstellung" not in e.value
+                              for e in at.info), [e.value for e in at.info]
+    assert dauer < 60.0, f"App-Start {dauer:.0f} s — rechnet sie doch?"
+    print(f"Gespeicherte Voreinstellung (erzeugt {meta['erzeugt']}, "
+          f"{meta['rechenzeit_s'] / 60:.0f} min): Fingerabdruck gültig, "
+          f"Stichprobe {f[i]:.0f} Hz und 1-kHz-Richtdiagramm gleich, "
+          f"App-Start {dauer:.1f} s  OK")
 
 
 def test_gp66_uebersetzungen(app):
@@ -538,6 +628,10 @@ def test_gp66b_oberflaeche_in_beiden_sprachen(app):
             fremd["de"].add(v["en"].strip())
             fremd["en"].add(v["de"].strip())
     A = app
+    # Die Voreinstellung läuft UNVERÄNDERT (feines 3D, aus den gespeicherten
+    # Ergebnissen, Gegenprobe 63 f); passen die nicht mehr zum Modell,
+    # gleich abbrechen statt zweimal über eine Stunde zu rechnen.
+    _voreinstellung_gueltig(A)
     laeufe = 0
     for lang in ("de", "en"):
         for pfad in [None] + _BEISPIELE:
@@ -545,7 +639,7 @@ def test_gp66b_oberflaeche_in_beiden_sprachen(app):
                 p = dict(A.DEFAULTS)
             else:
                 _, p = _projekt(A, pfad)
-            p["n_points"] = _NPTS
+                p["n_points"] = _NPTS
             from streamlit.testing.v1 import AppTest
             at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
                                    default_timeout=600)
