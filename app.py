@@ -18,9 +18,77 @@ Start:  streamlit run app.py
 """
 
 import datetime as _dt
+import glob
 import io
 import json
+import math
 import os
+
+
+def _erlaubte_kerne(wurzel="/sys/fs/cgroup", proc="/proc/self/cgroup"):
+    """CPU-Quote des Prozesses in Kernen, None ohne Quote. In der Cloud
+    sieht die App mehr Kerne, als sie nutzen darf. Gelesen aus der cgroup
+    des Prozesses und allen darüber (v2: cpu.max, v1: cpu.cfs_quota_us /
+    cpu.cfs_period_us); es gilt die engste."""
+    pfade = {"/"}
+    try:
+        with open(proc) as fh:
+            for zeile in fh:
+                _, regler, pfad = zeile.strip().split(":", 2)
+                if regler == "" or "cpu" in regler.split(","):
+                    while True:
+                        pfade.add(pfad or "/")
+                        if pfad in ("", "/"):
+                            break
+                        pfad = os.path.dirname(pfad)
+    except (OSError, ValueError):
+        pass
+    quoten = []
+    for pfad in pfade:
+        rel = pfad.lstrip("/")
+        try:                                             # cgroup v2
+            with open(os.path.join(wurzel, rel, "cpu.max")) as fh:
+                quote, periode = fh.read().split()[:2]
+            if quote != "max":
+                quoten.append(int(quote) / int(periode))
+        except (OSError, ValueError):
+            pass
+        for regler in ("cpu", "cpu,cpuacct"):            # cgroup v1
+            ordner = os.path.join(wurzel, regler, rel)
+            try:
+                with open(os.path.join(ordner, "cpu.cfs_quota_us")) as fq, \
+                        open(os.path.join(ordner, "cpu.cfs_period_us")) as fp:
+                    quote, periode = int(fq.read()), int(fp.read())
+                if quote > 0:
+                    quoten.append(quote / periode)
+            except (OSError, ValueError):
+                pass
+    return min(quoten) if quoten else None
+
+
+def _thread_vorgabe(kerne, sichtbar):
+    """BLAS-Threads für eine CPU-Quote ``kerne`` bei ``sichtbar`` Kernen:
+    None = Bibliotheksstandard lassen."""
+    if kerne is None or kerne >= sichtbar:
+        return None
+    return max(1, int(kerne))
+
+
+# RECHEN-THREADS NACH DER CPU-QUOTE (Gegenprobe 63 i). Darf der Prozess
+# weniger rechnen, als er Kerne sieht (Streamlit Cloud: höchstens 2), dann
+# treten sich die BLAS-Threads gegenseitig auf die Füße: gemessen brauchte
+# eine Frequenz im feinen 3D bei einem erlaubten von vier sichtbaren Kernen
+# 47,8 s mit vier Threads und 15,8 s mit einem (bei 0,5 Kernen 120,8 gegen
+# 33,9 s). OHNE Quote bleibt der Bibliotheksstandard: dort bringt die
+# Drossel nichts (13,0 gegen 15,2 s), und vier gleichzeitige Sitzungen im
+# selben Prozess rechneten mit einem Thread sogar langsamer (25 gegen
+# 11 s). Eine gesetzte Umgebungsvariable gewinnt immer. Wirkt nur vor dem
+# ersten numpy-Import; ist numpy schon geladen, drosselt threadpoolctl
+# (falls installiert) die laufenden Bibliotheken.
+_THREADS = _thread_vorgabe(_erlaubte_kerne(), os.cpu_count() or 1)
+if _THREADS is not None:
+    for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ.setdefault(_v, str(_THREADS))
 
 import numpy as np
 import pandas as pd
@@ -32,7 +100,15 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 from microphone_capsule import MicrophoneCapsule, ParameterFehler
 from translations import TR, LABEL_TR
 
+if "OMP_NUM_THREADS" in os.environ:
+    try:
+        from threadpoolctl import threadpool_limits as _threadpool_limits
+        _threadpool_limits(limits=int(os.environ["OMP_NUM_THREADS"]))
+    except Exception:       # ohne threadpoolctl gilt nur die Umgebung oben
+        pass
+
 _LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo.svg")
+_BEISPIEL_ORDNER = os.path.join(os.path.dirname(__file__), "examples")
 
 # ---------------------------------------------------------------------------
 # Sprache (GUI-Einstellung, KEIN Kapselparameter — bleibt außerhalb der
@@ -45,9 +121,12 @@ def _lang():
         return "en"
 
 
-def tr(key, **kw):
-    """Übersetzten GUI-Text holen; Platzhalter per str.format füllen."""
-    txt = TR[key][_lang()]
+def tr(schluessel, /, **kw):
+    """Übersetzten GUI-Text holen; Platzhalter per str.format füllen. Der
+    Schlüssel ist rein positionell: Texte wie err_value haben selbst einen
+    Platzhalter {key} — mit dem alten Parameternamen ``key`` scheiterte
+    genau diese Fehlermeldung an einem TypeError."""
+    txt = TR[schluessel][_lang()]
     return txt.format(**kw) if kw else txt
 
 
@@ -86,7 +165,9 @@ st.set_page_config(
     page_title=tr("page_title"),
     page_icon=_LOGO_PATH,
     layout="wide",
-    initial_sidebar_state="expanded",
+    # "auto": am Rechner offen, am Handy zugeklappt (sonst verdeckt die
+    # Seitenleiste dort den ganzen Inhalt)
+    initial_sidebar_state="auto",
 )
 # Logo oben links im Hauptbereich und in der Seitenleiste (ersetzt das
 # frühere Emoji-Icon); dasselbe Bild dient auch als eingeklapptes Icon.
@@ -125,6 +206,19 @@ st.markdown(
         border-radius: 10px; padding: 0.6rem 0.9rem;
       }
       [data-testid="stMetricLabel"] { color: #52514e; }
+      /* Kennzahl nie abschneiden ("20.9 mV…" auf Laptopbreite): kleiner
+         setzen und umbrechen lassen */
+      [data-testid="stMetricValue"] { font-size: 1.6rem; }
+      [data-testid="stMetricValue"], [data-testid="stMetricValue"] *,
+      [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] *,
+      [data-testid="stMetricLabel"] div, [data-testid="stMetricLabel"] p {
+        white-space: normal; overflow: visible; text-overflow: clip;
+      }
+      @media (max-width: 1150px) {
+        [data-testid="stMetric"] { padding: 0.5rem 0.55rem; }
+        [data-testid="stMetricValue"] { font-size: 1.3rem; }
+        [data-testid="stMetricDelta"] { font-size: 0.75rem; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -473,6 +567,7 @@ def _heal_canonical_state():
 
 def _init_state():
     st.session_state.setdefault("ui_lang", "en")   # Standard: Englisch
+    st.session_state.setdefault("projekt_notizen", "")
     for key, val in DEFAULTS.items():
         if key in _RING_PREFIX:
             if f"{_RING_PREFIX[key]}_ring_count" not in st.session_state:
@@ -496,23 +591,51 @@ def _halte_ausgeblendete():
             st.session_state["p_" + key] = st.session_state["p_" + key]
 
 
+def _wirksam(p):
+    """Was die Oberfläche bei der gewählten Bauform AUSBLENDET, wirkt nicht
+    (Gegenprobe 63 g). Seit ausgeblendete Felder ihren Wert behalten
+    (Gegenprobe 63 e), blieb ein bei 'Single' gesetzter Randspalt nach dem
+    Wechsel zur K67-Bauform stehen: das Modell lehnte ihn ab, das Feld war
+    aber nicht mehr zu sehen — eine Sackgasse. Der Wert bleibt in der
+    Sitzung (für den Rückweg), geht aber nicht ins Modell und nicht in die
+    gespeicherte Projektdatei."""
+    p = dict(p)
+    if p["architecture"] == K67_LABEL:
+        p["ring_vent_um"] = 0.0
+        p["ring_vent_len_mm"] = 0.0
+    return p
+
+
 def _current_params():
-    return {k: (_rings_from_state(_RING_PREFIX[k]) if k in _RING_PREFIX
-                else st.session_state["p_" + k])
-            for k in DEFAULTS}
+    return _wirksam({k: (_rings_from_state(_RING_PREFIX[k])
+                         if k in _RING_PREFIX
+                         else st.session_state["p_" + k])
+                     for k in DEFAULTS})
 
 
 def _coerce(key, val):
     """Robuste Typkonvertierung beim Projekt-Laden."""
+    def fehler():
+        return ValueError(tr("err_value", key=key, val=repr(val)))
     if key in _RING_PREFIX:
         rings = [[max(0, int(r[0])), max(0.0, float(r[1]))]
                  for r in list(val)[:MAX_RINGS]]
+        if not all(math.isfinite(r[1]) for r in rings):
+            raise fehler()
         return rings or [[0, 0.0]]
     if key in _BOOL_KEYS:
-        return bool(val)
+        # nur echte Wahrheitswerte: bool("false") wäre True
+        if isinstance(val, bool) or val in (0, 1):
+            return bool(val)
+        raise fehler()
     if key in _FLOAT_KEYS:
-        return float(val)
+        v = float(val)
+        if not math.isfinite(v):            # json liest auch NaN/Infinity
+            raise fehler()
+        return v
     if key in _INT_KEYS:
+        if isinstance(val, float) and not math.isfinite(val):
+            raise fehler()
         return int(val)
     if key == "dir_freqs":
         return [f for f in DIRECTIVITY_OPTIONS if f in set(int(x) for x in val)]
@@ -526,16 +649,30 @@ def _coerce(key, val):
         return val
     if key == "fabric_rear_pos" and val in FAB_POS_LABELS:
         return val
-    raise ValueError(tr("err_value", key=key, val=repr(val)))
+    raise fehler()
+
+
+# Schlüssel des alten Projektformats (Version 1), s. _projekt_params
+_ALT_SCHLUESSEL = ("n_through", "th_pcd_mm", "n_blind", "bh_pcd_mm")
+PROJEKT_VERSION = 2
 
 
 def _projekt_params(data):
     """Projekt-JSON (dict) -> (vollständiger Parametersatz, Anzahl der
     übernommenen Projektwerte, gekürzte Lochkreis-Listen als
-    [(Schlüssel, Anzahl in der Datei)]). ValueError bei defekter Datei."""
-    if data.get("format") != "capsim-project":
+    [(Schlüssel, Anzahl in der Datei)], unbekannte Schlüssel der Datei).
+    ValueError bei defekter Datei — auch bei einer Datei ganz ohne
+    Parameter: sie überschrieb bis Gegenprobe 63 h still alles mit den
+    Fehlwerten und meldete Erfolg."""
+    if not isinstance(data, dict) or data.get("format") != "capsim-project":
         raise ValueError(tr("err_format"))
-    params_in = data.get("params", {})
+    params_in = data.get("params")
+    if not isinstance(params_in, dict) or not params_in:
+        raise ValueError(tr("err_no_params"))
+    # Unbekannte Schlüssel (Tippfehler, neuere Version) verwirft der Lader
+    # — aber nie still: ein vertippter Luftspalt lud sonst als Fehlwert.
+    unbekannt = sorted(k for k in params_in
+                       if k not in DEFAULTS and k not in _ALT_SCHLUESSEL)
     gekuerzt = [(key, len(params_in[key])) for key in _RING_PREFIX
                 if isinstance(params_in.get(key), list)
                 and len(params_in[key]) > MAX_RINGS]
@@ -557,46 +694,125 @@ def _projekt_params(data):
     # auf die heutige Voreinstellung (s. _PROJEKT_FEHLWERTE).
     return ({key: staged.get(key, _FEHLT_IM_PROJEKT.get(
                 key, _PROJEKT_FEHLWERTE[key]))
-             for key in DEFAULTS}, len(staged), gekuerzt)
+             for key in DEFAULTS}, len(staged), gekuerzt, unbekannt)
+
+
+def _notizen_aus(data):
+    """Notizen eines Projekts (Feld ``_kommentar``: Text oder Zeilenliste)
+    als Text. Bis Gegenprobe 63 h gingen sie beim Laden und erneuten
+    Speichern verloren."""
+    k = data.get("_kommentar", "")
+    if isinstance(k, (list, tuple)):
+        return "\n".join(str(z) for z in k)
+    return str(k)
+
+
+def _projekt_json(params, notizen=""):
+    """Projektdatei als JSON-Text (Version 2: Lochmuster als Lochkreis-
+    Listen th_rings/bh_rings; Version-1-Projekte mit n_through/th_pcd_mm
+    … werden beim Laden konvertiert). Notizen als Zeilenliste, wie in den
+    Beispielprojekten."""
+    data = {"format": "capsim-project", "version": PROJEKT_VERSION,
+            "saved": _dt.date.today().isoformat()}
+    if notizen.strip():
+        data["_kommentar"] = notizen.rstrip().split("\n")
+    data["params"] = params
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def _projekt_anwenden(data):
+    """Projekt in den Session-State schreiben (Callback-Kontext: läuft vor
+    dem Widget-Aufbau). Werte außerhalb ihres Feldbereichs klemmt und
+    meldet danach _zahl(). Rückgabe: (Art, Meldung)."""
+    params, n, gekuerzt, unbekannt = _projekt_params(data)
+    for key, val in params.items():
+        if key in _RING_PREFIX:
+            _set_ring_state(_RING_PREFIX[key], val)
+        else:
+            st.session_state["p_" + key] = val
+    st.session_state["projekt_notizen"] = _notizen_aus(data)
+    msg = tr("load_ok", n=n)
+    # gekürzte Lochkreis-Listen, unbekannte Schlüssel und eine neuere
+    # Formatversion nie still übergehen
+    for key, n_datei in gekuerzt:
+        msg += " " + tr("load_rings_cut", max=MAX_RINGS, n=n_datei,
+                        typ=tr("md_through" if key == "th_rings"
+                               else "md_blind"))
+    if unbekannt:
+        msg += " " + tr("load_unknown", keys=", ".join(unbekannt))
+    version = data.get("version")
+    neuer = isinstance(version, (int, float)) and version > PROJEKT_VERSION
+    if neuer:
+        msg += " " + tr("load_newer", v=version, eigene=PROJEKT_VERSION)
+    return ("warning" if (gekuerzt or unbekannt or neuer) else "success",
+            msg)
 
 
 def _load_project():
-    """on_change-Callback des Uploaders: läuft vor dem Widget-Aufbau,
-    darf daher st.session_state der Parameter-Widgets setzen. Werte
-    außerhalb ihres Feldbereichs klemmt und meldet danach _zahl()."""
+    """on_change-Callback des Uploaders."""
     up = st.session_state.get("project_upload")
     if up is None:
         return
     try:
-        params, n, gekuerzt = _projekt_params(json.load(up))
-        for key, val in params.items():
-            if key in _RING_PREFIX:
-                _set_ring_state(_RING_PREFIX[key], val)
-            else:
-                st.session_state["p_" + key] = val
-        msg = tr("load_ok", n=n)
-        # gekürzte Lochkreis-Listen nie still übergehen
-        for key, n_datei in gekuerzt:
-            msg += " " + tr("load_rings_cut", max=MAX_RINGS, n=n_datei,
-                            typ=tr("md_through" if key == "th_rings"
-                                   else "md_blind"))
-        st.session_state["_load_msg"] = (
-            "warning" if gekuerzt else "success", msg)
+        st.session_state["_load_msg"] = _projekt_anwenden(json.load(up))
     except Exception as exc:  # defekte Datei darf die App nicht stoppen
         st.session_state["_load_msg"] = (
             "error", tr("load_fail", exc=exc))
 
 
+def _beispiele():
+    """Die mitgelieferten Beispielprojekte (Dateinamen). In der Cloud sind
+    sie nur so erreichbar — der Uploader sieht nur den Rechner des
+    Nutzers."""
+    return sorted(os.path.basename(f) for f in
+                  glob.glob(os.path.join(_BEISPIEL_ORDNER, "*.json")))
+
+
+def _load_example():
+    """on_click-Callback: gewähltes Beispielprojekt laden."""
+    name = st.session_state.get("beispiel_wahl")
+    if name not in _beispiele():
+        return
+    try:
+        with open(os.path.join(_BEISPIEL_ORDNER, name),
+                  encoding="utf-8") as fh:
+            st.session_state["_load_msg"] = _projekt_anwenden(json.load(fh))
+    except Exception as exc:
+        st.session_state["_load_msg"] = (
+            "error", tr("load_fail", exc=exc))
+
+
+def _restore_defaults():
+    """on_click-Callback: zurück zur Voreinstellung (deren Ergebnisse
+    gespeichert vorliegen, s. _voreinstellung_einsetzen). Bis Gegenprobe
+    63 h ging das nur über ein Neuladen der Seite."""
+    for key, val in DEFAULTS.items():
+        if key in _RING_PREFIX:
+            _set_ring_state(_RING_PREFIX[key], val)
+        else:
+            st.session_state["p_" + key] = (list(val)
+                                            if isinstance(val, list)
+                                            else val)
+    st.session_state["projekt_notizen"] = ""
+    st.session_state["_confirm_reset"] = False
+    st.session_state["_load_msg"] = ("success", tr("default_done"))
+
+
 # Null-Zustand für den Reset-Button: 0 überall, wo die Widgets 0 zulassen,
 # sonst der KLEINSTE zulässige Widget-Wert (die Kapsel bleibt so baubar
-# und die App rechenfähig). Auswahl- (Material, Architektur, Position,
-# axialer Körper), Modell- (2D/3D, Beugung, Verdrehung) und Simulations-
+# und die App rechenfähig — s. _zero_all_params für die zwei Modell-
+# optionen, die dafür mitgehen). Auswahl- (Material, Architektur,
+# Position), Modell- (1D/2D, Beugung, Verdrehung) und Simulations-
 # einstellungen (Frequenzpunkte, Normierung, Sprache) bleiben unberührt.
 _ZERO_STATE = {
-    # air_gap 50 statt Widget-Minimum 5 µm: mit der weichsten Membran
-    # (f_res 100 Hz) läge die Pull-in-Spannung sonst unter dem kleinsten
-    # Bias (0.5 V) — der Null-Zustand muss BAUBAR bleiben (U_PI ≈ 1.2 V).
-    "f_res_hz": 100.0, "mem_diameter_mm": 3.0, "mem_thickness_um": 0.5,
+    # air_gap 50 statt Widget-Minimum 5 µm: mit einer weichen Membran
+    # läge die Pull-in-Spannung sonst unter dem kleinsten Bias (0.5 V) —
+    # der Null-Zustand muss BAUBAR bleiben. f_res 1000 statt 100 Hz: bei
+    # 100 Hz ist die 3-mm-Folie so schwach gespannt, dass ihre Randschicht
+    # über ein Viertel der Membran reicht; das Modell bricht dann seit
+    # Gegenprobe 62 ab, und der Null-Reset rechnete seither für KEINE
+    # Bauform mehr (Gegenprobe 63 g).
+    "f_res_hz": 1000.0, "mem_diameter_mm": 3.0, "mem_thickness_um": 0.5,
     "mem_tension_npm": 1.0, "mem_modes": 1, "modal_source": False,
     "center_post_mm": 0.0,
     "air_gap_um": 50.0,
@@ -620,8 +836,18 @@ def _zero_all_params():
     Widget-Aufbau und darf deren Session-Keys setzen)."""
     for key, val in _ZERO_STATE.items():
         st.session_state["p_" + key] = val
-    _set_ring_state("th", [[0, 0.0]])
+    # Die Gegentakt-Bauform braucht Löcher in der vorderen Backplate,
+    # sonst erreicht kein Schall die Membran: dort bleibt EIN Loch.
+    dual = ARCH_LABELS.get(st.session_state["p_architecture"]) == "dual"
+    _set_ring_state("th", [[1 if dual else 0, 0.0]])
     _set_ring_state("bh", [[0, 0.0]])
+    # Ohne Löcher gibt es kein 3D-Feldmodell, und der fast leere Kopf ist
+    # für die BEM-Kontur zu dünn: 3D aus, Kugel als Körper. (Bis
+    # Gegenprobe 63 g blieben beide stehen; seit die Voreinstellung 3D mit
+    # BEM ist, endete der Reset in einer Fehlermeldung.)
+    st.session_state["p_squeeze_3d"] = False
+    st.session_state["p_axial_body"] = "Kugel (d_ext, montiert)"
+    st.session_state["projekt_notizen"] = ""
     st.session_state["_confirm_reset"] = False
     st.session_state["_load_msg"] = ("success", tr("reset_done"))
 
@@ -1171,9 +1397,12 @@ def rear_bode_figure(fr, aux):
     """Richtwirkung über die Frequenz: Pegel bei 90°/180° relativ zu 0°."""
     f = fr["frequency_hz"]
     fig = go.Figure()
-    fig.add_hline(y=-6.0, line=dict(color=MUTED, width=1, dash="dot"),
-                  annotation_text=tr("fig_rear_ann"),
-                  annotation_font=dict(color=MUTED, size=11))
+    # −6-dB-Marke als Legendeneintrag: als Text im Diagramm lag sie je
+    # nach Kapsel mitten in den Kurven
+    fig.add_trace(go.Scatter(
+        x=[f[0], f[-1]], y=[-6.0, -6.0], mode="lines",
+        name=tr("fig_rear_ann"), hoverinfo="skip",
+        line=dict(color=MUTED, width=1, dash="dot")))
     fig.add_trace(go.Scatter(
         x=f, y=aux["level_90_db"], mode="lines", name=tr("name_90"),
         line=dict(color=SERIES[1], width=2),
@@ -1196,12 +1425,12 @@ def rear_bode_figure(fr, aux):
                      tickfont=dict(color=MUTED),
                      title_font=dict(color=INK_2), zeroline=False)
     fig.update_layout(hovermode="x unified",
-                      legend=dict(orientation="h", yanchor="bottom",
-                                  y=1.0, xanchor="right", x=1.0,
+                      legend=dict(orientation="h", yanchor="top",
+                                  y=-0.22, xanchor="center", x=0.5,
                                   font=dict(color=INK_2)),
                       title=dict(text=tr("fig_rear_title"),
                                  font=dict(color=INK, size=16)))
-    return _base_layout(fig, 420)
+    return _base_layout(fig, 460)
 
 
 def noise_figure(noise):
@@ -1291,13 +1520,15 @@ def dr_figure(fr, aux):
                      gridcolor=GRID, griddash="dot", linecolor=AXIS,
                      tickfont=dict(color=MUTED),
                      title_font=dict(color=INK_2), zeroline=False)
+    # Legende UNTER dem Diagramm: vier Einträge neben dem langen Titel
+    # überdeckten ihn (und die f_H-Marke)
     fig.update_layout(hovermode="x unified",
-                      legend=dict(orientation="h", yanchor="bottom",
-                                  y=1.02, xanchor="right", x=1.0,
+                      legend=dict(orientation="h", yanchor="top",
+                                  y=-0.22, xanchor="center", x=0.5,
                                   font=dict(color=INK_2)),
                       title=dict(text=tr("fig_dr_title"),
                                  font=dict(color=INK, size=16)))
-    return _base_layout(fig, 420)
+    return _base_layout(fig, 460)
 
 
 def _freq_label(f):
@@ -1337,7 +1568,11 @@ def polar_figure(di):
                     xanchor="center", x=0.5,
                     font=dict(color=INK_2)),
     )
-    return _base_layout(fig, 560)
+    _base_layout(fig, 560)
+    # breitere Ränder als die übrigen Diagramme: die Winkelbeschriftungen
+    # bei 270° und 90° waren abgeschnitten
+    fig.update_layout(margin=dict(l=46, r=46, t=44, b=10))
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -1365,20 +1600,26 @@ with st.sidebar:
             tr("upload_label"), type=["json"],
             key="project_upload", on_change=_load_project,
         )
-        project_json = json.dumps(
-            {
-                "format": "capsim-project",
-                # Version 2: Lochmuster als Lochkreis-Listen th_rings/
-                # bh_rings; Version-1-Projekte (n_through/th_pcd_mm, ...)
-                # werden beim Laden automatisch konvertiert.
-                "version": 2,
-                "saved": _dt.date.today().isoformat(),
-                "params": _current_params(),
-            },
-            indent=2, ensure_ascii=False,
-        )
+        # Mitgelieferte Beispielprojekte (in der Cloud der einzige Weg zu
+        # ihnen) und der Rückweg zur Voreinstellung
+        _bsp = _beispiele()
+        if _bsp:
+            st.selectbox(tr("lbl_example"), _bsp, index=None,
+                         key="beispiel_wahl",
+                         placeholder=tr("example_placeholder"))
+            st.button(tr("btn_example"), key="btn_example",
+                      width="stretch", on_click=_load_example,
+                      disabled=st.session_state.get("beispiel_wahl")
+                      is None)
+        st.button(tr("btn_default"), key="btn_default", width="stretch",
+                  on_click=_restore_defaults, help=tr("help_default"))
+        # Notizen: wandern als _kommentar in die Projektdatei und zurück
+        st.text_area(tr("lbl_notes"), key="projekt_notizen", height=110,
+                     help=tr("help_notes"))
         st.download_button(
-            tr("save_btn"), data=project_json,
+            tr("save_btn"),
+            data=_projekt_json(_current_params(),
+                               st.session_state["projekt_notizen"]),
             file_name=tr("project_filename"), mime="application/json",
             width="stretch",
         )
@@ -1704,6 +1945,16 @@ def _hauptbereich():
             _hinweis_hom = tr("warn_sparse_holes",
                               model=capsule.squeeze_model.upper(),
                               f=_hom["f_hom"] / 1e3, rho=_hom["rho"] * 1e3)
+
+    # Biegesteife Folie: das Modell warnt, wenn die Membran mit Randschicht
+    # die Grundfrequenz der eingespannten Platte um mehr als 1 % verfehlt
+    # (Gegenprobe 62). Bis Gegenprobe 63 i stand das nur im Konsolen-
+    # protokoll. (Der Stellvertreter der gespeicherten Voreinstellung trägt
+    # den Wert nicht — sie liegt unter der Grenze, s. Gegenprobe 63 f.)
+    _rand = getattr(capsule, "rand_abweichung", 0.0)
+    if (MicrophoneCapsule._RANDSCHICHT
+            and abs(_rand) > MicrophoneCapsule._RAND_GRENZE):
+        st.warning(tr("warn_stiff_foil", pct=100.0 * _rand))
 
     # Feines 3D-Gitter an der Obergrenze: die kleinste Mündung ist dann
     # schlechter aufgelöst als die Regel verlangt (s. Gegenprobe 50).

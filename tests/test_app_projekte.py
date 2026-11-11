@@ -381,7 +381,12 @@ def test_gp63f_gespeicherte_voreinstellung(app):
         r = kapsel.angle_responses(f[i:i + 1])
         di = kapsel.directivity(frequencies_hz=(1000.0,))
         s1k = float(abs(kapsel.transfer_function(np.array([1000.0]))[0]))
-    # komplex, wo gespeichert; der 180°-Pegel und S(1 kHz) als Betrag
+    # komplex, wo gespeichert; der 180°-Pegel und S(1 kHz) als Betrag.
+    # Toleranz 1e-6 (mit Zustimmung von 1e-9 gelockert): das 3D-System ist
+    # mit ~1e8 konditioniert, und die Rundung der BLAS hängt von der
+    # Thread-Zahl ab — gemessen 0 (4 Threads, wie erzeugt), 1,3e-8 (1) und
+    # 2,2e-8 (2). Im parallelen Gesamtlauf (ein Thread je Worker) scheiterte
+    # die Probe an 1e-9; 1e-6 sind 1e-5 dB.
     paare = [("H 0°", r["H"][0.0][0], erg["fr"]["sensitivity_v_pa"][i]),
              ("D_r", r["D_r"][0], erg["aux"]["D_r"][i]),
              ("|H 180°|", abs(r["H"][180.0][0]),
@@ -389,10 +394,14 @@ def test_gp63f_gespeicherte_voreinstellung(app):
               * 10 ** (erg["aux"]["level_180_db"][i] / 20.0)),
              ("S 1 kHz", s1k, erg["sens_1k"])]
     for name, neu, alt in paare:
-        assert abs(neu - alt) <= 1e-9 * abs(alt), (name, neu, alt)
+        assert abs(neu - alt) <= 1e-6 * abs(alt), (name, neu, alt)
     assert np.allclose(di["patterns"][1000.0]["db"],
-                       erg["di"]["patterns"][1000.0]["db"], atol=1e-9)
+                       erg["di"]["patterns"][1000.0]["db"], atol=1e-5)
     assert A._kennwerte(kapsel) == meta["kennwerte"], "Kennwerte"
+    # Der Stellvertreter der gespeicherten Kapsel trägt rand_abweichung
+    # nicht; die App nimmt dann 0 an (keine Warnung, Gegenprobe 63 i). Das
+    # gilt nur, solange die Voreinstellung wirklich unter der Grenze liegt.
+    assert abs(kapsel.rand_abweichung) < 0.1 * kapsel._RAND_GRENZE
     # c)
     code = "def f(x):\n    return x + 1\n"
     assert V._baum_hash(code) == V._baum_hash(
@@ -473,6 +482,261 @@ def test_gp63f_gespeicherte_voreinstellung(app):
           f"Stichprobe {f[i]:.0f} Hz, 1-kHz-Richtdiagramm und Kennwerte "
           f"gleich, App-Start {dauer:.1f} s ohne Kapselbau; veraltet: "
           f"Knopf statt Rechnung ({dauer_e:.1f} s)  OK")
+
+
+def _at(app, **zustand):
+    """AppTest mit Sitzungswerten; ohne weitere Angaben schnell: 1D, Kugel."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                           default_timeout=600)
+    werte = {"ui_lang": "de", "p_n_points": _NPTS, "p_squeeze_2d": False,
+             "p_squeeze_3d": False,
+             "p_axial_body": "Kugel (d_ext, montiert)"}
+    werte.update(zustand)
+    for k, v in werte.items():
+        at.session_state[k] = v
+    return at
+
+
+def _lauf(at):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def _widget(at, key):
+    for art in ("number_input", "radio", "selectbox", "button", "toggle",
+                "text_area"):
+        for w in at.get(art):
+            if w.key == key:
+                return w
+    raise KeyError(key)
+
+
+def test_gp63g_ausgeblendetes_wirkt_nicht_und_null_reset(app):
+    """Gegenprobe 63 g: was die Oberfläche ausblendet, wirkt nicht, und der
+    Null-Reset bleibt rechenfähig."""
+    # a) Sackgasse: seit ausgeblendete Felder ihren Wert behalten
+    #    (Gegenprobe 63 e), blieb ein bei 'Single' gesetzter Randspalt nach
+    #    dem Wechsel zur K67 stehen. Das Modell lehnte ihn ab, das Feld war
+    #    nicht mehr zu sehen. Jetzt rechnet die K67 ohne ihn, der Wert
+    #    bleibt für den Rückweg erhalten und steht nicht im Projekt.
+    # b) Null-Reset: der Null-Zustand (100 Hz Resonanz auf 3 mm) scheiterte
+    #    seit der Randschicht-Prüfung (Gegenprobe 62) für JEDE Bauform, mit
+    #    der 3D-Voreinstellung zusätzlich an „3D erfordert Löcher“. Geprüft
+    #    aus der echten Voreinstellung und für alle drei Bauformen.
+    A = app
+    at = _lauf(_at(A))
+    _widget(at, "p_architecture").set_value("Single Backplate")
+    _lauf(at)
+    _widget(at, "p_ring_vent_um").set_value(100.0)
+    _lauf(at)
+    _widget(at, "p_architecture").set_value(A.K67_LABEL)
+    _lauf(at)
+    assert not at.error, [e.value for e in at.error]
+    assert len(at.get("plotly_chart")) >= 4
+    assert not [w for w in at.number_input if w.key == "p_ring_vent_um"]
+    assert at.session_state["p_ring_vent_um"] == 100.0
+    p_k67 = A._wirksam({k: at.session_state["p_" + k] for k in A.DEFAULTS
+                        if k not in A._RING_PREFIX})
+    assert p_k67["ring_vent_um"] == 0.0 and p_k67["ring_vent_len_mm"] == 0.0
+    _widget(at, "p_architecture").set_value("Single Backplate")
+    _lauf(at)
+    assert _widget(at, "p_ring_vent_um").value == 100.0
+    assert A._wirksam(dict(A.DEFAULTS, architecture="Single Backplate",
+                           ring_vent_um=100.0))["ring_vent_um"] == 100.0
+    # b) aus der Voreinstellung (feines 3D, BEM; gespeichert, also schnell)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                           default_timeout=600)
+    at.session_state["ui_lang"] = "de"
+    _lauf(at)
+    _widget(at, "btn_reset_ask").click()
+    _lauf(at)
+    _widget(at, "btn_reset_yes").click()
+    _lauf(at)
+    assert not at.error, [e.value for e in at.error]
+    assert len(at.get("plotly_chart")) >= 4, "Null-Zustand rechnet nicht"
+    assert at.session_state["p_squeeze_3d"] is False
+    assert at.session_state["p_axial_body"] == "Kugel (d_ext, montiert)"
+    # ... und für jede Bauform, mit und ohne vorgegebene Resonanz
+    gerechnet = 0
+    for arch in A.ARCH_LABELS:
+        for use in (True, False):
+            at = _lauf(_at(A, p_architecture=arch, p_use_f_res=use,
+                           p_squeeze_2d=True))
+            _widget(at, "btn_reset_ask").click()
+            _lauf(at)
+            _widget(at, "btn_reset_yes").click()
+            _lauf(at)
+            assert not at.error, (arch, use, [e.value for e in at.error])
+            assert len(at.get("plotly_chart")) >= 4, (arch, use)
+            gerechnet += 1
+    print(f"Ausgeblendetes wirkt nicht: K67 rechnet mit verstecktem "
+          f"Randspalt 100 µm (bleibt für den Rückweg erhalten); Null-Reset "
+          f"rechnet aus der Voreinstellung und für {gerechnet} "
+          f"Bauform-Fälle  OK")
+
+
+def test_gp63h_projektlader_notizen_beispiele(app):
+    """Gegenprobe 63 h: der Projekt-Lader übergeht nichts still; Notizen,
+    Beispielauswahl und der Rückweg zur Voreinstellung."""
+    # a) Ein vertippter Schlüssel (air_gap statt air_gap_um) lud still als
+    #    Fehlwert 65 µm: jetzt als unbekannter Eintrag gemeldet. Eine Datei
+    #    ohne Parameter überschrieb alles und meldete Erfolg: abgelehnt.
+    #    "false" als Text wurde True, NaN ging durch: abgelehnt. Eine
+    #    neuere Formatversion wird gemeldet. Die Meldung für ungültige
+    #    Werte scheiterte selbst an einem TypeError (tr(key=…)).
+    # b) Notizen (_kommentar) überstehen Laden und Speichern.
+    # c) In der App: Beispiel wählen und laden, zurück zur Voreinstellung.
+    import copy
+    import streamlit as st
+    A = app
+    pfad = os.path.join(_WURZEL, "examples", "u87_k67_projekt.json")
+    with open(pfad, encoding="utf-8") as fh:
+        basis = json.load(fh)
+    for name in A._beispiele():
+        with open(os.path.join(_WURZEL, "examples", name),
+                  encoding="utf-8") as fh:
+            assert A._projekt_params(json.load(fh))[3] == [], name
+    d = copy.deepcopy(basis)
+    d["params"]["air_gap"] = d["params"].pop("air_gap_um")
+    p, n, _, unbekannt = A._projekt_params(d)
+    assert unbekannt == ["air_gap"] and p["air_gap_um"] == 65.0
+    art, msg = A._projekt_anwenden(d)
+    assert art == "warning" and "air_gap" in msg, (art, msg)
+    d = copy.deepcopy(basis)
+    d["version"] = 7
+    art, msg = A._projekt_anwenden(d)
+    assert art == "warning" and "7" in msg, (art, msg)
+    art, msg = A._projekt_anwenden(copy.deepcopy(basis))
+    assert art == "success", (art, msg)
+    abgelehnt = 0
+    for aendern in (lambda q: q.__setitem__("params", {}),
+                    lambda q: q.pop("params"),
+                    lambda q: q["params"].__setitem__("squeeze_2d", "false"),
+                    lambda q: q["params"].__setitem__("air_gap_um",
+                                                      float("nan")),
+                    lambda q: q["params"].__setitem__("material", "Holz"),
+                    lambda q: q.__setitem__("format", "anderes")):
+        d = copy.deepcopy(basis)
+        aendern(d)
+        with pytest.raises(ValueError):
+            A._projekt_params(d)
+        abgelehnt += 1
+    with pytest.raises(ValueError, match="material"):
+        A._coerce("material", "Holz")
+    # b)
+    notiz = A._notizen_aus(basis)
+    assert notiz.startswith(basis["_kommentar"][0]) and "\n" in notiz
+    zurueck = json.loads(A._projekt_json(A._projekt_params(basis)[0], notiz))
+    assert zurueck["_kommentar"] == basis["_kommentar"]
+    assert A._projekt_params(zurueck)[0] == A._projekt_params(basis)[0]
+    assert "_kommentar" not in json.loads(A._projekt_json(
+        A._projekt_params(basis)[0], "  "))
+    st.session_state.clear()
+    # c) in der App (Start mit der gespeicherten Voreinstellung)
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file(os.path.join(_WURZEL, "app.py"),
+                           default_timeout=600)
+    at.session_state["ui_lang"] = "de"
+    _lauf(at)
+    assert _widget(at, "beispiel_wahl").options == A._beispiele()
+    _widget(at, "beispiel_wahl").set_value("u87_k67_projekt.json")
+    _lauf(at)
+    _widget(at, "btn_example").click()
+    _lauf(at)
+    soll = A._projekt_params(basis)[0]
+    ist = _zustand(A, at)
+    assert ist == soll, {k: (soll[k], ist[k]) for k in soll
+                         if ist[k] != soll[k]}
+    assert at.session_state["projekt_notizen"] == notiz
+    assert any("Projekt geladen" in e.value for e in at.success)
+    _widget(at, "btn_default").click()
+    _lauf(at)
+    ist = _zustand(A, at)
+    assert ist == dict(A.DEFAULTS), {k: (A.DEFAULTS[k], ist[k])
+                                     for k in ist if ist[k] != A.DEFAULTS[k]}
+    assert at.session_state["projekt_notizen"] == ""
+    assert [c for c in at.caption
+            if c.value.startswith("Voreinstellung: gespeicherte")]
+    print(f"Projekt-Lader: Tippfehler und neuere Version gemeldet, "
+          f"{abgelehnt} defekte Dateien abgelehnt, Notizen überstehen die "
+          f"Rundreise; {len(A._beispiele())} Beispiele wählbar, Beispiel "
+          f"geladen und zurück zur gespeicherten Voreinstellung  OK")
+
+
+def test_gp63i_warnung_darstellung_threads(app):
+    """Gegenprobe 63 i: die Warnung des Modells erreicht die Oberfläche;
+    Diagramme und Thread-Zahl."""
+    # a) „Biegesteife Folie“ (Gegenprobe 62) stand nur im Konsolen-
+    #    protokoll: 20 µm Titan auf 27,2 mm verfehlt die Platte um 1,5 %.
+    # b) Die Legende des Phasenschieber-Diagramms überdeckte den Titel,
+    #    die Winkelbeschriftungen des Polardiagramms waren abgeschnitten.
+    # c) Rechen-Threads nach der CPU-Quote: darf der Prozess weniger
+    #    rechnen, als er Kerne sieht (Cloud), bremsen sich die BLAS-Threads
+    #    aus — eine Frequenz im feinen 3D bei 1 von 4 Kernen 47,8 s mit vier
+    #    Threads, 15,8 s mit einem. Ohne Quote bleibt der Standard (dort
+    #    schadet die Drossel gleichzeitigen Sitzungen: 25 gegen 11 s).
+    A = app
+    at = _lauf(_at(A, p_material="Titan", p_mem_thickness_um=20.0,
+                   p_bias_v=20.0))
+    warn = [w.value for w in at.warning if "Biegesteife Folie" in w.value]
+    assert warn and "-1.5 %" in warn[0], [w.value for w in at.warning]
+    at = _lauf(_at(A))
+    assert not [w for w in at.warning if "Biegesteife" in w.value]
+    # b)
+    _, erg, _, _ = _voreinstellung_gueltig(A)
+    dr = A.dr_figure(erg["fr"], erg["aux"])
+    assert dr.layout.legend.y < 0 and dr.layout.legend.yanchor == "top"
+    pol = A.polar_figure(erg["di"])
+    assert min(pol.layout.margin.l, pol.layout.margin.r) >= 40
+    # c)
+    import tempfile
+
+    def kerne(dateien, cgroup="0::/\n"):
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, inhalt in dateien.items():
+                os.makedirs(os.path.dirname(os.path.join(tmp, rel)),
+                            exist_ok=True)
+                with open(os.path.join(tmp, rel), "w") as fh:
+                    fh.write(inhalt)
+            with open(os.path.join(tmp, "proc"), "w") as fh:
+                fh.write(cgroup)
+            return A._erlaubte_kerne(tmp, os.path.join(tmp, "proc"))
+    assert kerne({}) is None
+    assert kerne({"cpu.max": "max 100000\n"}) is None
+    assert kerne({"cpu.max": "200000 100000\n"}) == 2.0
+    assert kerne({"cpu.max": "unsinn"}) is None
+    v1 = "cpu/cpu.cfs_quota_us", "cpu/cpu.cfs_period_us"
+    assert kerne({v1[0]: "-1", v1[1]: "100000"}) is None
+    assert kerne({v1[0]: "50000", v1[1]: "100000"}) == 0.5
+    # Quote in der eigenen Untergruppe und engste Quote der Kette
+    assert kerne({"cpu/kind/cpu.cfs_quota_us": "100000",
+                  "cpu/kind/cpu.cfs_period_us": "100000",
+                  v1[0]: "300000", v1[1]: "100000"},
+                 "4:cpu,cpuacct:/kind\n") == 1.0
+    assert kerne({"a/b/cpu.max": "max 100000", "a/cpu.max": "150000 100000"},
+                 "0::/a/b\n") == 1.5
+    assert A._thread_vorgabe(None, 8) is None        # keine Quote
+    assert A._thread_vorgabe(8.0, 8) is None         # Quote = alle Kerne
+    assert A._thread_vorgabe(2.0, 8) == 2
+    assert A._thread_vorgabe(0.078, 8) == 1          # Cloud-Minimum
+    gemessen = "ohne Quote Bibliotheksstandard"
+    if os.environ.get("OMP_NUM_THREADS"):
+        soll = int(os.environ["OMP_NUM_THREADS"])
+        try:
+            from threadpoolctl import threadpool_info
+            pools = [i["num_threads"] for i in threadpool_info()]
+            assert pools and all(n == soll for n in pools), pools
+            gemessen = f"{len(pools)} BLAS-Bibliotheken auf {soll}"
+        except ImportError:
+            gemessen = f"Umgebung auf {soll} (threadpoolctl fehlt)"
+    print(f"Warnung „Biegesteife Folie“ in der Oberfläche ({warn[0][:40]}…),"
+          f" Legende unter dem Phasenschieber-Diagramm, Polardiagramm mit "
+          f"Rand; Threads: {gemessen}  OK")
 
 
 def test_gp66_uebersetzungen(app):

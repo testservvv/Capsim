@@ -26,14 +26,14 @@ TR = {
         "de": "Kondensatormikrofonkapsel — Simulation",
     },
     "app_caption": {
-        "en": "Electroacoustic equivalent circuit (lumped-element model) · "
-              "10 Hz – 25 kHz",
-        "de": "Elektroakustisches Ersatzschaltbild (Lumped-Element-Modell) · "
-              "10 Hz – 25 kHz",
+        "en": "Electroacoustic simulation (network, 2D and 3D field models) "
+              "· 10 Hz – 25 kHz",
+        "de": "Elektroakustische Simulation (Netzwerk-, 2D- und "
+              "3D-Feldmodell) · 10 Hz – 25 kHz",
     },
     "sidebar_caption": {
-        "en": "Lumped-element simulation of a condenser microphone capsule",
-        "de": "Lumped-Element-Simulation einer Kondensatormikrofonkapsel",
+        "en": "Simulation of a condenser microphone capsule",
+        "de": "Simulation einer Kondensatormikrofonkapsel",
     },
     # In beiden Sprachen IDENTISCH: das Label geht in die Widget-Identität
     # ein; ein sprachabhängiges Label würde den Umschalter bei jedem
@@ -69,6 +69,73 @@ TR = {
               "übernommen** ({n} in der Datei) — die hier gerechnete "
               "Kapsel hat weniger Löcher als das Projekt.",
     },
+    "lbl_example": {
+        "en": "Example project",
+        "de": "Beispielprojekt",
+    },
+    "example_placeholder": {
+        "en": "Choose …",
+        "de": "Auswählen …",
+    },
+    "btn_example": {
+        "en": "📂 Load example",
+        "de": "📂 Beispiel laden",
+    },
+    "btn_default": {
+        "en": "↩️ Restore default model",
+        "de": "↩️ Voreinstellung wiederherstellen",
+    },
+    "help_default": {
+        "en": "Back to the model the app starts with (K67, 45 µm backplate "
+              "gap, fine 3D field model). Its results are stored, so they "
+              "appear at once.",
+        "de": "Zurück zu dem Modell, mit dem die App startet (K67, 45 µm "
+              "Zwischenspalt, feines 3D-Feldmodell). Dessen Ergebnisse sind "
+              "gespeichert und erscheinen sofort.",
+    },
+    "default_done": {
+        "en": "Default model restored.",
+        "de": "Voreinstellung wiederhergestellt.",
+    },
+    "lbl_notes": {
+        "en": "Notes",
+        "de": "Notizen",
+    },
+    "help_notes": {
+        "en": "Free text for sources, assumptions and remarks. Saved in the "
+              "project file and shown again when it is loaded.",
+        "de": "Freier Text für Quellen, Annahmen und Anmerkungen. Wird in "
+              "der Projektdatei gespeichert und beim Laden wieder "
+              "angezeigt.",
+    },
+    "load_unknown": {
+        "en": "Ignored unknown entries: {keys} — check the spelling; "
+              "missing parameters use their standard value.",
+        "de": "Unbekannte Einträge übergangen: {keys} — Schreibweise "
+              "prüfen; fehlende Parameter gelten mit ihrem Standardwert.",
+    },
+    "load_newer": {
+        "en": "The file comes from a newer project format (version {v}, "
+              "this app reads {eigene}).",
+        "de": "Die Datei stammt aus einem neueren Projektformat (Version "
+              "{v}, diese App liest {eigene}).",
+    },
+    "err_no_params": {
+        "en": "the file contains no parameters",
+        "de": "die Datei enthält keine Parameter",
+    },
+    "warn_stiff_foil": {
+        "en": "⚠️ Stiff foil: the membrane is so stiff in bending that the "
+              "membrane model misses the fundamental frequency of the "
+              "clamped plate under tension by {pct:+.1f} %. Shape, modes "
+              "and compliance are correspondingly uncertain — use a thinner "
+              "foil, more tension or a larger diameter.",
+        "de": "⚠️ Biegesteife Folie: Die Membran ist so biegesteif, dass "
+              "das Membranmodell die Grundfrequenz der eingespannten Platte "
+              "unter Zug um {pct:+.1f} % verfehlt. Form, Moden und "
+              "Nachgiebigkeit sind entsprechend unsicher — dünnere Folie, "
+              "mehr Spannung oder größerer Durchmesser helfen.",
+    },
     "err_format": {
         "en": "not a Capsim project file",
         "de": "kein Capsim-Projektformat",
@@ -103,14 +170,16 @@ TR = {
         "en": "Sets every capsule parameter to zero (or to the smallest "
               "permitted value where zero is not allowed) after a "
               "confirmation step — a blank canvas to design from scratch. "
-              "Selections (material, architecture, …), model options "
-              "(2D/3D, diffraction) and simulation settings are kept.",
+              "Material, architecture and simulation settings are kept. "
+              "Because the empty capsule has no holes, the 3D field model "
+              "is switched off and the body model is set to the sphere.",
         "de": "Setzt nach einem Bestätigungsschritt alle Kapselparameter "
               "auf null (bzw. auf den kleinsten zulässigen Wert, wo null "
               "nicht erlaubt ist) — eine leere Leinwand für einen Entwurf "
-              "von Grund auf. Auswahlen (Material, Architektur, …), "
-              "Modelloptionen (2D/3D, Beugung) und Simulations-"
-              "einstellungen bleiben erhalten.",
+              "von Grund auf. Material, Architektur und "
+              "Simulationseinstellungen bleiben erhalten. Weil die leere "
+              "Kapsel keine Löcher hat, wird das 3D-Feldmodell abgeschaltet "
+              "und das Körpermodell auf die Kugel gestellt.",
     },
     "reset_confirm": {
         "en": "Really set ALL capsule parameters to zero? The current "
@@ -624,14 +693,14 @@ TR = {
         "en": "Pitch circle Ø [mm] · circle {i}",
         "de": "Lochkreis Ø [mm] · Kreis {i}",
     },
-    "btn_ring_add": {"en": "➕ Pitch circle", "de": "➕ Lochkreis"},
+    "btn_ring_add": {"en": "➕ Circle", "de": "➕ Kreis"},
     "help_ring_add": {
         "en": "Adds another pitch circle (one per click) to model real "
               "hole patterns.",
         "de": "Fügt einen weiteren Lochkreis hinzu (je Druck ein "
               "Kreis), um reale Lochmuster nachzubilden.",
     },
-    "btn_ring_del": {"en": "➖ last circle", "de": "➖ letzter Kreis"},
+    "btn_ring_del": {"en": "➖ Last", "de": "➖ Letzter"},
     "help_ring_del": {
         "en": "Removes the last pitch circle.",
         "de": "Entfernt den letzten Lochkreis.",
@@ -1753,15 +1822,18 @@ TR = {
         "de": "capsim_richtdiagramm.csv",
     },
     "footer": {
-        "en": "Capsim · physics model: ABCD chain matrices, "
-              "Zwikker–Kosten hole impedances, Škvor squeeze film, "
-              "electrostatic transduction with spring softening. "
-              "Sensitivity = open-circuit voltage without stray "
-              "capacitance/amplifier load.",
-        "de": "Capsim · Physikmodell: ABCD-Kettenmatrizen, Zwikker–Kosten-"
-              "Lochimpedanzen, Škvor-Squeeze-Film, elektrostatische "
-              "Wandlung mit Feder-Erweichung. Empfindlichkeit = "
-              "Leerlaufspannung ohne Streukapazität/Verstärkerlast.",
+        "en": "Capsim · physics model: acoustic network (ABCD chain "
+              "matrices) or 2D/3D field model of the gap films, "
+              "thermoviscous holes, electrostatic transduction with spring "
+              "softening, body diffraction. Sensitivity = open-circuit "
+              "voltage at the capsule, without stray capacitance, amplifier "
+              "or grille.",
+        "de": "Capsim · Physikmodell: akustisches Netzwerk "
+              "(ABCD-Kettenmatrizen) oder 2D-/3D-Feldmodell der Spaltfilme, "
+              "thermoviskose Bohrungen, elektrostatische Wandlung mit "
+              "Feder-Erweichung, Körperbeugung. Empfindlichkeit = "
+              "Leerlaufspannung an der Kapsel, ohne Streukapazität, "
+              "Verstärker und Korb.",
     },
 
     # ------------------------- Diagramme --------------------------------

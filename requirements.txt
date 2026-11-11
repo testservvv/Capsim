@@ -1,5 +1,11 @@
-numpy>=1.24
-scipy>=1.10
-streamlit>=1.38
+# Untergrenzen geprüft (Audit nach Gegenprobe 63 f): mit NumPy 1.x lässt
+# sich keine Kapsel bauen (np.trapezoid), die App braucht Streamlit >= 1.49
+# (width="stretch", st.logo(size=…)); pandas >= 2.2.2 und SciPy >= 1.13
+# sind die ersten Versionen für NumPy 2.
+numpy>=2.0
+scipy>=1.13
+streamlit>=1.49
 plotly>=5.20
-pandas>=2.0
+pandas>=2.2.2
+# drosselt die BLAS-Threads auch dann, wenn numpy vor der App geladen ist
+threadpoolctl>=3.1

@@ -683,8 +683,39 @@ Messungen der realen Kapsel.
   schreibt den Session-State wie `_load_project()`). Die Meldungen des
   Modells bei ungültigen Parametern sind seit Gegenprobe 66 c
   zweisprachig (`ParameterFehler`); seine Warnungen (`UserWarning`)
-  bleiben deutsch, die App zeigt sie aber nicht (nur im
-  Konsolenprotokoll).
+  bleiben deutsch. Die App zeigt deren Inhalt mit eigenen, zweisprachigen
+  Texten: Homogenisierung und Lochkreis-Grenze, BEM-Rückeinlass,
+  3D-Gitter und seit Gegenprobe 63 i die biegesteife Folie. Nicht
+  gezeigt wird der Zusatz „body_length passt nicht dazu“ der
+  BEM-Warnung.
+- **Offen aus dem App-Audit (2191 Zufalls- und Grenzwertfälle durch alle
+  Eingabefelder, 1D/2D/3D; kein falscher Zahlenwert, jede Ablehnung ein
+  `ParameterFehler` — bis auf den ersten Punkt):**
+  - **Speicher des Lochkreis-Makroelements (2D):** das Sektorgitter
+    wächst mit 1/Mündungsradius² ohne Obergrenze. Voreinstellung in 2D
+    0,66 GB; „Stufenbohrung“ aus 2,25 GB; Kern 0,4 mm ohne Stufe 5 GB;
+    ≤ 0,3 mm über 10 GB (ein Fall 13,5 GB, vom System beendet). Die App
+    zeigt dann einen `MemoryError` oder stirbt.
+  - **Lochgeometrie ohne Plausibilitätsprüfung:** überlappende Löcher
+    (40 × ⌀1,3 mm auf einem 10-mm-Kreis), Löcher halb außerhalb der
+    Platte oder unter dem Mittenpfosten rechnet das Modell ohne Meldung
+    (geprüft wird nur die Gesamtfläche ≥ 90 %).
+  - **Gespeicherte Voreinstellung nur für exakt einen Parametersatz:**
+    schon eine weitere Richtfrequenz oder eine andere Punktzahl rechnet
+    alles neu (~85 min). Je Frequenz gespeicherte 3D-Lösungen würden
+    das auf eine Lösung (~10 s) verkürzen.
+  - **Feines 3D live:** 2,1 GB Spitzenspeicher und ~10–13 s je Frequenz,
+    ohne Zeitschätzung oder Rückfrage vor dem Start. Frequenzen parallel
+    in Prozessen: gemessen 3,0 statt 10,4 s je Frequenz auf 4 Kernen
+    (je Prozess 2,1 GB).
+  - **Ergebnisse nur in der Browser-Sitzung:** ein Neuladen der Seite
+    verwirft sie.
+  - **BEM-Außenfeld je Kapsel neu:** ~8 s je 100 Frequenzpunkte bei jeder
+    Parameteränderung, obwohl es nur von der Körperform abhängt (auf
+    derselben Kapsel wiederholt 0,08 s).
+  - **Mindestversionen** (`requirements.txt`) sind von Hand geprüft
+    (alle App-Proben mit NumPy 2.0.2, SciPy 1.13.1, Streamlit 1.49.0,
+    Plotly 5.20.0, pandas 2.2.2), aber nicht Teil des Testlaufs.
 - Kein automatischer Testlauf bei jedem Push (kein GitHub-Workflow).
 - Laufzeit: die BEM-Proben 41, 43, 44, 26 und 21 brauchen etwa 117 der
   316 s Rechenzeit; Gegenprobe 41 allein (54 s) ist die Untergrenze des
@@ -2986,6 +3017,59 @@ der K67, Randspalt nur ohne, Körperlänge, Verdrehwinkel). Jetzt schreibt
 die App alle Parameter zu Beginn jedes Laufs in den Sitzungszustand
 zurück (`_halte_ausgeblendete`). Die Probe bedient die Widgets selbst:
 Klemmringbreite 2,5 mm, K67 → Single → K67, vorher 4,0 mm zurück.
+
+**Fehler aus dem App-Audit (Gegenproben 63 g, h, i).** Ein Audit der App
+(Zufalls- und Grenzwerttest aller Eingabefelder, Bedienabläufe,
+Bildschirmfotos, Bibliotheksversionen) fand diese Fehler; behoben ohne
+Änderung am Modell, die gespeicherte Voreinstellung blieb gültig.
+- **63 g — Ausgeblendetes wirkt nicht, Null-Reset rechnet.** Seit 63 e
+  blieb ein bei „Single“ gesetzter Randspalt nach dem Wechsel zur K67
+  stehen: das Modell lehnte ihn ab, das Feld war nicht mehr zu sehen.
+  Jetzt geht er bei der K67 nicht ins Modell und nicht in die
+  Projektdatei, bleibt aber für den Rückweg erhalten (`_wirksam`).
+  „Alle Werte auf null“ rechnete für KEINE Bauform mehr: die 100-Hz-
+  Resonanz des Null-Zustands scheitert seit Gegenprobe 62 an der
+  Randschicht, mit der 3D-Voreinstellung kam „3D erfordert Löcher“
+  dazu. Null-Zustand jetzt 1000 Hz; der Reset schaltet 3D ab, stellt die
+  Kugel ein und lässt der Gegentakt-Bauform ein Loch. Geprüft aus der
+  Voreinstellung und für alle Bauformen (120 Kombinationen aus Bauform,
+  Material, 1D/2D, Beugung und Resonanzvorgabe rechnen).
+- **63 h — Projekt-Lader, Notizen, Beispiele, Voreinstellung.** Ein
+  vertippter Schlüssel (`air_gap`) lud still als Fehlwert 65 µm: jetzt
+  als unbekannter Eintrag gemeldet, ebenso eine neuere Formatversion.
+  Abgelehnt werden eine Datei ohne Parameter (überschrieb alles und
+  meldete Erfolg), Wahrheitswerte als Text (`"false"` wurde wahr) und
+  NaN. Die Meldung für ungültige Werte scheiterte selbst an einem
+  `TypeError`. Notizen (`_kommentar`) gingen beim Laden und Speichern
+  verloren: jetzt ein Notizfeld, das mit dem Projekt gespeichert wird.
+  Neu: Auswahl der mitgelieferten Beispielprojekte (in der Cloud sonst
+  nicht erreichbar) und „Voreinstellung wiederherstellen“.
+- **63 i — Warnung, Darstellung, Threads.** „Biegesteife Folie“
+  (Gegenprobe 62) stand nur im Konsolenprotokoll. Darstellung: die
+  Legende überdeckte den Titel des Phasenschieber-Diagramms, die
+  Winkel 270°/90° des Polardiagramms waren abgeschnitten, auf
+  Laptopbreite stand „20.9 mV…“, am Handy verdeckte die Seitenleiste
+  den Inhalt, die Texte nannten noch das „Lumped-Element-Modell“.
+  Rechen-Threads: darf der Prozess weniger rechnen, als er Kerne sieht
+  (CPU-Quote, Streamlit Cloud höchstens 2 Kerne), bremsen sich die
+  BLAS-Threads aus. Gemessen je Frequenz im feinen 3D bei 1 von 4
+  Kernen: 47,8 s mit vier Threads, 15,8 s mit einem (bei 0,5 Kernen
+  120,8 gegen 33,9 s). Die App setzt die Thread-Zahl deshalb auf die
+  Quote. Ohne Quote bleibt der Bibliotheksstandard: dort bringt die
+  Drossel nichts, und vier gleichzeitige Sitzungen im selben Prozess
+  rechneten mit einem Thread langsamer (25 gegen 11 s). Vier
+  gleichzeitige PROZESSE mit je vier Threads brauchten dagegen je 170
+  statt 4,8 s; für den parallelen Testlauf drosselt `conftest.py`.
+- **63 f, Toleranz.** Die Stichprobe gegen die gespeicherten Werte
+  scheiterte im parallelen Gesamtlauf: das 3D-System ist mit ~1e8
+  konditioniert, die Rundung hängt von der Thread-Zahl ab (0 / 1,3e-8 /
+  2,2e-8 bei 4 / 1 / 2 Threads). Toleranz mit Zustimmung von 1e-9 auf
+  1e-6 gelockert (1e-5 dB).
+- **`requirements.txt`.** Die Untergrenzen stimmten nicht: mit NumPy 1.x
+  lässt sich keine Kapsel bauen (vier direkte `np.trapezoid`-Aufrufe;
+  überbrückt rechnet alles), die App startet erst ab Streamlit 1.49
+  (1.40–1.48 scheitern). Jetzt NumPy ≥ 2.0, SciPy ≥ 1.13, Streamlit
+  ≥ 1.49, pandas ≥ 2.2.2, dazu `threadpoolctl`.
 
 **Ergebnis bei 1 kHz** (tiefste Stelle, jeweils bei 180°):
 
