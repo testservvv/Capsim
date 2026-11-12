@@ -1135,6 +1135,115 @@ def test_gp60_lochkreis_als_makroelement(stand):
 
 
 @pytest.mark.slow
+def test_gp72_lochband_je_muendung_und_speicher(stand, monkeypatch):
+    """Gegenprobe 72: das Lochband-Makroelement verfeinert je Mündung,
+    löst speichersparend und hat eine Obergrenze."""
+    # Bis hier bestimmte die KLEINSTE Mündung die Gitterweite im ganzen
+    # Sektor (h = min r/R / n_fein): zwischen 54 weiten Senkungen und 54
+    # engen Kernen (K67 ohne Stufe) lag das ganze Band im feinen Gitter, und
+    # der Speicher wuchs mit 1/r² — Kern 0,2 mm: 5,9 Mio. Knoten, über
+    # 6 GB, 0,1 mm nicht mehr rechenbar. Dazu hielt der Löser drei dichte
+    # Felder Knoten × Bandzellen (Gewichte, rechte Seiten, Lösung), etwa
+    # 2 KB je Knoten. Jetzt verfeinert (1) jede Mündung das Gitter nur um
+    # sich, mit n_fein Zellen auf IHREN Radius in der log-Ebene, und (2) das
+    # Schurkomplement wird spaltenblockweise mit dünnen Gewichten gelöst:
+    # im Speicher stehen nur die LU-Faktoren (~0,7 GB je Million Knoten),
+    # (3) über _MAKRO_GITTER_MAX Knoten meldet das Modell einen
+    # ParameterFehler statt den Speicher zu sprengen. Geprüft an den Bändern
+    # der K67 (exaktes Raster, Gegenprobe 73):
+    # a) gleich genau: gegen eine feine Referenz (je Mündung, n_fein 20)
+    #    treffen je Mündung UND global fein (n_fein 10) den Filmwiderstand
+    #    aller Zellen gegen die Lochknoten und das Leitwertnetz der
+    #    Lochknoten auf 0,5 % (die Schranke von Gegenprobe 60), und beide
+    #    liegen auf 0,1 % beieinander;
+    # b) kleiner: je Mündung höchstens zwei Drittel der Knoten (mit Stufe,
+    #    alle Mündungen gleich weit, nur die Radien verschieden; gemessen
+    #    61 %), ohne Stufe höchstens 40 % (gemessen 33 %);
+    # c) die Blockgröße des Lösers ändert nichts (auf 1e-12);
+    # d) über der Obergrenze ein ParameterFehler, auch durch den Bau der
+    #    Kapsel hindurch (kein stiller Rückfall auf das Gaußband).
+    import microphone_capsule as M
+    if not _HAS_SCIPY:
+        return
+    th, bh = k67_raster()
+    basis72 = dict(K67_KWARGS, backplate_diameter=25.6e-3,
+                   through_hole_rings=th, blind_hole_rings=bh)
+
+    def baender(**extra):
+        fang = []
+        orig = M._lochband_makro
+
+        def f(*a, **k):
+            if not k.get("nur_knoten"):
+                fang.append((a, k))
+            return orig(*a, **k)
+        monkeypatch.setattr(M, "_lochband_makro", f)
+        MicrophoneCapsule(**{**basis72, **extra})
+        monkeypatch.setattr(M, "_lochband_makro", orig)
+        assert len(fang) == 1, "das Raster muss EIN Band sein"
+        return fang[0]
+
+    def kennwerte(a, k, **kw):
+        gr, faces, innen, aussen = a
+        M._MAKRO_CACHE.clear()
+        knoten = M._lochband_makro(gr, faces, innen, aussen,
+                                   kappa=k.get("kappa"), nur_knoten=True,
+                                   **kw)
+        Y, _, keep = M._lochband_makro(gr, faces, innen, aussen,
+                                       kappa=k.get("kappa"), **kw)
+        K = int(keep.sum())
+        s = (np.pi * np.diff(np.asarray(faces) ** 2))[keep]
+        Ycc, YcT, YTT = Y[:K, :K], Y[:K, K:], Y[K:, K:]
+        R = s @ np.linalg.solve(Ycc, s) / s.sum() ** 2
+        G = YTT - YcT.T @ np.linalg.solve(Ycc, YcT)
+        return R, G, knoten, Y
+
+    erg72 = {}
+    for name, extra, quote in (("Stufe", {}, 2.0 / 3.0),
+                               ("ohne Stufe",
+                                dict(through_holes_stepped=False), 0.4)):
+        a, k = baender(**extra)
+        R0, G0, n0, _ = kennwerte(a, k, n_fein=20)
+        res = {}
+        for tag, jm in (("je Mündung", True), ("global", False)):
+            R, G, n, Y = kennwerte(a, k, n_fein=10, je_muendung=jm)
+            dG = float(np.abs(G - G0).max() / np.abs(np.diag(G0)).max())
+            res[tag] = (R, G, n, Y)
+            assert abs(R / R0 - 1.0) < 5e-3 and dG < 5e-3, \
+                (f"{name}, {tag}: Filmwiderstand {R / R0 - 1:+.3%}, "
+                 f"Lochknoten-Netz {dG:.3%} gegen die Referenz")
+        Rj, Gj, nj, Yj = res["je Mündung"]
+        Rg, Gg, ng, _ = res["global"]
+        assert abs(Rj / Rg - 1.0) < 1e-3, \
+            f"{name}: je Mündung gegen global {Rj / Rg - 1:+.3%}"
+        assert nj <= quote * ng, \
+            f"{name}: {nj} statt höchstens {quote:.0%} von {ng} Knoten"
+        erg72[name] = (Rj / R0 - 1.0, Rg / R0 - 1.0, nj, ng)
+        if name == "Stufe":
+            # c) Blockgröße des Lösers
+            monkeypatch.setattr(M, "_MAKRO_BLOCK", 3 * nj)
+            _, _, _, Y3 = kennwerte(a, k, n_fein=10)
+            monkeypatch.undo()
+            assert np.abs(Y3 - Yj).max() < 1e-12 * np.abs(Yj).max(), \
+                "die Blockgröße darf das Ergebnis nicht ändern"
+    # d) Obergrenze: ein Band über _MAKRO_GITTER_MAX meldet sich, auch beim
+    #    Bau der Kapsel
+    monkeypatch.setattr(M, "_MAKRO_GITTER_MAX", 50_000)
+    with pytest.raises(ParameterFehler) as ei:
+        MicrophoneCapsule(**basis72)
+    assert ei.value.schluessel == "lochband_gitter"
+    monkeypatch.undo()
+    stand.wert("makro72_knoten_ohne_stufe", erg72["ohne Stufe"][2], "",
+               "Gitterknoten Lochband K67 ohne Stufe, je Mündung")
+    stand.wert("makro72_fehler_ohne_stufe", erg72["ohne Stufe"][0], "",
+               "Filmwiderstand je Mündung gegen Referenz (n_fein 20)")
+    print("Lochband je Mündung: " + "; ".join(
+        f"{n} {e[2]} statt {e[3]} Knoten, gegen Referenz {e[0]:+.3%} "
+        f"(global {e[1]:+.3%})" for n, e in erg72.items())
+        + "; Blockgröße ohne Einfluss; Obergrenze meldet sich  OK")
+
+
+@pytest.mark.slow
 def test_gp67_muendung_spaltfilm_bohrung():
     """Gegenprobe 67: Mündung Spaltfilm → Bohrung (Dreitor)."""
     # Reynolds-Film (bis an den Lochrand, dort Lochdruck) und Zwikker–

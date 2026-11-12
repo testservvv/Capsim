@@ -1818,3 +1818,78 @@ def test_gp70_zwischenspalt_muendung_im_3d_loeser(stand):
           f"{100 * dev_a[False]:.2f} %, Serie {100 * dev_a[True]:.0f} % "
           f"vom einteiligen Löser; versetzt Fläche/Serie "
           f"{100 * dev_b:.2f} % bei {100 * wirkung:.1f} % Wirkung  OK")
+
+
+@pytest.mark.feld3d
+def test_gp75_3d_loesungen_aus_und_einfuhr():
+    """Gegenprobe 75: die 3D-Lösungen je Frequenz verlassen die Kapsel und
+    kommen bitgleich wieder an."""
+    # Seit Gegenprobe 56 bewahrt die Kapsel ihre 3D-Lösungen je Frequenz
+    # auf (~1 kB), aber nur solange das Objekt lebt. Die gespeicherte
+    # Voreinstellung der App rechnete deshalb bei jeder weiteren
+    # Richtfrequenz alles neu (~85 min), und mehrere Kerne blieben
+    # ungenutzt. Jetzt gibt loesungen_3d() den Speicher heraus,
+    # loesungen_3d_einsetzen() nimmt ihn auf, und _arbeiter_loese_3d rechnet
+    # Frequenzen in einem anderen Prozess (die App verteilt sie über
+    # Arbeiterprozesse). Geprüft am groben Debenham-3D:
+    # a) eine frisch gebaute Kapsel mit eingesetzten Lösungen rechnet
+    #    Winkelgänge, Richtdiagramm und Laufzeit ohne eine Zerlegung und
+    #    bitgleich zur Originalkapsel;
+    # b) der Arbeiter (hier im selben Prozess, gleiche Fäden) liefert
+    #    bitgleich dieselben Einträge, mit denselben Schlüsseln 2·π·f;
+    # c) die Einträge überstehen die JSON-Form der gespeicherten
+    #    Voreinstellung bitgleich;
+    # d) Einsetzen überschreibt nichts Vorhandenes.
+    # e) Der Zustand des Lösungsspeichers bleibt beim Lösen gleich: bis hier
+    #    setzte die erste 3D-Lösung eines Prozesses die Mündungstabelle als
+    #    Klassenwert nach, der Zustand (_solve_3d_state) änderte sich, und
+    #    der Speicher verwarf diese erste Lösung wieder (im Arbeiter-
+    #    prozess fehlte sie dann ganz).
+    import json
+    import voreinstellung as V
+    import microphone_capsule as M
+    if not _HAS_SCIPY:
+        return
+    f = np.array([250.0, 1000.0, 3000.0])
+    c1 = debenham(squeeze_model="3d")
+    zustand = c1._solve_3d_state()
+    r1 = c1.angle_responses(f)
+    assert c1._solve_3d_state() == zustand, "Lösen ändert den Zustand"
+    assert M.MicrophoneCapsule._MUENDUNG_ARR is not None
+    d1 = c1.directivity(frequencies_hz=(1000.0,))
+    t1 = c1.delay_diagnostics()
+    loes = c1.loesungen_3d()
+    assert set(loes) == {float(om) for om in 2.0 * np.pi * f}
+    # a)
+    c2 = debenham(squeeze_model="3d")
+    assert c2.loesungen_3d_einsetzen(loes) == f.size
+    r2 = c2.angle_responses(f)
+    d2 = c2.directivity(frequencies_hz=(1000.0,))
+    t2 = c2.delay_diagnostics()
+    assert getattr(c2, "_lu_3d_count", 0) == 0, "eingesetzt, aber gelöst"
+    for w in (0.0, 90.0, 180.0):
+        assert np.array_equal(r1["H"][w], r2["H"][w])
+    assert np.array_equal(d1["patterns"][1000.0]["linear"],
+                          d2["patterns"][1000.0]["linear"])
+    assert t1 == t2
+    # b) der Arbeiter
+    bau = json.dumps(dict(DEB_KWARGS, squeeze_model="3d"), sort_keys=True)
+    M._ARBEITER_KAPSEL.clear()
+    arb = M._arbeiter_loese_3d(bau, f[1:])
+    assert set(arb) == {float(om) for om in 2.0 * np.pi * f[1:]}
+    for om, e in arb.items():
+        assert e == loes[om], "Arbeiter und Kapsel müssen gleich lösen"
+    M._ARBEITER_KAPSEL.clear()
+    # c) JSON-Form der gespeicherten Voreinstellung
+    zurueck = V._dekodieren(json.loads(json.dumps(V._kodieren(loes))))
+    c3 = debenham(squeeze_model="3d")
+    assert c3.loesungen_3d_einsetzen(zurueck) == f.size
+    assert c3.loesungen_3d() == loes
+    # d) nichts überschreiben
+    falsch = {om: {k: (None if v is None else tuple(0j for _ in v))
+                   for k, v in e.items()} for om, e in loes.items()}
+    assert c3.loesungen_3d_einsetzen(falsch) == 0
+    assert c3.loesungen_3d() == loes
+    print(f"3D-Lösungen aus/ein: {f.size} Frequenzen eingesetzt, Winkelgänge, "
+          f"Richtdiagramm, Laufzeit ohne Zerlegung bitgleich; Arbeiter "
+          f"bitgleich; JSON bitgleich; nichts überschrieben  OK")

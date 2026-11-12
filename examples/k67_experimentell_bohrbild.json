@@ -18,10 +18,15 @@
     "Punkte (r = 1.41 und 3.16 mm) -> 108 Senkungen 1.3 x 3.7 mm, jede",
     "zweite (Schachbrett) mit 0.6-mm-Kern durchgebohrt (54). Die zweite",
     "Haelfte ist um 90 Grad verdreht: KEIN Kern fluchtet, jeder sieht den",
-    "naechsten Kern der Gegenseite 2 mm entfernt. Eingabe als 13 Lochkreise",
-    "nach Radius (je Radius exakt die Haelfte durchgebohrt, die Spiegelung",
-    "a -> -a kehrt die Paritaet um). 3D-Probe: exakte Rasterlage statt",
-    "gleichverteilter Kreise aendert die Ausloeschung um 0.1 dB.",
+    "naechsten Kern der Gegenseite 2 mm entfernt. EINGABE EXAKT (Gegenprobe",
+    "73): je 180-Grad-Lochpaar eine Zeile mit dem Winkel des ersten Lochs,",
+    "27 Kern- und 27 Sacklochzeilen (Sacklochzeilen mit Winkel sind rein",
+    "blinde Senkungen). Der automatische Rueckversatz (eine halbe Teilung",
+    "je Paar = 90 Grad) legt jeden Kern der Gegenseite auf ein Sackloch.",
+    "Bis Gegenprobe 73 als 13 Kreise nach Radius nach der Lagekonvention:",
+    "dort schnitten sich 40 Senkungspaare (bis 0.69 mm); im Raster ist der",
+    "kleinste Steg 0.70 mm. Die aeusseren 8 Senkungen reichen 0.033 mm ueber",
+    "die 25.4-mm-Elektrode (die App zeigt das als Notiz).",
     "RANDNUT: Elektrodenflaeche bis Durchmesser 25.4 mm (Foto 25.1-25.8),",
     "Nut bis 27.2 mm (Foto 27.0-27.2; ADK GK67: Membran 27.4 mm), dann der",
     "Klemmflansch. Im Modell der tiefe Ringraum zwischen Plattenrand und",
@@ -45,19 +50,23 @@
     "(spezifiziert 50 pF je Seite, spaetere K87 gemessen 65-75 pF).",
     "UNVERAENDERT: 60 V, Loch-Durchmesser, Klemmringdicke, Koerper 34 mm.",
     "ERGEBNIS 1 kHz (90/135/180 Grad, tiefste Stelle bei 180 Grad), 3D",
-    "feines Gitter: interne Laufzeit 42.4 mm. Aussenweg als Kugel d_ext",
-    "(18.5 mm, Voreinstellung): -3.0/-5.4/-6.6 dB, 15.2 mV/Pa; freie",
-    "Scheibe (32.3 mm): -4.4/-9.3/-11.8 dB; BEM freier Kopf (35.0 mm):",
-    "-4.6/-10.1/-12.7 dB. 2D (Kugel): -3.2/-6.0/-7.5 dB.",
+    "feines Gitter, exaktes Raster: interne Laufzeit 43.3 mm. Aussenweg als",
+    "Kugel d_ext (18.5 mm, Voreinstellung): -2.9/-5.3/-6.4 dB, 15.1 mV/Pa;",
+    "freie Scheibe (32.3 mm): -4.3/-9.1/-11.5 dB; BEM freier Kopf",
+    "(35.0 mm): -4.5/-9.9/-12.4 dB. 2D (Kugel): -3.2/-6.1/-7.6 dB. (Mit den",
+    "13 Kreisen: 42.4 mm; -3.0/-5.4/-6.6, -4.4/-9.3/-11.8,",
+    "-4.6/-10.1/-12.7 dB; 2D -3.2/-6.0/-7.5 dB.)",
     "AUSSENWEG: die Kapsel hat ihre Niere auch frei, ausserhalb des",
     "Gehaeuses; massgeblich ist der freie Kopf (BEM 35.0 mm). Dagegen ist",
-    "die interne Laufzeit ~20 % zu lang (Verhaeltnis 1.21).",
+    "die interne Laufzeit ~20 % zu lang (Verhaeltnis 1.24; mit den 13",
+    "Kreisen 1.21).",
     "OFFEN: welche Eingangsgroesse die ~20 % traegt. Nicht belegt sind der",
     "Durchmesser der engen Durchbohrung (0.6 mm; ~0.75 mm traefe) und die",
     "wirksame Hoehe des Zwischenspalts (Planheit; ~45 um traefe).",
     "TIEFE DER NULL (1 kHz, 180 Grad): real -23 dB (U87-Ai-Polardiagramm).",
     "Im Modell fehlt vor allem der Betrag: |D_r| 1.33 gegen |G| 1.006",
-    "(nur Betrag -12.9 dB, nur Phase -19.7 dB). Im RC-Phasenschieber waechst",
+    "(nur Betrag -12.9 dB, nur Phase -19.7 dB; Zahlen mit den 13 Kreisen,",
+    "mit dem exakten Raster |D_r| 1.34). Im RC-Phasenschieber waechst",
     "der Betrag mit der Phase. Bei angepasster Laufzeit bliebe |D_r| 1.19",
     "(-17.3 dB): RC mit Traegheit, thermische Relaxation der Senkungen,",
     "Formanpassung der Membranen. S. README, Offene Punkte 9.",
@@ -81,55 +90,138 @@
     "th_rings": [
       [
         2,
-        8.485
-      ],
-      [
-        4,
-        10.198
-      ],
-      [
-        4,
-        11.662
-      ],
-      [
-        6,
-        14.142
-      ],
-      [
-        4,
-        15.232
-      ],
-      [
-        4,
-        17.205
-      ],
-      [
-        4,
-        18.111
-      ],
-      [
-        4,
-        18.974
+        8.485,
+        45.0
       ],
       [
         2,
-        19.799
+        10.198,
+        11.31
       ],
       [
-        4,
-        20.591
+        2,
+        10.198,
+        78.69
       ],
       [
-        4,
-        22.091
+        2,
+        11.662,
+        120.96
       ],
       [
-        8,
-        22.804
+        2,
+        11.662,
+        149.04
       ],
       [
-        4,
-        24.166
+        2,
+        14.142,
+        45.0
+      ],
+      [
+        2,
+        14.142,
+        98.13
+      ],
+      [
+        2,
+        14.142,
+        171.87
+      ],
+      [
+        2,
+        15.232,
+        23.2
+      ],
+      [
+        2,
+        15.232,
+        66.8
+      ],
+      [
+        2,
+        17.205,
+        125.54
+      ],
+      [
+        2,
+        17.205,
+        144.46
+      ],
+      [
+        2,
+        18.111,
+        6.34
+      ],
+      [
+        2,
+        18.111,
+        83.66
+      ],
+      [
+        2,
+        18.974,
+        108.43
+      ],
+      [
+        2,
+        18.974,
+        161.57
+      ],
+      [
+        2,
+        19.799,
+        45.0
+      ],
+      [
+        2,
+        20.591,
+        29.05
+      ],
+      [
+        2,
+        20.591,
+        60.95
+      ],
+      [
+        2,
+        22.091,
+        95.19
+      ],
+      [
+        2,
+        22.091,
+        174.81
+      ],
+      [
+        2,
+        22.804,
+        15.26
+      ],
+      [
+        2,
+        22.804,
+        74.74
+      ],
+      [
+        2,
+        22.804,
+        127.87
+      ],
+      [
+        2,
+        22.804,
+        142.13
+      ],
+      [
+        2,
+        24.166,
+        114.44
+      ],
+      [
+        2,
+        24.166,
+        155.56
       ]
     ],
     "th_stepped": true,
@@ -137,56 +229,139 @@
     "blind_depth_mm": 3.75,
     "bh_rings": [
       [
-        4,
-        8.485
+        2,
+        8.485,
+        135.0
       ],
       [
-        8,
-        10.198
+        2,
+        10.198,
+        101.31
       ],
       [
-        8,
-        11.662
+        2,
+        10.198,
+        168.69
       ],
       [
-        12,
-        14.142
+        2,
+        11.662,
+        30.96
       ],
       [
-        8,
-        15.232
+        2,
+        11.662,
+        59.04
       ],
       [
-        8,
-        17.205
+        2,
+        14.142,
+        8.13
       ],
       [
-        8,
-        18.111
+        2,
+        14.142,
+        81.87
       ],
       [
-        8,
-        18.974
+        2,
+        14.142,
+        135.0
       ],
       [
-        4,
-        19.799
+        2,
+        15.232,
+        113.2
       ],
       [
-        8,
-        20.591
+        2,
+        15.232,
+        156.8
       ],
       [
-        8,
-        22.091
+        2,
+        17.205,
+        35.54
       ],
       [
-        16,
-        22.804
+        2,
+        17.205,
+        54.46
       ],
       [
-        8,
-        24.166
+        2,
+        18.111,
+        96.34
+      ],
+      [
+        2,
+        18.111,
+        173.66
+      ],
+      [
+        2,
+        18.974,
+        18.43
+      ],
+      [
+        2,
+        18.974,
+        71.57
+      ],
+      [
+        2,
+        19.799,
+        135.0
+      ],
+      [
+        2,
+        20.591,
+        119.05
+      ],
+      [
+        2,
+        20.591,
+        150.95
+      ],
+      [
+        2,
+        22.091,
+        5.19
+      ],
+      [
+        2,
+        22.091,
+        84.81
+      ],
+      [
+        2,
+        22.804,
+        37.87
+      ],
+      [
+        2,
+        22.804,
+        52.13
+      ],
+      [
+        2,
+        22.804,
+        105.26
+      ],
+      [
+        2,
+        22.804,
+        164.74
+      ],
+      [
+        2,
+        24.166,
+        24.44
+      ],
+      [
+        2,
+        24.166,
+        65.56
       ]
     ],
     "clamp_ring_mm": 2.0,

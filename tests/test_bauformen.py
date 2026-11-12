@@ -85,6 +85,137 @@ def test_gp09_mehrfach_lochkreise():
           f"Kreisen ({multi.squeeze_model}-Modell) lauffähig  OK")
 
 
+def test_gp73_lochlage_winkel_und_plausibilitaet():
+    """Gegenprobe 73: Winkel je Lochkreis, exaktes K67-Raster und die
+    Plausibilität der Lochlage."""
+    # Lochkreise lagen bis hier nach einer Konvention: Durchgangskreis m um
+    # 20°·m verdreht, Sacklochkreis m um 15° + 20°·m. Das K67-Raster aus
+    # dem Foto (Gegenprobe 71) war als 13 Kreise nach Radius eingegeben;
+    # Durchgangs- und Sacklöcher eines Kreises lagen so nur 15° auseinander,
+    # und die Kreise liegen 0,4–0,8 mm auseinander: 40 Mündungspaare der
+    # 1,3-mm-Senkungen schnitten sich (bis 0,69 mm), im realen Raster ist
+    # der kleinste Steg 0,70 mm. Niemand merkte es, weil das Modell
+    # Überlappungen still rechnete. Jetzt (1) trägt ein Lochkreis optional
+    # den Winkel seines ersten Lochs, (2) das K67-Raster ist exakt
+    # eingegeben (27 + 27 Lochpaare) und (3) loch_befund meldet sich
+    # schneidende Mündungen verschiedener Zeilen, Überstand über den
+    # Plattenrand und unter den Mittenpfosten (UserWarning; die App zeigt
+    # es zweisprachig). Geprüft:
+    th, bh = k67_raster()
+    th13, bh13 = k67_raster(mit_winkel=False)
+    # (Elektrode 25,6 mm, damit das Raster ganz auf der Platte liegt; dafür
+    # 40 V, sonst Pull-in)
+    k67r = dict(K67_KWARGS, backplate_diameter=25.6e-3, bias_voltage=40.0,
+                squeeze_model="1d")
+
+    # synthetische Lochbilder auf der Debenham-Platte (30 V: mit weniger
+    # Löchern liegt der Pull-in unter den 50 V des Originals)
+    debx = dict(DEB_KWARGS, bias_voltage=30.0)
+
+    def bau(**kw):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            c = MicrophoneCapsule(**kw)
+        return c, [str(x.message) for x in w
+                   if str(x.message).startswith("Lochlage")]
+
+    # a) Ohne Winkel bleibt die Lage der Konvention bitgleich (der
+    #    Debenham-Prüfling: Kreis m um 20°·m bzw. 15° + 20°·m)
+    deb, _ = bau(**DEB_KWARGS)
+    hp = deb._hole_positions()
+    soll = [(R, 20.0 * m + 360.0 * k / n) for m, (n, d) in
+            enumerate(DEB_KWARGS["through_hole_rings"])
+            for k in range(n) for R in (0.5 * d,)]
+    assert [(r, d) for r, d, _ in hp["th"]] == soll, "Konvention verändert"
+    # b) Winkel: erstes Loch dort, die übrigen gleich verteilt; ein Winkel
+    #    ohne Lochkreis oder ein vierter Wert ist ein ParameterFehler
+    c_w, _ = bau(**dict(debx, through_hole_rings=[(4, 20e-3, 33.0)],
+                        blind_hole_rings=[(4, 20e-3, 78.0)]))
+    assert [d for _, d, _ in c_w._hole_positions()["th"]] == \
+        [33.0, 123.0, 213.0, 303.0]
+    assert [d for _, d, _ in c_w._hole_positions()["bh"]] == \
+        [78.0, 168.0, 258.0, 348.0]
+    for falsch, schl in (([(4, None, 10.0)], "lochkreis_winkel"),
+                         ([(4, 20e-3, float("nan"))], "lochkreis_winkel"),
+                         ([(4, 20e-3, 10.0, 1.0)], "lochkreis_paar")):
+        with pytest.raises(ParameterFehler) as ei:
+            MicrophoneCapsule(**dict(debx, through_hole_rings=falsch))
+        assert ei.value.schluessel == schl
+    # c) Das exakte Raster: jede Mündung auf ihrem Rasterpunkt, das
+    #    Schachbrett stimmt, und die um den kreisweisen Rückversatz (hier
+    #    90°) gedrehte Gegenhälfte legt jeden Kern auf ein Sackloch der
+    #    Vorderseite (kein Kern fluchtet); Zählweise: 54 Kerne mit Senkung
+    #    und 54 rein blinde Senkungen; keine Überlappung, kleinster Steg
+    #    0,70 mm wie im Raster (2 mm − 1,3 mm)
+    c67, w67 = bau(**dict(k67r, through_hole_rings=th, blind_hole_rings=bh))
+    assert not w67 and c67.loch_befund == {}, c67.loch_befund
+    assert (c67.n_th, c67.n_bh) == (54, 54)
+    hp = c67._hole_positions()
+    abw, par = 0.0, True
+    for typ, soll_par in (("th", 0), ("bh", 1)):
+        for R, d, turn in hp[typ]:
+            for seite, dd in ((soll_par, d), (1 - soll_par, d + turn)):
+                x = 1e3 * R * np.cos(np.radians(dd))
+                y = 1e3 * R * np.sin(np.radians(dd))
+                xr = 2 * np.round((x - 1) / 2) + 1
+                yr = 2 * np.round((y - 1) / 2) + 1
+                abw = max(abw, float(np.hypot(x - xr, y - yr)))
+                par &= ((int(xr) + 11) // 2 + (int(yr) + 11) // 2) % 2 \
+                    == seite
+    assert abw < 2e-3 and par, f"Raster verfehlt ({abw:.4f} mm, {par})"
+    xy = np.array([(R * np.cos(np.radians(d)), R * np.sin(np.radians(d)))
+                   for typ in ("th", "bh") for R, d, _ in hp[typ]])
+    D = np.hypot(*(xy[:, None, :] - xy[None, :, :]).transpose(2, 0, 1))
+    np.fill_diagonal(D, np.inf)
+    steg = float(D.min()) - 2 * c67.r_bh
+    assert abs(steg - 0.70e-3) < 5e-6, f"kleinster Steg {steg * 1e3:.3f} mm"
+    # d) Die Kreisnäherung von Gegenprobe 71 (13 Kreise, Konvention)
+    #    schneidet sich — und wird jetzt gemeldet
+    c13, w13 = bau(**dict(k67r, through_hole_rings=th13,
+                          blind_hole_rings=bh13))
+    n13, t13 = c13.loch_befund["ueberlappung"]
+    assert n13 >= 40 and t13 > 0.6e-3 and w13, (n13, t13)
+    # e) Rand, Pfosten, Ringschlitz: eine Mündung halb über den Rand meldet
+    #    ihren Radius als Überstand; eine unter dem Pfosten den Überstand;
+    #    die Löcher EINER Zeile dürfen sich zum Ringschlitz schließen
+    #    (Gegenprobe 60) — kein Befund
+    rand, _ = bau(**dict(debx, through_hole_rings=[(6, 23.9e-3)],
+                         blind_hole_rings=[(0, None)]))
+    assert rand.loch_befund["rand"][0] == 6
+    assert abs(rand.loch_befund["rand"][1] - rand.r_th) < 1e-12
+    pf, _ = bau(**dict(debx, center_post_diameter=2.0e-3,
+                       through_hole_rings=[(3, 2.4e-3)],
+                       blind_hole_rings=[(0, None)]))
+    assert abs(pf.loch_befund["pfosten"][1]
+               - (1.0e-3 - (1.2e-3 - pf.r_th))) < 1e-12
+    schlitz, ws = bau(**dict(debx, through_hole_rings=[(48, 10e-3)],
+                             blind_hole_rings=[(0, None)]))
+    assert schlitz.loch_befund == {} and not ws
+    # f) Debenham: die Rück-Sacklöcher der einteiligen Platte liegen
+    #    deckungsgleich mit den vorderen (gleiches Bild je Seite, wie die
+    #    Zeichnung); um eine halbe Sacklochteilung versetzt (bis hier die
+    #    Konvention) säßen 9 der 46 konzentrisch auf Durchgangslöchern
+    assert deb.loch_befund == {}
+    hp = deb._hole_positions()
+    th_xy = [(R * np.cos(np.radians(d)), R * np.sin(np.radians(d)))
+             for R, d, _ in hp["th"]]
+    alt = sum(1 for R, d, t in hp["bh"]
+              if any(np.hypot(R * np.cos(np.radians(d + t)) - x,
+                              R * np.sin(np.radians(d + t)) - y) < 1e-9
+                     for x, y in th_xy))
+    assert alt == 9, alt
+    # g) Ohne Winkel bleibt die Zählweise der Stufenbohrung (Senkungen
+    #    insgesamt): 120 Senkungen, 60 durchgebohrt -> 60 rein blind
+    k67a, _ = bau(**dict(K67_KWARGS, squeeze_model="1d"))
+    assert (k67a.n_th, k67a.n_bh) == (60, 60)
+    print(f"Lochlage: Konvention unverändert, Winkel je Kreis; K67-Raster "
+          f"exakt (Abweichung {abw * 1e3:.1f} µm, Schachbrett und "
+          f"Gegenhälfte, kleinster Steg {steg * 1e3:.3f} mm); die "
+          f"13-Kreis-Näherung überlappt {n13}-fach bis {t13 * 1e3:.2f} mm "
+          f"und wird gemeldet; Rand, Pfosten, Ringschlitz; Debenham-"
+          f"Rückseite deckungsgleich (vorher {alt} konzentrisch)  OK")
+
+
 def test_gp10_spacer_ruckplatte_k103_bauform():
     """Gegenprobe 10: Spacer + Rückplatte (K103-Bauform)."""
     # a) Spacer/Rückplatte = 0 muss exakt dem bisherigen Verhalten
@@ -655,6 +786,10 @@ def test_gp46_laufzeit_und_rauschintegral():
         om46 = 2.0 * np.pi * f46
         th46 = np.array([0.0, 0.5 * np.pi, np.pi])
         c46._bem_solves = 0
+        # Randlösungen liegen seit Gegenprobe 74 über Kapseln hinweg je
+        # Kontur: für das Zählen einer frischen Kapsel den Speicher leeren
+        import microphone_capsule as _mc46
+        _mc46._BEM_RAND.clear()
         F46, G46 = c46._bem_front_modes(om46, th46)
         s_voll = c46._bem_solves
         assert s_voll == f46.size, \

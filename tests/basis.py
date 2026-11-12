@@ -255,10 +255,42 @@ def filmwiderstand_3d_zu_2d(q, f=1000.0):
     return float(tv["3d"] / tv["2d"]), float(te["3d"] / te["2d"])
 
 
+def k67_raster(mit_winkel=True):
+    """Das K67-Bohrbild aus dem Foto (Gegenproben 71, 73) als Lochkreis-
+    Listen in Modelleinheiten: quadratisches 2-mm-Raster, Lochmitten auf
+    ungeraden mm, Zeilen 6, 8, 10, 12, …, 6, ohne die 12 innersten Punkte;
+    Schachbrett: durchgebohrt (Kern mit Senkung) und rein blind.
+
+    ``mit_winkel``: je Lochpaar (180°-symmetrisch) eine Zeile (2, PCD [m],
+    Winkel [°]) — exakt, 27 + 27 Zeilen; Sacklochzeilen sind dann rein
+    blinde Senkungen. Sonst die 13 Kreise der Lagekonvention von
+    Gegenprobe 71 (Sackloch-Zeilen zählen die Senkungen INSGESAMT).
+    Rückgabe: (through_hole_rings, blind_hole_rings)."""
+    grenze = {11: 5, 9: 7, 7: 9, 5: 11, 3: 11, 1: 11}
+    pkte = [(x, y) for x in range(-11, 12, 2) for y in range(-11, 12, 2)
+            if abs(x) <= grenze[abs(y)] and x * x + y * y > 10]
+
+    def durch(x, y):
+        return ((x + 11) // 2 + (y + 11) // 2) % 2 == 0
+
+    th, bh = [], []
+    for ziel, typ in ((th, True), (bh, False)):
+        sel = [(x, y) for x, y in pkte if durch(x, y) == typ]
+        for r2 in sorted({x * x + y * y for x, y in sel}):
+            ang = sorted(np.degrees(np.arctan2(y, x)) % 360.0
+                         for x, y in sel if x * x + y * y == r2)
+            pcd = 2e-3 * np.sqrt(r2)
+            if mit_winkel:
+                ziel += [(2, pcd, float(a)) for a in ang if a < 180.0 - 1e-9]
+            else:
+                ziel.append((len(ang) * (1 if typ else 2), pcd))
+    return th, bh
+
+
 __all__ = sorted(set(_MODUL) | {
     "MicrophoneCapsule", "demo_capsule", "K67_KWARGS", "k67_capsule",
     "k67_null_angle", "DEB_KWARGS", "debenham", "DEB_CLEARANCE",
     "DEB_CLEARANCE_WIDE", "hermetic_capsule", "_fchk", "f_grin",
     "vc_grin", "f_exp90", "exp90_grin", "f_exp0", "exp0_grin",
     "_grin_rms", "f_nbs_4134", "ffk_nbs_4134", "f_matsui_4134",
-    "ffk_matsui_4134", "filmwiderstand_3d_zu_2d"})
+    "ffk_matsui_4134", "filmwiderstand_3d_zu_2d", "k67_raster"})

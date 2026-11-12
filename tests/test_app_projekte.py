@@ -47,11 +47,7 @@ def _app_lauf(A, params):
                            default_timeout=600)
     for key, val in params.items():
         if key in A._RING_PREFIX:
-            pre = A._RING_PREFIX[key]
-            for i, (cnt, pcd) in enumerate(val):
-                at.session_state[f"p_{pre}_ring_n_{i}"] = cnt
-                at.session_state[f"p_{pre}_ring_pcd_{i}"] = pcd
-            at.session_state[f"{pre}_ring_count"] = len(val)
+            _ringe_setzen(A, at, key, val)
         else:
             at.session_state["p_" + key] = val
     with warnings.catch_warnings():
@@ -60,14 +56,34 @@ def _app_lauf(A, params):
     return at
 
 
+def _ringe_setzen(A, at, key, val):
+    """Lochkreis-Zeilen [Anzahl, Ø(, Winkel)] in den Session-State, wie
+    _set_ring_state() sie schreibt (Winkel None = Lagekonvention)."""
+    pre = A._RING_PREFIX[key]
+    for i, zeile in enumerate(val):
+        at.session_state[f"p_{pre}_ring_n_{i}"] = zeile[0]
+        at.session_state[f"p_{pre}_ring_pcd_{i}"] = zeile[1]
+        at.session_state[f"p_{pre}_ring_phi_{i}"] = (
+            zeile[2] if len(zeile) > 2 else None)
+    at.session_state[f"{pre}_ring_count"] = len(val)
+
+
+def _ss(at, key, sonst=None):
+    try:
+        return at.session_state[key]
+    except KeyError:
+        return sonst
+
+
 def _zustand(A, at):
     """Parametersatz, mit dem die App nach dem Lauf rechnet."""
     p = {}
     for key in A.DEFAULTS:
         if key in A._RING_PREFIX:
             pre = A._RING_PREFIX[key]
-            p[key] = [[at.session_state[f"p_{pre}_ring_n_{i}"],
-                       at.session_state[f"p_{pre}_ring_pcd_{i}"]]
+            p[key] = [A._ringzeile(at.session_state[f"p_{pre}_ring_n_{i}"],
+                                   at.session_state[f"p_{pre}_ring_pcd_{i}"],
+                                   _ss(at, f"p_{pre}_ring_phi_{i}"))
                       for i in range(at.session_state[f"{pre}_ring_count"])]
         else:
             p[key] = at.session_state["p_" + key]
@@ -264,21 +280,24 @@ def test_gp63d_lochkreise_nicht_still_gekuerzt(app):
     # Durchgangslöcher, und die App rechnete eine andere Kapsel als die im
     # Projekt (das Raster allein: 2D-Auslöschung bei 1 kHz −11.6 statt
     # −13.4 dB).
-    # a) Das K67-Projekt mit 13 Kreisen kommt vollständig an.
+    # a) Das K67-Projekt kommt vollständig an — seit Gegenprobe 73 als
+    #    exaktes Raster: 27 Lochpaare je Lochtyp mit Winkel (zuvor 13
+    #    Kreise nach der Lagekonvention), die Winkel unverändert.
     # b) Eine Liste über der Höchstzahl wird gekürzt UND als gekürzt
     #    gemeldet (der Lader zeigt das als Warnung).
     A = app
     data, p = _projekt(A, os.path.join(_WURZEL, "examples",
                                        "k67_experimentell_bohrbild.json"))
-    assert len(p["th_rings"]) == len(data["params"]["th_rings"]) == 13
+    assert len(p["th_rings"]) == len(data["params"]["th_rings"]) == 27
+    assert p["th_rings"] == data["params"]["th_rings"], "Winkel verloren"
     assert _projekt_gekuerzt(A, data) == []
-    n_th = sum(n for n, _ in p["th_rings"])
+    n_th = sum(z[0] for z in p["th_rings"])
     assert n_th == 54, f"54 Durchgangslöcher erwartet ({n_th})"
     zu_viel = json.loads(json.dumps(data))
     zu_viel["params"]["bh_rings"] = [[2, 10.0]] * (A.MAX_RINGS + 4)
     assert _projekt_gekuerzt(A, zu_viel) == [("bh_rings", A.MAX_RINGS + 4)]
-    print(f"Lochkreise beim Laden: 13 Kreise vollständig ({n_th} "
-          f"Durchgangslöcher), {A.MAX_RINGS + 4} Kreise gekürzt und "
+    print(f"Lochkreise beim Laden: 27 Lochpaare mit Winkel vollständig "
+          f"({n_th} Durchgangslöcher), {A.MAX_RINGS + 4} Kreise gekürzt und "
           f"gemeldet  OK")
 
 
@@ -739,6 +758,134 @@ def test_gp63i_warnung_darstellung_threads(app):
           f"Rand; Threads: {gemessen}  OK")
 
 
+@pytest.mark.slow
+def test_gp75b_3d_parallel_und_gespeicherte_loesungen(app):
+    """Gegenprobe 75 b: 3D-Frequenzen parallel in Arbeiterprozessen, und
+    die gespeicherte Voreinstellung bringt ihre Lösungen je Frequenz mit."""
+    # a) PARALLEL: _vorrechnen_3d verteilt die fehlenden Frequenzen des
+    #    Frequenzplans (Raster, Richtfrequenzen, 1 kHz) auf Prozesse;
+    #    danach rechnet compute_results im Hauptprozess keine einzige
+    #    Zerlegung mehr, und das Ergebnis trifft die serielle Rechnung (die
+    #    Arbeiter rechnen mit einem BLAS-Faden: ~1e-8, s. Gegenprobe 63 f).
+    # b) WIE VIELE: so viele Prozesse, wie Kerne UND freier Speicher
+    #    erlauben (je Prozess 2,5 GB fein, 1,2 GB grob, 0,5 GB Reserve); in
+    #    der Streamlit Cloud (2 Kerne, 2,7 GB) einer — dort nichts parallel.
+    # c) Der freie Speicher kommt aus MemAvailable und den cgroup-Grenzen
+    #    (v1 und v2, eigene Gruppe und alle darüber; es gilt die engste).
+    # d) GESPEICHERT: die Voreinstellung trägt ihre 3D-Lösungen; ist die
+    #    Kapsel physikalisch die Voreinstellung (nur Punktzahl oder
+    #    Richtfrequenzen anders), setzt die App sie ein: eine weitere
+    #    Richtfrequenz kostet genau eine Zerlegung statt ~85 min, eine
+    #    vorhandene keine — und trifft das gespeicherte Richtdiagramm.
+    import tempfile
+    import voreinstellung as V
+    A = app
+    _, p = _projekt(A, os.path.join(_WURZEL, "examples",
+                                    "debenham_stereo_condenser.json"))
+    p.update(squeeze_3d=True, grid_3d_fine=False, n_points=12,
+             dir_freqs=[1000, 4000])
+    key = A._ergebnis_schluessel(p)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        c_s = A.build_capsule(p)
+        r_s = A.compute_results(key, c_s)
+        A._session_store("_results_cache").clear()
+        c_p = A.build_capsule(p)
+        n_par, w = A._vorrechnen_3d(p, c_p, prozesse=2)
+        plan = A._frequenzplan(p)
+        assert (n_par, w) == (plan.size, 2), (n_par, w, plan.size)
+        assert getattr(c_p, "_lu_3d_count", 0) == 0
+        r_p = A.compute_results(key, c_p)
+    assert getattr(c_p, "_lu_3d_count", 0) == 0, \
+        "nach der Vorrechnung darf der Hauptprozess nicht mehr zerlegen"
+    abw = float(np.max(np.abs(r_p["fr"]["sensitivity_v_pa"]
+                              / r_s["fr"]["sensitivity_v_pa"] - 1.0)))
+    for fd in (1000.0, 4000.0):
+        abw = max(abw, float(np.max(np.abs(
+            r_p["di"]["patterns"][fd]["linear"]
+            - r_s["di"]["patterns"][fd]["linear"]))))
+    assert abw < 1e-6, f"parallel gegen seriell {abw:.1e}"
+    # a2) über Sitzungen hinweg: was eine Kapsel gelöst hat, findet eine
+    #     neu gebaute (Neuladen der Seite) im Serverprozess wieder
+    A._prozess_loesungen(key, c_s, merken=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        c_n = A.build_capsule(p)
+    assert A._prozess_loesungen(key, c_n) == plan.size
+    assert c_n.loesungen_3d() == c_s.loesungen_3d()
+    # b)
+    fein = type("K", (), {"grid_3d": "fine"})()
+    grob = type("K", (), {"grid_3d": "coarse"})()
+    assert A._prozesse_3d(fein, kerne=2.0, frei=2.7e9 - 0.6e9) == 1
+    assert A._prozesse_3d(fein, kerne=4.0, frei=15e9) == 4
+    assert A._prozesse_3d(fein, kerne=8.0, frei=6e9) == 2
+    assert A._prozesse_3d(grob, kerne=8.0, frei=6e9) == 4
+    assert A._prozesse_3d(fein, kerne=4.0, frei=0.0) == 1
+    # c)
+    def frei(dateien, cgroup="0::/\n", mem=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, inhalt in dateien.items():
+                os.makedirs(os.path.dirname(os.path.join(tmp, rel)),
+                            exist_ok=True)
+                with open(os.path.join(tmp, rel), "w") as fh:
+                    fh.write(inhalt)
+            with open(os.path.join(tmp, "proc"), "w") as fh:
+                fh.write(cgroup)
+            with open(os.path.join(tmp, "meminfo"), "w") as fh:
+                fh.write(mem or "MemTotal: 16000000 kB\n"
+                         "MemAvailable: 8000000 kB\n")
+            return A._freier_speicher(tmp, os.path.join(tmp, "proc"),
+                                      os.path.join(tmp, "meminfo"))
+    assert frei({}) == 8000000 * 1024
+    assert frei({"memory.max": "max\n", "memory.current": "1"}) \
+        == 8000000 * 1024
+    assert frei({"memory.max": "3000000000\n",
+                 "memory.current": "1000000000\n"}) == 2_000_000_000
+    assert frei({"a/memory.max": "2000000000", "a/memory.current": "500",
+                 "memory.max": "max", "memory.current": "0"},
+                "0::/a\n") == 2_000_000_000 - 500
+    v1 = "memory/memory.limit_in_bytes", "memory/memory.usage_in_bytes"
+    assert frei({v1[0]: str(1 << 62), v1[1]: "5"}) == 8000000 * 1024
+    assert frei({v1[0]: "2700000000", v1[1]: "700000000"},
+                "5:memory:/\n") == 2_000_000_000
+    # d) die gespeicherten Lösungen der Voreinstellung
+    physik = A._physik_schluessel(A._ergebnis_schluessel(A.DEFAULTS))
+    loes = V.laden_loesungen(physik,
+                             V.fingerabdruck(physik, A._BAU_FUNKTIONEN))
+    if loes is None:
+        pytest.fail("Gespeicherte Voreinstellung ohne passende 3D-Lösungen "
+                    "— neu erzeugen mit `python voreinstellung.py`")
+    plan = A._frequenzplan(A.DEFAULTS)
+    assert set(loes) == {float(om) for om in 2.0 * np.pi * plan}, \
+        "die Datei muss den ganzen Frequenzplan tragen"
+    q = dict(A.DEFAULTS, dir_freqs=sorted(A.DEFAULTS["dir_freqs"]) + [3150])
+    q_key = A._ergebnis_schluessel(q)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        c_v = A.build_capsule(q)
+    assert A._voreinstellung_loesungen(q_key, c_v) == plan.size
+    assert A._voreinstellung_loesungen(q_key, c_v) == 0, "nur einmal"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        d_alt = c_v.directivity(frequencies_hz=(2000.0,))
+        assert getattr(c_v, "_lu_3d_count", 0) == 0
+        c_v.directivity(frequencies_hz=(3150.0,))
+    assert c_v._lu_3d_count == 1, "die neue Richtfrequenz: eine Zerlegung"
+    erg, _, _ = V.laden(A._ergebnis_schluessel(A.DEFAULTS),
+                        V.fingerabdruck(A._ergebnis_schluessel(A.DEFAULTS),
+                                        A._VOREINSTELLUNG_FUNKTIONEN))
+    assert erg is not None
+    gesp = erg["di"]["patterns"][2000.0]["linear"]
+    d2k = float(np.max(np.abs(d_alt["patterns"][2000.0]["linear"] - gesp)))
+    assert d2k < 1e-9, f"Richtdiagramm 2 kHz gegen gespeichert {d2k:.1e}"
+    print(f"3D parallel: {n_par} Frequenzen in {w} Prozessen, Hauptprozess "
+          f"ohne Zerlegung, gegen seriell {abw:.0e}; Prozesszahl nach Kernen "
+          f"und Speicher (Cloud: 1); freier Speicher aus cgroup v1/v2; "
+          f"Voreinstellung: {len(loes)} 3D-Lösungen eingesetzt, weitere "
+          f"Richtfrequenz = 1 Zerlegung, 2 kHz trifft gespeichert ({d2k:.0e})"
+          f"  OK")
+
+
 def test_gp66_uebersetzungen(app):
     """Gegenprobe 66: Übersetzungstabellen vollständig und benutzt."""
     # a) Jeder Eintrag in TR und LABEL_TR hat genau Englisch und Deutsch,
@@ -964,11 +1111,7 @@ def test_gp66b_oberflaeche_in_beiden_sprachen(app):
             at.session_state["ui_lang"] = lang
             for key, val in p.items():
                 if key in A._RING_PREFIX:
-                    pre = A._RING_PREFIX[key]
-                    for i, (cnt, pcd) in enumerate(val):
-                        at.session_state[f"p_{pre}_ring_n_{i}"] = cnt
-                        at.session_state[f"p_{pre}_ring_pcd_{i}"] = pcd
-                    at.session_state[f"{pre}_ring_count"] = len(val)
+                    _ringe_setzen(A, at, key, val)
                 else:
                     at.session_state["p_" + key] = val
             with warnings.catch_warnings():

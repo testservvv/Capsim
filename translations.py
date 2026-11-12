@@ -136,6 +136,31 @@ TR = {
               "Nachgiebigkeit sind entsprechend unsicher — dünnere Folie, "
               "mehr Spannung oder größerer Durchmesser helfen.",
     },
+    "warn_holes_overlap": {
+        "en": "⚠️ Hole layout: {n} pairs of hole mouths from different "
+              "pitch circles overlap (by up to {mm:.2f} mm; positions as in "
+              "the 3D solver). The model treats them as separate mouths, "
+              "not as one merged opening. Give the circles their real "
+              "angles (column 'Angle') or check counts and diameters.",
+        "de": "⚠️ Lochlage: {n} Mündungspaare verschiedener Lochkreise "
+              "überlappen (bis {mm:.2f} mm; Lage wie im 3D-Löser). Das "
+              "Modell rechnet sie als getrennte Mündungen, nicht als eine "
+              "gemeinsame Öffnung. Abhilfe: den Kreisen ihre realen Winkel "
+              "geben (Spalte „Winkel“) oder Anzahl und Durchmesser prüfen.",
+    },
+    "info_holes_edge": {
+        "en": "Hole layout: {n} mouths reach up to {mm:.3f} mm beyond the "
+              "electrode edge; the model counts only the part on the plate.",
+        "de": "Lochlage: {n} Mündungen reichen bis {mm:.3f} mm über den "
+              "Elektrodenrand; das Modell rechnet nur den Teil auf der "
+              "Platte.",
+    },
+    "info_holes_post": {
+        "en": "Hole layout: {n} mouths reach up to {mm:.3f} mm under the "
+              "centre post; the model counts only the part outside it.",
+        "de": "Lochlage: {n} Mündungen reichen bis {mm:.3f} mm unter den "
+              "Mittenpfosten; das Modell rechnet nur den Teil außerhalb.",
+    },
     "err_format": {
         "en": "not a Capsim project file",
         "de": "kein Capsim-Projektformat",
@@ -693,6 +718,26 @@ TR = {
         "en": "Pitch circle Ø [mm] · circle {i}",
         "de": "Lochkreis Ø [mm] · Kreis {i}",
     },
+    "cap_ring_phi": {"en": "Angle [°]", "de": "Winkel [°]"},
+    "help_ring_phi": {
+        "en": "Angle of the first hole of this circle (the others follow "
+              "evenly). Empty = convention (through circle m turned by "
+              "20°·m, blind circle m by 15° + 20°·m), which can make "
+              "holes of dense patterns overlap. With an angle, a "
+              "blind-hole row of stepped holes counts only purely blind "
+              "counterbores. Disabled at Ø 0 (evenly distributed).",
+        "de": "Winkel des ersten Lochs dieses Kreises (die übrigen folgen "
+              "gleichmäßig). Leer = Konvention (Durchgangskreis m um "
+              "20°·m verdreht, Sacklochkreis m um 15° + 20°·m); bei "
+              "dichten Bohrbildern überlappen so Löcher. Mit Winkel zählt "
+              "eine Sacklochzeile bei Stufenbohrung nur rein blinde "
+              "Senkungen. Gesperrt bei Ø 0 (gleichmäßig verteilt).",
+    },
+    "lbl_ring_phi": {
+        "en": "Angle [°] · circle {i}",
+        "de": "Winkel [°] · Kreis {i}",
+    },
+    "ph_ring_phi": {"en": "auto", "de": "auto"},
     "btn_ring_add": {"en": "➕ Circle", "de": "➕ Kreis"},
     "help_ring_add": {
         "en": "Adds another pitch circle (one per click) to model real "
@@ -1525,6 +1570,10 @@ TR = {
         "de": "⚙️ Berechnung — {label} … {pct:.0f} %",
     },
     "prog_build": {"en": "building model", "de": "Modell aufbauen"},
+    "prog_par": {
+        "en": "3D field model: {n} frequencies in {w} processes",
+        "de": "3D-Feldmodell: {n} Frequenzen in {w} Prozessen",
+    },
     "prog_fr": {"en": "frequency response", "de": "Frequenzgang"},
     "prog_noise": {"en": "self-noise", "de": "Eigenrauschen"},
     "prog_di": {
@@ -1750,10 +1799,34 @@ TR = {
     "cap_default_stored": {
         "en": "Default model: stored results of the fine 3D field model "
               "(generated {datum}, {min:.0f} min of computation). Any "
-              "change is computed live.",
+              "change is computed live; another directivity frequency "
+              "costs only its own solution.",
         "de": "Voreinstellung: gespeicherte Ergebnisse des feinen "
               "3D-Feldmodells (erzeugt {datum}, {min:.0f} min Rechenzeit). "
-              "Jede Änderung wird live gerechnet.",
+              "Jede Änderung wird live gerechnet; eine weitere "
+              "Richtfrequenz kostet nur ihre eigene Lösung.",
+    },
+    "cap_3d_reused": {
+        "en": "3D field model: {n} frequencies taken from the stored "
+              "default (same capsule, only points or directivity "
+              "frequencies differ); only the others were computed.",
+        "de": "3D-Feldmodell: {n} Frequenzen aus der gespeicherten "
+              "Voreinstellung übernommen (dieselbe Kapsel, nur Punktzahl "
+              "oder Richtfrequenzen anders); gerechnet wurden nur die "
+              "übrigen.",
+    },
+    "cap_3d_process": {
+        "en": "3D field model: {n} frequencies taken from earlier runs of "
+              "this capsule on this server; only the others were computed.",
+        "de": "3D-Feldmodell: {n} Frequenzen aus früheren Rechnungen dieser "
+              "Kapsel auf diesem Server übernommen; gerechnet wurden nur die "
+              "übrigen.",
+    },
+    "cap_3d_parallel": {
+        "en": "3D field model: {n} frequencies computed in parallel in {w} "
+              "processes.",
+        "de": "3D-Feldmodell: {n} Frequenzen parallel in {w} Prozessen "
+              "gerechnet.",
     },
     "info_default_stale": {
         "en": "The stored results of the default model no longer match "

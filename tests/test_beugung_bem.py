@@ -1487,3 +1487,70 @@ def test_gp65_strahlungslast_im_druckgang(stand, k67):
           f"Dirichlet = Grenzfall Z->0 ({rel(H3_lim, H3):.0e}); "
           f"pressure_response = Druckgang (2D/3D, mit/ohne Gewebe); "
           f"Wirkung 4134 bei 20 kHz {last20:+.2f} dB{fem_txt}  OK")
+
+
+@pytest.mark.bem
+def test_gp74_bem_randloesung_je_kontur():
+    """Gegenprobe 74: die BEM-Randlösung gilt für die Kontur, nicht für
+    die Kapsel."""
+    # Die Randintegralgleichung des Außenfelds hängt nur an der Kontur
+    # (Kopf, Körper, Elementteilung, CHIEF-Punkte) und an k = ω/c. Bis hier
+    # lag ihr Ergebnis am Geometrie-Objekt der Kapsel; jede
+    # Parameteränderung baute eine neue Kapsel und löste alles neu (~8 s je
+    # 100 Frequenzpunkte), auch wenn sich nur Spalt, Löcher oder Folie
+    # änderten. Jetzt liegt die Randlösung u(ω, θ) je Konturfingerabdruck
+    # im Modul (_bem_randspeicher); die Projektion auf Membranmode und
+    # Rückeinlass bildet jede Kapsel mit ihren eigenen Gewichten. Geprüft:
+    # a) eine Kapsel mit gleicher Kontur, aber anderen Löchern und anderer
+    #    Spannung löst NICHT neu und liefert bitgleich, was sie mit leerem
+    #    Speicher selbst rechnet;
+    # b) eine andere Kontur (Kopf mit Körper) bekommt ihren eigenen
+    #    Speicher und löst neu;
+    # c) eine andere Folie (anderes Modengewicht der Front-Projektion bei
+    #    modal_source) nutzt dieselbe Randlösung und trifft ihre eigene
+    #    frische Rechnung bitgleich;
+    # d) der statische Kern wird je Kontur einmal gebaut.
+    import microphone_capsule as M
+    if not _HAS_SCIPY:
+        return
+    om = 2.0 * np.pi * np.array([300.0, 2000.0, 9000.0])
+    th = np.array([0.0, 0.5 * np.pi, np.pi])
+
+    def rechne(leer=False, **kw):
+        if leer:
+            M._BEM_RAND.clear()
+        c = k67_capsule(axial_body_model="bem", squeeze_model="1d", **kw)
+        c._bem_solves = 0
+        F, G = c._bem_front_modes(om, th)
+        return c, F, G
+
+    M._BEM_RAND.clear()
+    c1, F1, G1 = rechne()
+    assert c1._bem_solves == om.size
+    # a) andere Kapsel, gleiche Kontur
+    # (der Luftspalt ginge in die Kopflänge ein, also in die Kontur)
+    anders = dict(through_hole_diameter=0.7e-3, bias_voltage=45.0,
+                  blind_hole_depth=3.0e-3)
+    c2, F2, G2 = rechne(**anders)
+    assert c2._bem_solves == 0, f"gleiche Kontur löste neu ({c2._bem_solves})"
+    _, F2f, G2f = rechne(leer=True, **anders)
+    assert np.array_equal(F2, F2f) and np.array_equal(G2, G2f), \
+        "aus dem Speicher muss dasselbe kommen wie frisch gerechnet"
+    assert np.array_equal(F2, F1) and np.array_equal(G2, G1)
+    # b) andere Kontur: Kopf mit Mikrofonkörper
+    c3, _, _ = rechne(bem_body_diameter=40e-3)
+    assert c3._bem_solves == om.size, "neue Kontur muss neu lösen"
+    n_kont = len(M._BEM_RAND)
+    assert n_kont == 2, f"{n_kont} Konturen im Speicher"
+    # c) andere Folie mit Modenquelle: eigene Projektion, gleiche Lösung
+    folie = dict(membrane_modes=3, modal_source=1, membrane_tension=30.0)
+    c4, F4, G4 = rechne(**folie)
+    assert c4._bem_solves == 0
+    _, F4f, G4f = rechne(leer=True, **folie)
+    assert np.array_equal(F4, F4f) and np.array_equal(G4, G4f)
+    assert F4.shape[0] == 3 and not np.array_equal(F4[1], F4[0])
+    # d) statischer Kern je Kontur
+    assert c2._bem_geometry()["_K0"] is c1._bem_geometry()["_K0"]
+    print(f"BEM-Randlösung je Kontur: andere Kapsel gleicher Kontur ohne "
+          f"Lösungsgang, bitgleich zur frischen Rechnung; eigene Kontur löst "
+          f"neu; andere Folie projiziert dieselbe Lösung bitgleich  OK")

@@ -25,17 +25,15 @@ import math
 import os
 
 
-def _erlaubte_kerne(wurzel="/sys/fs/cgroup", proc="/proc/self/cgroup"):
-    """CPU-Quote des Prozesses in Kernen, None ohne Quote. In der Cloud
-    sieht die App mehr Kerne, als sie nutzen darf. Gelesen aus der cgroup
-    des Prozesses und allen darüber (v2: cpu.max, v1: cpu.cfs_quota_us /
-    cpu.cfs_period_us); es gilt die engste."""
+def _cgroup_pfade(proc, regler_name):
+    """Die cgroup des Prozesses für den Regler ``regler_name`` und alle
+    darüber (v2: Zeile ohne Regler, v1: Zeile mit dem Regler)."""
     pfade = {"/"}
     try:
         with open(proc) as fh:
             for zeile in fh:
                 _, regler, pfad = zeile.strip().split(":", 2)
-                if regler == "" or "cpu" in regler.split(","):
+                if regler == "" or regler_name in regler.split(","):
                     while True:
                         pfade.add(pfad or "/")
                         if pfad in ("", "/"):
@@ -43,6 +41,15 @@ def _erlaubte_kerne(wurzel="/sys/fs/cgroup", proc="/proc/self/cgroup"):
                         pfad = os.path.dirname(pfad)
     except (OSError, ValueError):
         pass
+    return pfade
+
+
+def _erlaubte_kerne(wurzel="/sys/fs/cgroup", proc="/proc/self/cgroup"):
+    """CPU-Quote des Prozesses in Kernen, None ohne Quote. In der Cloud
+    sieht die App mehr Kerne, als sie nutzen darf. Gelesen aus der cgroup
+    des Prozesses und allen darüber (v2: cpu.max, v1: cpu.cfs_quota_us /
+    cpu.cfs_period_us); es gilt die engste."""
+    pfade = _cgroup_pfade(proc, "cpu")
     quoten = []
     for pfad in pfade:
         rel = pfad.lstrip("/")
@@ -64,6 +71,38 @@ def _erlaubte_kerne(wurzel="/sys/fs/cgroup", proc="/proc/self/cgroup"):
             except (OSError, ValueError):
                 pass
     return min(quoten) if quoten else None
+
+
+def _freier_speicher(wurzel="/sys/fs/cgroup", proc="/proc/self/cgroup",
+                     meminfo="/proc/meminfo"):
+    """Freier Arbeitsspeicher in Byte, den der Prozess noch belegen darf
+    (Gegenprobe 75): das Kleinste aus MemAvailable und, für die cgroup des
+    Prozesses und alle darüber, Grenze minus Belegung (v2: memory.max /
+    memory.current, v1: memory.limit_in_bytes / memory.usage_in_bytes).
+    None, wenn nichts lesbar ist."""
+    frei = []
+    try:
+        with open(meminfo) as fh:
+            for zeile in fh:
+                if zeile.startswith("MemAvailable:"):
+                    frei.append(int(zeile.split()[1]) * 1024)
+    except (OSError, ValueError, IndexError):
+        pass
+    for pfad in _cgroup_pfade(proc, "memory"):
+        rel = pfad.lstrip("/")
+        for ordner, grenze, belegt in (
+                (os.path.join(wurzel, rel), "memory.max", "memory.current"),
+                (os.path.join(wurzel, "memory", rel),
+                 "memory.limit_in_bytes", "memory.usage_in_bytes")):
+            try:
+                with open(os.path.join(ordner, grenze)) as fg, \
+                        open(os.path.join(ordner, belegt)) as fb:
+                    g, b = fg.read().strip(), int(fb.read())
+                if g != "max" and int(g) < 1 << 60:   # v1: "keine Grenze"
+                    frei.append(int(g) - b)
+            except (OSError, ValueError):
+                pass
+    return max(0, min(frei)) if frei else None
 
 
 def _thread_vorgabe(kerne, sichtbar):
@@ -376,17 +415,29 @@ DEFAULTS = {
     "bp_diameter_mm": 25.4,
     "bp_thickness_mm": 4.07,
     "center_gap_um": 45.0,
-    # 2-mm-Raster der K67 auf 13 Radien (s. Projektdatei): 54 Kerne,
-    # 108 Senkungen 1.3 x 3.75 mm
-    "th_rings": [[2, 8.485], [4, 10.198], [4, 11.662], [6, 14.142],
-                 [4, 15.232], [4, 17.205], [4, 18.111], [4, 18.974],
-                 [2, 19.799], [4, 20.591], [4, 22.091], [8, 22.804],
-                 [4, 24.166]],
+    # 2-mm-Raster der K67 exakt (s. Projektdatei, Gegenprobe 73): je
+    # Zeile ein 180°-Lochpaar mit dem Winkel des ersten Lochs; 54 Kerne
+    # mit Senkung, dazu 54 rein blinde Senkungen 1.3 x 3.75 mm
+    "th_rings": [[2, 8.485, 45.0], [2, 10.198, 11.31], [2, 10.198, 78.69],
+                 [2, 11.662, 120.96], [2, 11.662, 149.04], [2, 14.142, 45.0],
+                 [2, 14.142, 98.13], [2, 14.142, 171.87], [2, 15.232, 23.2],
+                 [2, 15.232, 66.8], [2, 17.205, 125.54], [2, 17.205, 144.46],
+                 [2, 18.111, 6.34], [2, 18.111, 83.66], [2, 18.974, 108.43],
+                 [2, 18.974, 161.57], [2, 19.799, 45.0], [2, 20.591, 29.05],
+                 [2, 20.591, 60.95], [2, 22.091, 95.19], [2, 22.091, 174.81],
+                 [2, 22.804, 15.26], [2, 22.804, 74.74], [2, 22.804, 127.87],
+                 [2, 22.804, 142.13], [2, 24.166, 114.44],
+                 [2, 24.166, 155.56]],
     "blind_depth_mm": 3.75,
-    "bh_rings": [[4, 8.485], [8, 10.198], [8, 11.662], [12, 14.142],
-                 [8, 15.232], [8, 17.205], [8, 18.111], [8, 18.974],
-                 [4, 19.799], [8, 20.591], [8, 22.091], [16, 22.804],
-                 [8, 24.166]],
+    "bh_rings": [[2, 8.485, 135.0], [2, 10.198, 101.31], [2, 10.198, 168.69],
+                 [2, 11.662, 30.96], [2, 11.662, 59.04], [2, 14.142, 8.13],
+                 [2, 14.142, 81.87], [2, 14.142, 135.0], [2, 15.232, 113.2],
+                 [2, 15.232, 156.8], [2, 17.205, 35.54], [2, 17.205, 54.46],
+                 [2, 18.111, 96.34], [2, 18.111, 173.66], [2, 18.974, 18.43],
+                 [2, 18.974, 71.57], [2, 19.799, 135.0], [2, 20.591, 119.05],
+                 [2, 20.591, 150.95], [2, 22.091, 5.19], [2, 22.091, 84.81],
+                 [2, 22.804, 37.87], [2, 22.804, 52.13], [2, 22.804, 105.26],
+                 [2, 22.804, 164.74], [2, 24.166, 24.44], [2, 24.166, 65.56]],
     "clamp_width_mm": 3.4,
     "clr_dia_mm": 3.0,
     "clr_width_mm": 2.0,
@@ -405,14 +456,16 @@ _BOOL_KEYS = {k for k, v in DEFAULTS.items() if isinstance(v, bool)}
 
 # Lochkreis-Listen: Projekt-/DEFAULTS-Schlüssel -> Session-Key-Präfix.
 # Die Ringzeilen leben als einzelne Widget-Keys p_<prefix>_ring_n_<i> /
-# p_<prefix>_ring_pcd_<i> plus Zeilenzähler <prefix>_ring_count, weil
-# Streamlit-Widgets nur skalare Zustände tragen.
+# p_<prefix>_ring_pcd_<i> / p_<prefix>_ring_phi_<i> (Winkel, None = Lage-
+# konvention) plus Zeilenzähler <prefix>_ring_count, weil Streamlit-
+# Widgets nur skalare Zustände tragen.
 _RING_PREFIX = {"th_rings": "th", "bh_rings": "bh"}
 # Höchstzahl der Lochkreise je Lochtyp. Das quadratische 2-mm-Raster der
 # K67 (12 × 12) liegt auf 13 Radien; bis Gegenprobe 71 waren es 8, und
 # ein Projekt mit mehr Kreisen wurde beim Laden STILL gekürzt. Jetzt
-# meldet der Lader jedes Kürzen (s. _projekt_params).
-MAX_RINGS = 16
+# meldet der Lader jedes Kürzen (s. _projekt_params). Exakt (mit
+# Winkeln, Gegenprobe 73) sind es 27 Lochpaare je Lochtyp.
+MAX_RINGS = 32
 
 # Fehlt ein Schlüssel im Projekt, gilt _PROJEKT_FEHLWERTE (die frühere
 # 2D-K67). Für Merkmale, deren K67-Wert nicht der neutrale ist, wäre das
@@ -468,6 +521,7 @@ _BEREICH = {
     "bem_body_len_mm": (10.0, 300.0),
     "half_rot_deg": (0.0, 180.0),
     "n_points": (100, 1500),
+    "ring_phi_deg": (0.0, 360.0),
 }
 
 
@@ -501,31 +555,49 @@ def _bereichsverletzungen(p):
 
     for key, val in p.items():
         if key in _RING_PREFIX:
-            for i, (cnt, pcd) in enumerate(val):
-                pruefe(f"{key}[{i}].n", "ring_n", cnt)
-                pruefe(f"{key}[{i}].pcd", "ring_pcd_mm", pcd)
+            for i, zeile in enumerate(val):
+                pruefe(f"{key}[{i}].n", "ring_n", zeile[0])
+                pruefe(f"{key}[{i}].pcd", "ring_pcd_mm", zeile[1])
+                if len(zeile) > 2:
+                    pruefe(f"{key}[{i}].phi", "ring_phi_deg", zeile[2])
         elif key in _FLOAT_KEYS or key in _INT_KEYS:
             pruefe(key, key, val)
     return aus
 
 
 def _set_ring_state(prefix, rings):
-    """Ringliste [[Anzahl, Lochkreis-Ø mm], ...] in die Widget-Session-Keys
-    schreiben; überzählige Zeilen eines früheren Zustands werden entfernt."""
+    """Ringliste [[Anzahl, Lochkreis-Ø mm(, Winkel °)], ...] in die
+    Widget-Session-Keys schreiben (Winkel None = Lagekonvention);
+    überzählige Zeilen eines früheren Zustands werden entfernt."""
     old = st.session_state.get(f"{prefix}_ring_count", 0)
     for i in range(len(rings), old):
-        st.session_state.pop(f"p_{prefix}_ring_n_{i}", None)
-        st.session_state.pop(f"p_{prefix}_ring_pcd_{i}", None)
-    for i, (cnt, pcd) in enumerate(rings):
-        st.session_state[f"p_{prefix}_ring_n_{i}"] = int(cnt)
-        st.session_state[f"p_{prefix}_ring_pcd_{i}"] = float(pcd)
+        for feld in ("n", "pcd", "phi"):
+            st.session_state.pop(f"p_{prefix}_ring_{feld}_{i}", None)
+    for i, zeile in enumerate(rings):
+        st.session_state[f"p_{prefix}_ring_n_{i}"] = int(zeile[0])
+        st.session_state[f"p_{prefix}_ring_pcd_{i}"] = float(zeile[1])
+        phi = zeile[2] if len(zeile) > 2 else None
+        st.session_state[f"p_{prefix}_ring_phi_{i}"] = (
+            None if phi is None else float(phi))
     st.session_state[f"{prefix}_ring_count"] = len(rings)
+
+
+def _ringzeile(cnt, pcd, phi=None):
+    """Kanonische Ringzeile: [Anzahl, Ø] ohne Winkel (wie in Projekten vor
+    Gegenprobe 73), [Anzahl, Ø, Winkel] mit. Ein Winkel gilt nur für einen
+    Lochkreis; bei Ø 0 (gleichmäßig verteilt) fällt er weg — das Feld ist
+    dann gesperrt."""
+    zeile = [int(cnt), float(pcd)]
+    if phi is not None and float(pcd) > 0.0:
+        zeile.append(float(phi) % 360.0)
+    return zeile
 
 
 def _rings_from_state(prefix):
     n = st.session_state.get(f"{prefix}_ring_count", 1)
-    return [[int(st.session_state[f"p_{prefix}_ring_n_{i}"]),
-             float(st.session_state[f"p_{prefix}_ring_pcd_{i}"])]
+    return [_ringzeile(st.session_state[f"p_{prefix}_ring_n_{i}"],
+                       st.session_state[f"p_{prefix}_ring_pcd_{i}"],
+                       st.session_state.get(f"p_{prefix}_ring_phi_{i}"))
             for i in range(n)]
 
 
@@ -618,8 +690,15 @@ def _coerce(key, val):
     def fehler():
         return ValueError(tr("err_value", key=key, val=repr(val)))
     if key in _RING_PREFIX:
-        rings = [[max(0, int(r[0])), max(0.0, float(r[1]))]
-                 for r in list(val)[:MAX_RINGS]]
+        rings = []
+        for r in list(val)[:MAX_RINGS]:
+            if not 2 <= len(r) <= 3:
+                raise fehler()
+            phi = r[2] if len(r) > 2 else None
+            if phi is not None and not math.isfinite(float(phi)):
+                raise fehler()
+            rings.append(_ringzeile(max(0, int(r[0])), max(0.0, float(r[1])),
+                                    phi))
         if not all(math.isfinite(r[1]) for r in rings):
             raise fehler()
         return rings or [[0, 0.0]]
@@ -867,6 +946,7 @@ def _add_ring(prefix):
         return
     st.session_state[f"p_{prefix}_ring_n_{n}"] = 0
     st.session_state[f"p_{prefix}_ring_pcd_{n}"] = 0.0
+    st.session_state[f"p_{prefix}_ring_phi_{n}"] = None
     st.session_state[f"{prefix}_ring_count"] = n + 1
 
 
@@ -875,8 +955,8 @@ def _remove_ring(prefix):
     n = st.session_state[f"{prefix}_ring_count"]
     if n <= 1:
         return
-    st.session_state.pop(f"p_{prefix}_ring_n_{n - 1}", None)
-    st.session_state.pop(f"p_{prefix}_ring_pcd_{n - 1}", None)
+    for feld in ("n", "pcd", "phi"):
+        st.session_state.pop(f"p_{prefix}_ring_{feld}_{n - 1}", None)
     st.session_state[f"{prefix}_ring_count"] = n - 1
 
 
@@ -893,6 +973,8 @@ def _klemme(key, lo, hi, titel):
     """Session-Wert ``key`` vor dem Widget-Aufbau auf [lo, hi] klemmen
     (nächste Grenze, nicht Streamlits stilles Minimum) und melden."""
     val = st.session_state[key]
+    if val is None:                      # leeres Feld (Winkel: Konvention)
+        return
     neu = min(max(val, lo), hi)
     if neu != val:
         st.session_state[key] = type(val)(neu)
@@ -913,13 +995,16 @@ def _ring_rows(prefix):
     """Dynamische Lochkreis-Zeilen eines Lochtyps (Anzahl + Lochkreis-Ø)
     mit ➕/➖-Buttons; gibt die Gesamt-Lochzahl zurück."""
     n_rings = st.session_state[f"{prefix}_ring_count"]
-    h1, h2 = st.columns(2)
+    # Anzahl schmaler, damit Winkel bis 359.9° nicht abgeschnitten werden
+    breiten = [0.8, 1.1, 1.1]
+    h1, h2, h3 = st.columns(breiten)
     h1.caption(tr("cap_ring_n"))
     h2.caption(tr("cap_ring_pcd"))
+    h3.caption(tr("cap_ring_phi"), help=tr("help_ring_phi"))
     art = tr("md_through" if prefix == "th" else "md_blind")
     total = 0
     for i in range(n_rings):
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(breiten)
         # Beschriftung nur für Screenreader (kompakte Tabellenoptik;
         # die sichtbare Kopfzeile liefern die Captions darüber). Schrumpft
         # die Backplate, klemmt _zahl den Lochkreis auf ihren Durchmesser.
@@ -931,6 +1016,15 @@ def _ring_rows(prefix):
               key=f"p_{prefix}_ring_pcd_{i}",
               titel=f"{art} · {tr('lbl_ring_pcd', i=i + 1)}",
               step=0.5, label_visibility="collapsed")
+        # Winkel des ersten Lochs (Gegenprobe 73); leer = Lagekonvention,
+        # gesperrt bei Ø 0 (gleichmäßig verteilt, dort ohne Bedeutung)
+        st.session_state.setdefault(f"p_{prefix}_ring_phi_{i}", None)
+        _zahl("ring_phi_deg", tr("lbl_ring_phi", i=i + 1), ort=c3,
+              key=f"p_{prefix}_ring_phi_{i}",
+              titel=f"{art} · {tr('lbl_ring_phi', i=i + 1)}",
+              step=1.0, format="%.1f", placeholder=tr("ph_ring_phi"),
+              disabled=st.session_state[f"p_{prefix}_ring_pcd_{i}"] <= 0.0,
+              label_visibility="collapsed")
         total += st.session_state[f"p_{prefix}_ring_n_{i}"]
     b1, b2 = st.columns(2)
     b1.button(tr("btn_ring_add"), key=f"btn_add_{prefix}",
@@ -946,9 +1040,21 @@ def _ring_rows(prefix):
     return total
 
 
-def build_capsule(p):
-    """Anzeigewerte -> SI -> MicrophoneCapsule."""
-    return MicrophoneCapsule(
+def _modell_ring(zeile):
+    """Ringzeile der Oberfläche [Anzahl, Ø mm(, Winkel °)] -> Modell-Eintrag
+    (Anzahl, Ø m oder None(, Winkel))."""
+    n, d = int(zeile[0]), float(zeile[1])
+    if d <= 0.0:
+        return (n, None)
+    if len(zeile) > 2 and zeile[2] is not None:
+        return (n, d * 1e-3, float(zeile[2]))
+    return (n, d * 1e-3)
+
+
+def _capsule_kwargs(p):
+    """Anzeigewerte -> SI: die Konstruktor-Argumente der Kapsel (reine
+    JSON-Typen, damit Arbeiterprozesse sie bekommen, Gegenprobe 75)."""
+    return dict(
         membrane_material=MATERIAL_LABELS[p["material"]],
         membrane_resonance_hz=p["f_res_hz"] if p["use_f_res"] else None,
         membrane_diameter=p["mem_diameter_mm"] * 1e-3,
@@ -963,12 +1069,11 @@ def build_capsule(p):
         bias_voltage=p["bias_v"],
         architecture=ARCH_LABELS[p["architecture"]],
         center_gap=p["center_gap_um"] * 1e-6,
-        # Lochkreis-Ø 0 in der GUI = dieser Anteil gleichmäßig verteilt
-        through_hole_rings=[(int(n), d * 1e-3 if d > 0 else None)
-                            for n, d in p["th_rings"]],
+        # Lochkreis-Ø 0 in der GUI = dieser Anteil gleichmäßig verteilt;
+        # ein dritter Wert ist der Winkel des ersten Lochs (Gegenprobe 73)
+        through_hole_rings=[_modell_ring(z) for z in p["th_rings"]],
         through_hole_diameter=p["d_through_mm"] * 1e-3,
-        blind_hole_rings=[(int(n), d * 1e-3 if d > 0 else None)
-                          for n, d in p["bh_rings"]],
+        blind_hole_rings=[_modell_ring(z) for z in p["bh_rings"]],
         blind_hole_diameter=p["d_blind_mm"] * 1e-3,
         blind_hole_depth=p["blind_depth_mm"] * 1e-3,
         through_holes_stepped=p["th_stepped"],
@@ -1032,6 +1137,11 @@ def build_capsule(p):
     )
 
 
+def build_capsule(p):
+    """Anzeigewerte -> SI -> MicrophoneCapsule."""
+    return MicrophoneCapsule(**_capsule_kwargs(p))
+
+
 # ---------------------------------------------------------------------------
 # Berechnung (gecacht) mit Fortschrittsanzeige
 # ---------------------------------------------------------------------------
@@ -1082,6 +1192,96 @@ def get_capsule(params, progress=None):
     return capsule
 
 
+def _fr_raster(n_pts):
+    """Frequenzraster des Frequenzgangs [Hz] (compute_results)."""
+    return np.logspace(np.log10(10.0), np.log10(25000.0), int(n_pts))
+
+
+def _frequenzplan(p):
+    """Alle Frequenzen [Hz], die compute_results für den Parametersatz ``p``
+    löst (Gegenprobe 75): das Raster des Frequenzgangs, die Richt-
+    frequenzen und 1 kHz (Empfindlichkeit, Laufzeit, Summary). Fehlt hier
+    eine, rechnet compute_results sie selbst — nur langsamer."""
+    extra = [float(fd) for fd in (sorted(p["dir_freqs"]) or [1000])]
+    return np.unique(np.concatenate([_fr_raster(p["n_points"]),
+                                     np.array(extra + [1000.0])]))
+
+
+# Spitzenspeicher eines Arbeiterprozesses im 3D-Modell [Byte]: gemessen an
+# der K67 2,1 GB (feines Gitter, ~1 GB grob), mit Reserve
+_SPEICHER_3D = {"fine": 2.5e9, "coarse": 1.2e9}
+# Frequenzen je Auftrag an einen Arbeiter (Lastverteilung)
+_AUFTRAG_3D = 2
+
+
+def _prozesse_3d(capsule, kerne=None, frei=None):
+    """Wie viele Arbeiterprozesse die 3D-Frequenzen rechnen dürfen
+    (Gegenprobe 75): so viele, wie Kerne (CPU-Quote) UND freier Speicher
+    (je Prozess _SPEICHER_3D, dazu 0,5 GB für den Hauptprozess) erlauben.
+    In der Streamlit Cloud (höchstens 2 Kerne, 2,7 GB) bleibt es bei
+    einem — dort rechnet die App wie bisher im eigenen Prozess."""
+    if kerne is None:
+        kerne = _erlaubte_kerne() or float(os.cpu_count() or 1)
+    if frei is None:
+        frei = _freier_speicher()
+    if frei is None:
+        return 1
+    je = _SPEICHER_3D.get(getattr(capsule, "grid_3d", "fine"),
+                          _SPEICHER_3D["fine"])
+    return max(1, min(int(kerne), int((frei - 0.5e9) // je)))
+
+
+def _vorrechnen_3d(params, capsule, progress=None, prozesse=None):
+    """Die fehlenden 3D-Lösungen des Frequenzplans parallel in Arbeiter-
+    prozessen rechnen und in die Kapsel einsetzen (Gegenprobe 75), bevor
+    compute_results sie braucht. Nur für das unveränderte 3D-Modell (eine
+    Probe mit ausgetauschten Methoden rechnet selbst) und nur, wenn sich
+    mindestens zwei Prozesse lohnen. Rückgabe: Zahl der parallel
+    gerechneten Frequenzen (0 = nichts, compute_results rechnet wie
+    bisher) und der Prozesse. Scheitert ein Arbeiter, bleibt der Rest
+    compute_results."""
+    if (type(capsule) is not MicrophoneCapsule
+            or capsule.squeeze_model != "3d"
+            or any(callable(v) for v in vars(capsule).values())):
+        return 0, 1
+    vorhanden = capsule.loesungen_3d()
+    fehlend = [float(f) for f in _frequenzplan(params)
+               if float(2.0 * np.pi * f) not in vorhanden]
+    w = prozesse if prozesse is not None else _prozesse_3d(capsule)
+    if w < 2 or len(fehlend) < 2 * w:
+        return 0, w
+    import concurrent.futures as _cf
+    import multiprocessing as _mp
+    import microphone_capsule as _M
+    bau = json.dumps(_capsule_kwargs(params), sort_keys=True)
+    teile = [fehlend[i:i + _AUFTRAG_3D]
+             for i in range(0, len(fehlend), _AUFTRAG_3D)]
+    fertig = 0
+    # Kein with-Block: dessen shutdown(wait=True) wartete bei einem Abbruch
+    # (Streamlit bricht das Skript bei jeder neuen Eingabe mit einer
+    # BaseException ab) auf ALLE noch wartenden Aufträge. Fertige Lösungen
+    # sind dann schon in der Kapsel und bleiben für den nächsten Lauf.
+    ex = _cf.ProcessPoolExecutor(max_workers=w,
+                                 mp_context=_mp.get_context("spawn"),
+                                 initializer=_M._arbeiter_init)
+    sauber = False
+    try:
+        auftraege = [ex.submit(_M._arbeiter_loese_3d, bau, t) for t in teile]
+        for fu in _cf.as_completed(auftraege):
+            capsule.loesungen_3d_einsetzen(fu.result())
+            fertig += 1
+            if progress is not None:
+                progress(fertig / len(teile),
+                         tr("prog_par", n=len(fehlend), w=w))
+        sauber = True
+    except Exception:           # Arbeiter gescheitert: der Rest seriell
+        pass
+    finally:
+        ex.shutdown(wait=sauber, cancel_futures=not sauber)
+    vorhanden = capsule.loesungen_3d()
+    return sum(1 for f in fehlend if float(2.0 * np.pi * f) in vorhanden), w
+
+
 def compute_results(cache_key, capsule, progress=None):
     """Frequenzgang, Richtdiagramme, Diagnose und Summary — gecacht.
 
@@ -1120,7 +1320,7 @@ def compute_results(cache_key, capsule, progress=None):
     # die Übertragung bei 0/90/180° UND die Rück-Übertragung D_r des
     # Phasenschiebers (Superposition q = a·p_front + b·p_rück).
     _tick(0, tr("prog_fr"))
-    f = np.logspace(np.log10(10.0), np.log10(25000.0), n_pts)
+    f = _fr_raster(n_pts)
     H = np.empty(n_pts, dtype=complex)
     H90 = np.empty(n_pts, dtype=complex)
     H180 = np.empty(n_pts, dtype=complex)
@@ -1217,7 +1417,7 @@ def _ergebnis_schluessel(params):
         if k == "normalize_1khz":
             continue
         if k in _RING_PREFIX:
-            v = [[int(n), float(d)] for n, d in v]
+            v = [_ringzeile(*z) for z in v]
         elif k == "dir_freqs":
             v = sorted(int(f) for f in v)
         elif k in _BOOL_KEYS:
@@ -1254,6 +1454,9 @@ def _kennwerte(capsule):
         "cavity_hole_position": capsule.cavity_hole_position,
         "_g3d": {"fine_capped": bool(g3d.get("fine_capped", False)),
                  "cells_rm": float(g3d.get("cells_rm", 0.0))},
+        # Plausibilität der Lochlage (Gegenprobe 73)
+        "loch_befund": {k: [int(v[0]), float(v[1])] for k, v in
+                        (getattr(capsule, "loch_befund", None) or {}).items()},
     }
 
 
@@ -1271,7 +1474,59 @@ class _GespeicherteKapsel:
 
 # Was die gespeicherten Ergebnisse der Voreinstellung erzeugt hat — ihr
 # Fingerabdruck enthält diese Funktionen (s. voreinstellung.py)
-_VOREINSTELLUNG_FUNKTIONEN = (build_capsule, compute_results, _kennwerte)
+_BAU_FUNKTIONEN = (build_capsule, _capsule_kwargs, _modell_ring)
+_VOREINSTELLUNG_FUNKTIONEN = _BAU_FUNKTIONEN + (compute_results, _kennwerte,
+                                                _fr_raster)
+
+
+def _physik_schluessel(cache_key):
+    """Ergebnisschlüssel ohne die Simulationseinstellungen (Punktzahl,
+    Richtfrequenzen): was die 3D-Lösung je Frequenz bestimmt."""
+    p = json.loads(cache_key)
+    for k in ("n_points", "dir_freqs"):
+        p.pop(k, None)
+    return json.dumps(p, sort_keys=True)
+
+
+def _prozess_loesungen(cache_key, capsule, merken=False):
+    """3D-Lösungen über Sitzungen hinweg (Gegenprobe 75): ein Neuladen der
+    Seite oder eine zweite Sitzung mit derselben Kapsel findet die schon
+    gelösten Frequenzen im Serverprozess wieder (voreinstellung.
+    prozess_holen; Schlüssel: Physik-Schlüssel, Modellquelle und
+    Baufunktionen). Bis hier lagen sie nur an der Kapsel der Sitzung.
+    ``merken``: die Lösungen der Kapsel dort ablegen. Rückgabe: Zahl der
+    eingesetzten Frequenzen."""
+    if (type(capsule) is not MicrophoneCapsule
+            or capsule.squeeze_model != "3d"):
+        return 0
+    import voreinstellung
+    physik = _physik_schluessel(cache_key)
+    abdruck = voreinstellung.fingerabdruck(physik, _BAU_FUNKTIONEN)
+    if merken:
+        voreinstellung.prozess_merken(abdruck, capsule.loesungen_3d())
+        return 0
+    return capsule.loesungen_3d_einsetzen(voreinstellung.prozess_holen(abdruck))
+
+
+def _voreinstellung_loesungen(cache_key, capsule):
+    """Gespeicherte 3D-Lösungen der Voreinstellung in die Kapsel einsetzen
+    (Gegenprobe 75), wenn sie physikalisch die Voreinstellung ist — nur
+    Punktzahl oder Richtfrequenzen anders — und Modell und Baufunktionen
+    zum Fingerabdruck der Lösungen passen. Dann rechnet eine weitere
+    Richtfrequenz nur sich selbst (~12 s) statt der ganzen Voreinstellung
+    (~85 min). Rückgabe: Zahl der eingesetzten Frequenzen."""
+    if (getattr(capsule, "squeeze_model", None) != "3d"
+            or type(capsule) is not MicrophoneCapsule
+            or getattr(capsule, "_voreinstellung_geprueft", False)):
+        return 0
+    capsule._voreinstellung_geprueft = True
+    physik = _physik_schluessel(cache_key)
+    if physik != _physik_schluessel(_ergebnis_schluessel(DEFAULTS)):
+        return 0
+    import voreinstellung
+    loes = voreinstellung.laden_loesungen(
+        physik, voreinstellung.fingerabdruck(physik, _BAU_FUNKTIONEN))
+    return capsule.loesungen_3d_einsetzen(loes) if loes else 0
 
 
 def _voreinstellung_einsetzen(cache_key):
@@ -1873,6 +2128,7 @@ def _hauptbereich():
                   on_click=lambda: st.session_state.update(
                       _voreinstellung_rechnen=True))
         st.stop()
+    _uebernommen, _aus_prozess, (_parallel, _prozesse) = 0, 0, (0, 1)
     if isinstance(_gespeichert, dict):
         capsule = _GespeicherteKapsel(_gespeichert["kennwerte"])
     else:
@@ -1882,6 +2138,16 @@ def _hauptbereich():
             _prog_slot.empty()
             st.error(tr("err_params", exc=meldung(exc)))
             st.stop()
+        # 3D (Gegenprobe 75): ist die Kapsel physikalisch die Voreinstellung
+        # (nur Punktzahl oder Richtfrequenzen anders), kommen ihre
+        # gespeicherten Lösungen je Frequenz in die Kapsel; was dann noch
+        # fehlt, rechnen Arbeiterprozesse parallel, wenn Kerne und Speicher
+        # reichen (in der Streamlit Cloud nicht)
+        if _cache_key not in _session_store("_results_cache"):
+            _aus_prozess = _prozess_loesungen(_cache_key, capsule)
+            _uebernommen = _voreinstellung_loesungen(_cache_key, capsule)
+            _parallel, _prozesse = _vorrechnen_3d(params, capsule,
+                                                  _show_progress)
 
     # Auch eine Rechnung kann an den Maßen scheitern (etwa eine nicht lösbare
     # BEM-Randintegralgleichung) — dann dieselbe Meldung statt eines
@@ -1893,6 +2159,7 @@ def _hauptbereich():
         st.error(tr("err_params", exc=meldung(exc)))
         st.stop()
     _prog_slot.empty()
+    _prozess_loesungen(_cache_key, capsule, merken=True)
     fr, di, aux = _res["fr"], _res["di"], _res["aux"]
     sens_1k, delay = _res["sens_1k"], _res["delay"]
     noise = _res.get("noise")
@@ -1907,6 +2174,12 @@ def _hauptbereich():
         st.caption(tr("cap_default_stored",
                       datum=_gespeichert["erzeugt"][:10],
                       min=_gespeichert["rechenzeit_s"] / 60.0))
+    if _aus_prozess:
+        st.caption(tr("cap_3d_process", n=_aus_prozess))
+    if _uebernommen:
+        st.caption(tr("cap_3d_reused", n=_uebernommen))
+    if _parallel:
+        st.caption(tr("cap_3d_parallel", n=_parallel, w=_prozesse))
 
     # Werte außerhalb ihres Feldbereichs (geladenes Projekt, abhängige
     # Grenze): geklemmt und gerechnet, aber nie stillschweigend (s. _BEREICH).
@@ -1955,6 +2228,25 @@ def _hauptbereich():
     if (MicrophoneCapsule._RANDSCHICHT
             and abs(_rand) > MicrophoneCapsule._RAND_GRENZE):
         st.warning(tr("warn_stiff_foil", pct=100.0 * _rand))
+
+    # Lochlage (Gegenprobe 73): Mündungen verschiedener Lochkreise, die sich
+    # schneiden, rechnet das Modell als getrennte Löcher — eine Warnung.
+    # Überstand über Plattenrand oder Mittenpfosten ist eine Notiz: das
+    # Modell rechnet den Teil auf der Platte (die Voreinstellung: die
+    # äußeren Senkungen des Fotorasters berühren den Rand um 0,03 mm).
+    _lb = getattr(capsule, "loch_befund", None) or {}
+    if "ueberlappung" in _lb:
+        st.warning(tr("warn_holes_overlap", n=_lb["ueberlappung"][0],
+                      mm=1e3 * _lb["ueberlappung"][1]))
+    _notiz = []
+    if "rand" in _lb:
+        _notiz.append(tr("info_holes_edge", n=_lb["rand"][0],
+                         mm=1e3 * _lb["rand"][1]))
+    if "pfosten" in _lb:
+        _notiz.append(tr("info_holes_post", n=_lb["pfosten"][0],
+                         mm=1e3 * _lb["pfosten"][1]))
+    if _notiz:
+        st.info(" ".join(_notiz))
 
     # Feines 3D-Gitter an der Obergrenze: die kleinste Mündung ist dann
     # schlechter aufgelöst als die Regel verlangt (s. Gegenprobe 50).

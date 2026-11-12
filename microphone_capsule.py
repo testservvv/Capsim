@@ -33,6 +33,7 @@ Konventionen der Kettenmatrix:  [p_in; q_in] = T * [p_out; q_out]
 Alle Größen in SI-Einheiten, sofern nicht anders angegeben.
 """
 
+import hashlib
 import types
 import warnings
 from functools import reduce
@@ -218,12 +219,14 @@ def _platten_verduennung(z, D, T, rho_s, a, ri=0.0, nur_f=False):
     return float(q), float(np.sqrt(x0))
 
 
-def _abgestuft(lo, hi, spans, h_f, h_max, wachs=0.3):
-    """Knoten auf [lo, hi]: Weite h_f in den Spannen ``spans``, nach außen
-    wachsend (h ≈ h_f + wachs·Abstand), höchstens h_max; lo und hi exakt."""
+def _abgestuft(lo, hi, spans, h_max, wachs=0.3):
+    """Knoten auf [lo, hi]: in jeder Spanne (a, b, h) die Weite h, nach
+    außen wachsend (h + wachs·Abstand), höchstens h_max; lo und hi exakt.
+    Jede Spanne bestimmt die Weite nur in ihrer Nähe: eine kleine Mündung
+    verfeinert das Gitter um sich, nicht um alle anderen (Gegenprobe 72)."""
     def h_at(x):
-        d = min((max(a - x, x - b, 0.0) for a, b in spans), default=np.inf)
-        return min(h_max, h_f + wachs * d)
+        return min([h_max] + [h + wachs * max(a - x, x - b, 0.0)
+                              for a, b, h in spans])
     pts = [lo]
     x = lo
     while True:
@@ -260,8 +263,65 @@ def _linsen_flaeche(rho, R, r):
 _MAKRO_CACHE = {}
 
 
+class _BemRand(dict):
+    """Randlösungen u(ω, θ) EINER BEM-Kontur {(ω, θ): u} und ihr statischer
+    Kern (Gegenprobe 74). Der Speicher zählt seine Bytes mit."""
+
+    def __init__(self):
+        super().__init__()
+        self.k0 = None
+        self.bytes = 0
+
+    def setze(self, schluessel, u):
+        if schluessel not in self:
+            self.bytes += u.nbytes
+        self[schluessel] = u
+
+
+# Konturfingerabdruck -> _BemRand, zuletzt benutzte Kontur am Ende;
+# höchstens _BEM_RAND_MAX Bytes Randlösungen insgesamt
+_BEM_RAND = {}
+_BEM_RAND_MAX = 64_000_000
+
+
+def _bem_randspeicher(elems, chief, cphi, wphi):
+    """Speicher der Randlösungen für diese Kontur (Gegenprobe 74).
+
+    Die BEM-Randlösung hängt nur an der Kontur (Elemente samt Gauß-
+    Knoten, CHIEF-Punkte), der φ-Quadratur und k = ω/c. Der Schlüssel ist
+    deshalb der Fingerabdruck genau dieser Felder (und der Schall-
+    geschwindigkeit): eine Kapsel mit anderen Löchern, anderer Spannung
+    oder anderer Folie, aber demselben Kopf und Körper findet die
+    Lösungen einer früheren wieder (der Membranspalt geht bei der
+    Doppelmembran über die Kopflänge in die Kontur ein); eine injizierte
+    Kontur (Gegenproben 21/26/44) hat ihren eigenen Speicher."""
+    h = hashlib.sha256()
+    for k in sorted(elems):
+        h.update(k.encode())
+        h.update(np.ascontiguousarray(elems[k], dtype=float).tobytes())
+    for teil in (chief, cphi, wphi, [C_AIR]):
+        h.update(np.ascontiguousarray(teil, dtype=float).tobytes())
+    schluessel = h.hexdigest()
+    eintrag = _BEM_RAND.pop(schluessel, None)
+    if eintrag is None or eintrag.bytes > _BEM_RAND_MAX:
+        eintrag = _BemRand()
+    _BEM_RAND[schluessel] = eintrag
+    while (len(_BEM_RAND) > 1
+           and sum(e.bytes for e in _BEM_RAND.values()) > _BEM_RAND_MAX):
+        _BEM_RAND.pop(next(iter(_BEM_RAND)))
+    return eintrag
+# Einträge des dichten Lösungsblocks im Makroelement (8 Byte je Eintrag)
+_MAKRO_BLOCK = 4_000_000
+# Größtes Sektorgitter eines Lochbands (Gegenprobe 72): gemessen ~0,7 GB
+# je Million Knoten (LU-Faktoren), dazu ~0,3 GB Grundlast. Bis Gegenprobe
+# 72 wuchs das Gitter ohne Grenze mit 1/r² der kleinsten Mündung (K67 ohne
+# Stufe mit 0,2-mm-Kern: 5,9 Mio. Knoten, 6 GB); seit der Verfeinerung je
+# Mündung braucht derselbe Fall 0,46 Mio.
+_MAKRO_GITTER_MAX = 2_000_000
+
+
 def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
-                    nur_knoten=False):
+                    nur_knoten=False, je_muendung=True):
     """Lochband als exaktes Makroelement für das axialsymmetrische FV-Feld
     (statischer Reynolds-Film, Leitfähigkeit K = 1; Gegenprobe 60).
 
@@ -277,9 +337,14 @@ def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
     Gelöst in der log-Ebene ζ = ln z, in der die Reynolds-Gleichung
     konform invariant bleibt: der Kreisring wird zum Streifen, das
     Lochmuster periodisch mit 2π/g (g = ggT der Lochzahlen). Tensorgitter,
-    um die Löcher verdichtet; am Lochrand die symmetrische Shortley–
-    Weller-Form (Gibou et al. 2002, zweite Ordnung) mit den analytischen
-    Schnittpunkten der Kreiskontur.
+    um JEDE Mündung mit n_fein Zellen auf ihren Radius r/R verdichtet
+    (Gegenprobe 72; ``je_muendung=False``: überall die Weite der kleinsten
+    Mündung wie bis dahin — das Gitter wuchs mit deren 1/r²); am Lochrand
+    die symmetrische Shortley–Weller-Form (Gibou et al. 2002, zweite
+    Ordnung) mit den analytischen Schnittpunkten der Kreiskontur. Gelöst
+    wird das Schurkomplement spaltenblockweise mit dünnen Gewichten; im
+    Speicher stehen nur die LU-Faktoren (~0,7 GB je Million Knoten, höchstens
+    _MAKRO_GITTER_MAX Knoten, sonst ParameterFehler).
 
     Knoten des Makroelements: die K Bandzellen (Zellmittel des Drucks
     über die FILMfläche der Zelle — über den Löchern gibt es keinen Film
@@ -292,7 +357,7 @@ def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
     wird nach der normierten Geometrie zwischengespeichert.
     """
     import math
-    from scipy.sparse import csr_matrix, diags
+    from scipy.sparse import csc_matrix, csr_matrix, diags, hstack
     from scipy.sparse.linalg import splu
 
     faces = np.asarray(faces, dtype=float)
@@ -305,7 +370,7 @@ def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
            tuple(np.round(faces / s, 12)),
            None if innen is None else round(innen / s, 12),
            None if aussen is None else round(aussen / s, 12),
-           tuple(np.round(kap, 12)), int(n_fein))
+           tuple(np.round(kap, 12)), int(n_fein), bool(je_muendung))
     hit = None if nur_knoten else _MAKRO_CACHE.get(key)
     if hit is not None:
         return hit[0], hit[1] * s * s, hit[2]
@@ -334,14 +399,18 @@ def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
         x_a = math.log(max(fz[0], 1e-4))
     x_b = math.log(aussen / s) if aussen is not None else math.log(fz[-1])
     lf = np.log(np.maximum(fz, 1e-4))
-    x_spans = [(math.log(max(R - r, 1e-12)), math.log(R + r))
+    # Gitterweite je Mündung: n_fein Zellen auf ihren Radius in der
+    # log-Ebene (r/R), um jede Mündung für sich verdichtet
+    x_spans = [(math.log(max(R - r, 1e-12)), math.log(R + r), r / R / n_fein)
                for _, n, R, r, ph in ring]
-    h_t = (min(r / R for _, n, R, r, ph in ring) / n_fein) if ring else None
+    h_t = min(h for _, _, h in x_spans) if ring else None
+    if not je_muendung:               # bis Gegenprobe 72: überall die feinste
+        x_spans = [(a, b, h_t) for a, b, _ in x_spans]
     bps = sorted(set([x_a, x_b] + [v for v in lf if x_a < v < x_b]))
     X = [bps[0]]
     for a, b in zip(bps[:-1], bps[1:]):
         seg = (np.linspace(a, b, 3) if h_t is None
-               else _abgestuft(a, b, x_spans, h_t, max(b - a, h_t)))
+               else _abgestuft(a, b, x_spans, max(b - a, h_t)))
         X += list(seg[1:])
     X = np.array(X)
     Nx = X.size
@@ -355,24 +424,41 @@ def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
                 loecher.append((gi, r, R, psi + k * per))
     if ring:
         y_spans = [(ps - math.asin(min(r / R, 1.0)),
-                    ps + math.asin(min(r / R, 1.0)))
+                    ps + math.asin(min(r / R, 1.0)),
+                    r / R / n_fein if je_muendung else h_t)
                    for (gi, r, R, ps) in loecher]
-        Yg = _abgestuft(0.0, per, y_spans, h_t, per / 12.0)[:-1]
+        Yg = _abgestuft(0.0, per, y_spans, per / 12.0)[:-1]
     else:
         Yg = np.linspace(0.0, per, 9)[:-1]
     Ny = Yg.size
     if nur_knoten:                    # Größe des Sektorgitters (Aufwand)
         return Nx * Ny
+    if Nx * Ny > _MAKRO_GITTER_MAX:   # Speicher ~0,7 GB je Million Knoten
+        raise ParameterFehler("lochband_gitter", knoten=Nx * Ny,
+                              max=_MAKRO_GITTER_MAX)
     dy = np.diff(np.append(Yg, per))
     wy = 0.5 * (dy + np.roll(dy, 1))
     rho = np.exp(X)[:, None]
     Lg = -np.ones((Nx, Ny), dtype=int)
     Li = -np.ones((Nx, Ny), dtype=int)
+    cos_y, sin_y = np.cos(Yg)[None, :], np.sin(Yg)[None, :]
     for li, (gi, r, R, ps) in enumerate(loecher):
-        inn = ((rho * np.cos(Yg)[None, :] - R * math.cos(ps)) ** 2
-               + (rho * np.sin(Yg)[None, :] - R * math.sin(ps)) ** 2) < r * r
-        Lg[inn] = gi
-        Li[inn] = li
+        # nur im umschreibenden Fenster des Lochs (ρ in [R − r, R + r],
+        # Winkel ps ± asin(r/R), mit Rand) — dort derselbe Ausdruck, also
+        # dieselbe Maske; über das ganze Gitter kostete das bei vielen
+        # Löchern O(Löcher × Knoten) (64 Kreise à 2000 Löcher: 60 s)
+        i0 = int(np.searchsorted(X, math.log(max(R - r, 1e-300)) - 1e-9))
+        i1 = int(np.searchsorted(X, math.log(R + r) + 1e-9, side="right"))
+        hw = math.asin(min(r / R, 1.0)) + 1e-9
+        j0 = int(np.searchsorted(Yg, ps - hw))
+        j1 = int(np.searchsorted(Yg, ps + hw, side="right"))
+        if i1 <= i0 or j1 <= j0:
+            continue
+        inn = ((rho[i0:i1] * cos_y[:, j0:j1] - R * math.cos(ps)) ** 2
+               + (rho[i0:i1] * sin_y[:, j0:j1] - R * math.sin(ps)) ** 2) \
+            < r * r
+        Lg[i0:i1, j0:j1][inn] = gi
+        Li[i0:i1, j0:j1][inn] = li
     unb = Lg < 0
     if mitte or innen is not None:
         unb[0] = False
@@ -474,35 +560,50 @@ def _lochband_makro(gruppen, faces, innen, aussen, kappa=None, n_fein=10,
                     (np.concatenate(rows) if rows else np.zeros(0, int),
                      np.concatenate(cols) if cols else np.zeros(0, int))),
                    shape=(nu, nu)) + diags(diag)
-    B = csr_matrix((Bv, (Bi, Bt)), shape=(nu, nT)).toarray()
-    # Flächengewichte (ρ² dx dy) je Knoten und Zelle, Hälften je Intervall
-    W = np.zeros((nu, K))
+    B = csr_matrix((Bv, (Bi, Bt)), shape=(nu, nT))
+    # Flächengewichte (ρ² dx dy) je Knoten und Zelle, Hälften je Intervall;
+    # dünn besetzt (jeder Knoten liegt in höchstens zwei Zellen)
+    Wi, Wj, Wv = [], [], []
     for i in range(Nx):
         m = unb[i]
         if not np.any(m):
             continue
         for iv in (i - 1, i):
             if 0 <= iv < Nx - 1 and 0 <= zelle[iv] < K:
-                W[idx[i, m], zelle[iv]] += (0.5 * hx[iv] * math.exp(2 * X[i])
-                                            * wy[m])
+                Wi.append(idx[i, m])
+                Wj.append(np.full(int(m.sum()), zelle[iv]))
+                Wv.append(0.5 * hx[iv] * math.exp(2 * X[i]) * wy[m])
+    W = csc_matrix((np.concatenate(Wv) if Wv else np.zeros(0),
+                    (np.concatenate(Wi) if Wi else np.zeros(0, int),
+                     np.concatenate(Wj) if Wj else np.zeros(0, int))),
+                   shape=(nu, K))
     # Zellen ohne Filmknoten (überlappende Löcher bilden dort einen
     # geschlossenen Ringschlitz) haben keinen eigenen Knoten; der Aufrufer
     # bindet sie an den Lochknoten
-    W_sum = W.sum(axis=0)
+    W_sum = np.asarray(W.sum(axis=0)).ravel()
     keep = W_sum > 0.0
     if not np.any(keep):
         raise ValueError("Lochband ohne Filmfläche")
     W, W_sum = W[:, keep], W_sum[keep]
     K = int(keep.sum())
-    Wn = W / W_sum
-    U = splu(M.tocsc()).solve(np.hstack([Wn, B]))
-    Uq, Ut = U[:, :K], U[:, K:]
+    # Schurkomplement G = Rᵀ M⁻¹ R mit R = [W/W_sum, B], spaltenblockweise
+    # gelöst: im Speicher stehen nur die LU-Faktoren und ein Block
+    R = hstack([W @ diags(1.0 / W_sum), B], format="csc")
+    lu = splu(M.tocsc(), permc_spec="MMD_AT_PLUS_A",
+              options=dict(SymmetricMode=True), diag_pivot_thresh=0.0)
+    nR = K + nT
+    G = np.empty((nR, nR))
+    blk = max(1, min(nR, int(_MAKRO_BLOCK // max(nu, 1))))
+    for c0 in range(0, nR, blk):
+        c1 = min(nR, c0 + blk)
+        G[:, c0:c1] = R.T @ lu.solve(R[:, c0:c1].toarray())
+    del lu
     # Sektor -> ganze Platte (g Sektoren): Druck je Quelle /g, Ströme je
     # Druck ·g; die gemischten Blöcke sind dimensionslos
-    H_cc = (Wn.T @ Uq) / g
+    H_cc = G[:K, :K] / g
     H_cc = 0.5 * (H_cc + H_cc.T)
-    H_cT = 0.5 * (Wn.T @ Ut + (B.T @ Uq).T)
-    H_TT = (B.T @ Ut - np.diag(B.sum(axis=0))) * g
+    H_cT = 0.5 * (G[:K, K:] + G[K:, :K].T)
+    H_TT = (G[K:, K:] - np.diag(np.asarray(B.sum(axis=0)).ravel())) * g
     H_TT = 0.5 * (H_TT + H_TT.T)
     Hi = np.linalg.inv(H_cc)
     Y = np.empty((K + nT, K + nT))
@@ -610,6 +711,20 @@ _MELDUNGEN = {
     "lochzahl_negativ": {
         "de": "{art}: Lochanzahl darf nicht negativ sein.",
         "en": "{art}: the number of holes must not be negative.",
+    },
+    "lochband_gitter": {
+        "de": "2D-Feldmodell: das Lochband bräuchte {knoten} Gitterknoten "
+              "(höchstens {max}, etwa 0,7 GB je Million). Bitte das 1D- "
+              "oder 3D-Modell wählen.",
+        "en": "2D field model: the hole band would need {knoten} grid "
+              "nodes (at most {max}, about 0.7 GB per million). Please "
+              "choose the 1D or 3D model.",
+    },
+    "lochkreis_winkel": {
+        "de": "{art}: ein Winkel gilt nur für einen Lochkreis (Ø > 0) "
+              "und muss endlich sein.",
+        "en": "{art}: an angle applies only to a pitch circle (Ø > 0) "
+              "and must be finite.",
     },
     "lochkreis_radius": {
         "de": "{art}: Lochkreisradius muss zwischen 0 und "
@@ -1005,7 +1120,13 @@ class MicrophoneCapsule:
             ``n_*_holes`` und ``*_pcd`` (Gesamtzahl = Summe der
             Anzahlen). Der Lochdurchmesser gilt weiterhin je Lochtyp.
             Die radiale Sitzverteilung wirkt im 2D-Feldmodell und (über
-            die Porositätsprofile) in der Elektrostatik.
+            die Porositätsprofile) in der Elektrostatik. Ein dritter Wert
+            ``(anzahl, lochkreis_durchmesser_m, winkel_grad)`` legt den
+            Winkel des ersten Lochs fest (die übrigen gleich verteilt);
+            ohne ihn gilt die Lagekonvention (s. _hole_positions). So
+            lassen sich reale Bohrbilder exakt eingeben (Gegenprobe 73).
+            Bei Stufenbohrung sind Sacklochzeilen MIT Winkel rein blinde
+            Senkungen; die Zählweise unten gilt für die Zeilen ohne.
         through_holes_stepped : bool
             ``True``: STUFENBOHRUNG wie bei K67/K87 — jedes Durchgangs-
             loch sitzt konzentrisch am GRUND einer Senkung mit Sackloch-
@@ -1509,25 +1630,36 @@ class MicrophoneCapsule:
         # Laufzeitstrecke der Niere ab) und geht über die Porositäts-
         # profile in die Elektrostatik ein.
         def _normalize_rings(rings, n_scalar, pcd_scalar, label):
+            # Einträge (Anzahl, Lochkreis-Ø) oder (Anzahl, Lochkreis-Ø,
+            # Winkel des ersten Lochs in Grad); ohne Winkel gilt die
+            # Lagekonvention (s. _hole_positions, Gegenprobe 73)
             if rings is None:
                 rings = [(n_scalar, pcd_scalar)]
-            out, n_tot = [], 0
+            out, phasen, n_tot = [], [], 0
             for entry in rings:
                 try:
-                    cnt, pcd = entry
+                    cnt, pcd, *rest = entry
                 except (TypeError, ValueError):
                     raise ParameterFehler("lochkreis_paar", art=label)
+                if len(rest) > 1:
+                    raise ParameterFehler("lochkreis_paar", art=label)
+                phase = rest[0] if rest else None
                 cnt = int(cnt)
                 if cnt < 0:
                     raise ParameterFehler("lochzahl_negativ", art=label)
                 r = None if pcd is None else 0.5 * float(pcd)
                 if r is not None and not (0.0 <= r <= self.a_bp):
                     raise ParameterFehler("lochkreis_radius", art=label)
+                if phase is not None:
+                    phase = float(phase)
+                    if r is None or not np.isfinite(phase):
+                        raise ParameterFehler("lochkreis_winkel", art=label)
                 out.append((cnt, r))
+                phasen.append(phase)
                 n_tot += cnt
-            return out, n_tot
+            return out, phasen, n_tot
 
-        self._th_rings, self.n_th = _normalize_rings(
+        self._th_rings, self._th_phase, self.n_th = _normalize_rings(
             through_hole_rings, n_through_holes, through_hole_pcd,
             {"de": "Durchgangslöcher", "en": "Through holes"})
         self.r_th = 0.5 * float(through_hole_diameter)
@@ -1536,7 +1668,7 @@ class MicrophoneCapsule:
         if self.n_th == 0 and self.architecture == "dual":
             raise ParameterFehler("dual_ohne_loecher")
 
-        self._bh_rings, self.n_bh = _normalize_rings(
+        self._bh_rings, self._bh_phase, self.n_bh = _normalize_rings(
             blind_hole_rings, n_blind_holes, blind_hole_pcd,
             {"de": "Blindlöcher", "en": "Blind holes"})
         self.r_bh = 0.5 * float(blind_hole_diameter)
@@ -1556,28 +1688,41 @@ class MicrophoneCapsule:
         # Senkungen (Gesamt − durchgebohrt); die durchgebohrten tragen ihre
         # Senkung über ``self.n_th`` (C_A_cb, Porosität, Škvor-Senken), so
         # dass die Gesamtzahl der Senkungen erhalten bleibt.
+        # Lochkreise MIT Winkel (Gegenprobe 73) beschreiben die Löcher an
+        # genau diesen Stellen: eine Sacklochzeile mit Winkel sind rein
+        # blinde Senkungen, ein Durchgangsloch mit Winkel trägt seine
+        # Senkung selbst. Die Zählweise oben gilt für die Zeilen ohne
+        # Winkel unter sich.
         self.stepped = bool(through_holes_stepped) and self.n_th > 0
         if self.stepped:
             if not (0 < self.d_bh < self.t_bp):
                 raise ParameterFehler("stufe_tiefe")
             if self.r_bh <= self.r_th:
                 raise ParameterFehler("stufe_weite")
-            if self.n_th > self.n_bh:
+            frei_th = sum(c for (c, _), ph in zip(self._th_rings,
+                                                  self._th_phase)
+                          if ph is None)
+            frei_bh = sum(c for (c, _), ph in zip(self._bh_rings,
+                                                  self._bh_phase)
+                          if ph is None)
+            if frei_th > frei_bh:
                 raise ParameterFehler("stufe_anzahl")
             # rein blinde Senkungen = Gesamt − durchgebohrt; die Ring-
             # verteilung wird anteilig auf die blind bleibenden skaliert
             # (Durchgangs- und Blindlöcher sind gleich verteilt).
-            n_total_bh = self.n_bh
-            n_pure = n_total_bh - self.n_th
-            frac = n_pure / n_total_bh if n_total_bh else 0.0
-            self._bh_rings = [(int(round(c * frac)), r)
-                              for c, r in self._bh_rings]
+            n_pure = frei_bh - frei_th
+            frac = n_pure / frei_bh if frei_bh else 0.0
+            self._bh_rings = [(c if ph is not None else int(round(c * frac)),
+                               r)
+                              for (c, r), ph in zip(self._bh_rings,
+                                                    self._bh_phase)]
             # Rundungsrest korrigieren, damit Σ = n_pure exakt bleibt
-            drift = n_pure - sum(c for c, _ in self._bh_rings)
-            if drift and self._bh_rings:
-                c0, r0 = self._bh_rings[0]
-                self._bh_rings[0] = (c0 + drift, r0)
-            self.n_bh = n_pure
+            frei = [i for i, ph in enumerate(self._bh_phase) if ph is None]
+            drift = n_pure - sum(self._bh_rings[i][0] for i in frei)
+            if drift and frei:
+                c0, r0 = self._bh_rings[frei[0]]
+                self._bh_rings[frei[0]] = (c0 + drift, r0)
+            self.n_bh = n_pure + self.n_bh - frei_bh
         # wirksame Länge der engen Durchgangsbohrung
         self.t_th_eff = self.t_bp - self.d_bh if self.stepped else self.t_bp
 
@@ -1783,6 +1928,13 @@ class MicrophoneCapsule:
 
         # ------------------------ abgeleitete Größen ------------------------
         self._derive_parameters()
+
+        # Plausibilität der Lochlage (Gegenprobe 73): sich schneidende
+        # Mündungen, Überstand über Plattenrand und Mittenpfosten werden
+        # gemeldet (die App zeigt sie zweisprachig), nicht verworfen
+        self.loch_befund = self._loch_befund()
+        if self.loch_befund:
+            warnings.warn(self._loch_befund_text(), UserWarning, stacklevel=2)
 
     # ======================================================================
     # Abgeleitete Lumped-Element-Parameter
@@ -3235,7 +3387,12 @@ class MicrophoneCapsule:
             "1.448 1.445 1.429 1.488 1.601 1.674 1.716 1.737 1.748",
         ),
     )
-    _MUENDUNG_ARR = None                 # geparste Tabelle (beim 1. Aufruf)
+    # geparste Tabelle (h/a, 6, a/δ). Beim Laden der Klasse, nicht beim
+    # ersten Aufruf: bis Gegenprobe 75 änderte das späte Setzen den Zustand
+    # des 3D-Lösungsspeichers (_solve_3d_state zählt einfache Klassenwerte),
+    # und die erste 3D-Lösung jedes Prozesses ging verloren.
+    _MUENDUNG_ARR = np.array([[[float(v) for v in zl.split()] for zl in block]
+                              for block in _MUENDUNG_TAB])
 
     @staticmethod
     def _lagrange4(xs, x):
@@ -3332,10 +3489,6 @@ class MicrophoneCapsule:
         omega = np.atleast_1d(np.asarray(omega, dtype=float))
         if not cls._MUENDUNG or r_loch <= 0.0 or h_film <= 0.0:
             return np.zeros(omega.shape, dtype=complex)
-        if cls._MUENDUNG_ARR is None:
-            cls._MUENDUNG_ARR = np.array(
-                [[[float(v) for v in zl.split()] for zl in block]
-                 for block in cls._MUENDUNG_TAB])     # (h/a, 6, a/δ)
         T = cls._MUENDUNG_ARR
         lx = np.log(np.asarray(cls._MUENDUNG_H_A))
         ly = np.log(np.asarray(cls._MUENDUNG_A_D))
@@ -5033,17 +5186,22 @@ class MicrophoneCapsule:
         store = geo.setdefault("_cache", {})
         if len(store) > 60000:                    # Speicher begrenzen
             store.clear()
+        # Randlösungen und statischer Kern dieser Kontur, über Kapseln
+        # hinweg (Gegenprobe 74, s. unten)
+        rand = _bem_randspeicher(elems, chief, cphi, wphi)
         if "_K0" not in geo:
-            K0 = np.empty((N, N), dtype=complex)
-            for b0 in range(0, N, 32):
-                b1 = min(b0 + 32, N)
-                K0[b0:b1] = self._bem_ring_rows(0.0, mr[b0:b1], mz[b0:b1],
-                                                elems, cphi, wphi,
-                                                static=True)
-            rows0 = np.arange(N)
-            row0 = np.sum(K0, axis=1) - K0[rows0, rows0]
-            geo["_K0"] = (K0, row0,
-                          float(np.max(np.abs(row0 + K0[rows0, rows0] + 0.5))))
+            if rand.k0 is None:
+                K0 = np.empty((N, N), dtype=complex)
+                for b0 in range(0, N, 32):
+                    b1 = min(b0 + 32, N)
+                    K0[b0:b1] = self._bem_ring_rows(0.0, mr[b0:b1],
+                                                    mz[b0:b1], elems, cphi,
+                                                    wphi, static=True)
+                rows0 = np.arange(N)
+                row0 = np.sum(K0, axis=1) - K0[rows0, rows0]
+                rand.k0 = (K0, row0, float(np.max(
+                    np.abs(row0 + K0[rows0, rows0] + 0.5))))
+            geo["_K0"] = rand.k0
         K0, row0, res0 = geo["_K0"]
         self._bem_solid_angle_residual = res0
         rows = np.arange(N)
@@ -5056,31 +5214,51 @@ class MicrophoneCapsule:
                 todo.append((i, miss))
         wf_all = [w_area[front] * self._membrane_mode_weight(mr[front], mm + 1)
                   for mm in range(n_mod)]
-        self._bem_solves = getattr(self, "_bem_solves", 0) + len(todo)
+        # RANDLÖSUNG ÜBER KAPSELN HINWEG (Gegenprobe 74): u(ω, θ) hängt nur
+        # an der Kontur (Elemente, CHIEF-Punkte, φ-Quadratur) und k = ω/c,
+        # nicht an Membran, Spalt oder Löchern. Bis hier lag sie nur am
+        # Geometrie-Objekt der Kapsel; jede Parameteränderung baute eine
+        # neue Kapsel und löste alles neu (~8 s je 100 Frequenzpunkte).
+        # Die Projektion auf Membranmode und Rückeinlass folgt unten je
+        # Kapsel aus u — mit deren eigenen Gewichten.
+        neu_loesen = [(i, miss) for i, miss in todo
+                      if any((float(omega[i]), float(theta[j])) not in rand
+                             for j in miss)]
+        self._bem_solves = getattr(self, "_bem_solves", 0) + len(neu_loesen)
+        neu_i = {i for i, _ in neu_loesen}
         for i, miss in todo:
-            k = omega[i] / C_AIR
-            K = np.empty((N, N), dtype=complex)
-            for b0 in range(0, N, 32):
-                b1 = min(b0 + 32, N)
-                K[b0:b1] = self._bem_ring_rows(k, mr[b0:b1], mz[b0:b1],
-                                               elems, cphi, wphi)
-            # Diagonale: statische Identität Σ_j K0_ij = -1/2
-            K[rows, rows] = (K[rows, rows] - K0[rows, rows]
-                             + (-0.5 - row0))
-            A = np.vstack([0.5 * np.eye(N) - K,
-                           -self._bem_ring_rows(k, cr, cz, elems, cphi, wphi)])
-            b = np.vstack([_pinc(k, mr, mz), _pinc(k, cr, cz)])[:, miss]
-            # LAPACK setzt auf manchen Plattformen (Apple Accelerate)
-            # Gleitkomma-Flags, die numpy erst beim NÄCHSTEN ufunc meldet
-            # — als "divide by zero encountered in matmul" mitten in der
-            # Projektion. Deshalb hier gekapselt und das ERGEBNIS geprüft,
-            # statt sich auf Warnungen zu verlassen.
+            if i in neu_i:
+                k = omega[i] / C_AIR
+                K = np.empty((N, N), dtype=complex)
+                for b0 in range(0, N, 32):
+                    b1 = min(b0 + 32, N)
+                    K[b0:b1] = self._bem_ring_rows(k, mr[b0:b1], mz[b0:b1],
+                                                   elems, cphi, wphi)
+                # Diagonale: statische Identität Σ_j K0_ij = -1/2
+                K[rows, rows] = (K[rows, rows] - K0[rows, rows]
+                                 + (-0.5 - row0))
+                A = np.vstack([0.5 * np.eye(N) - K,
+                               -self._bem_ring_rows(k, cr, cz, elems, cphi,
+                                                    wphi)])
+                b = np.vstack([_pinc(k, mr, mz), _pinc(k, cr, cz)])[:, miss]
+                # LAPACK setzt auf manchen Plattformen (Apple Accelerate)
+                # Gleitkomma-Flags, die numpy erst beim NÄCHSTEN ufunc
+                # meldet — als "divide by zero encountered in matmul" mitten
+                # in der Projektion. Deshalb hier gekapselt und das ERGEBNIS
+                # geprüft, statt sich auf Warnungen zu verlassen.
+                with np.errstate(all="ignore"):
+                    u, *_ = np.linalg.lstsq(A, b, rcond=None)
+                    if not np.all(np.isfinite(u)):
+                        raise ParameterFehler(
+                            "bem_unloesbar", f=omega[i] / (2 * np.pi), n=N,
+                            kond=np.linalg.cond(A))
+                for jj, j in enumerate(miss):
+                    rand.setze((float(omega[i]), float(theta[j])),
+                               u[:N, jj].copy())
+            else:
+                u = np.stack([rand[(float(omega[i]), float(theta[j]))]
+                              for j in miss], axis=1)
             with np.errstate(all="ignore"):
-                u, *_ = np.linalg.lstsq(A, b, rcond=None)
-                if not np.all(np.isfinite(u)):
-                    raise ParameterFehler(
-                        "bem_unloesbar", f=omega[i] / (2 * np.pi), n=N,
-                        kond=np.linalg.cond(A))
                 # FRONT: Galerkin-Projektion auf die Membranmode (Fläche ×
                 # Modengewicht, s. _cap_mode_quad). RÜCK: was dort steht,
                 # entscheidet die Geometrie — bei der Doppelmembran
@@ -5211,9 +5389,12 @@ class MicrophoneCapsule:
         liegen die Durchgangslöcher der Gegenseite über den Sacklöchern)
         bzw. ein halber, wenn mehr als jeder zweite Platz durchgebohrt ist.
 
-        * Explizite Lochkreise: gleichverteilt je Kreis, Durchgangs-
-          kreis m um 20°·m verdreht, Sacklochkreis m um 15° + 20°·m
-          (die realen Azimutwinkel sind selten dokumentiert).
+        * Explizite Lochkreise: gleichverteilt je Kreis, das erste Loch
+          beim angegebenen Winkel (Gegenprobe 73) — sonst nach Konvention
+          Durchgangskreis m um 20°·m verdreht, Sacklochkreis m um
+          15° + 20°·m (die realen Azimutwinkel sind selten dokumentiert;
+          bei dichten Bohrbildern überlappen so Mündungen, s.
+          loch_befund).
         * GLEICHVERTEILTE Anteile beider Lochtypen bilden EIN gemeinsames
           isotropes Raster (s. _hole_ring_layout), auf dem sich Durch-
           gangs- und Sacklöcher gleichmäßig ABWECHSELN — wie an der realen
@@ -5227,19 +5408,26 @@ class MicrophoneCapsule:
         if cached is not None:
             return cached
         th, bh = [], []
+        # Herkunft je Loch (Lochtyp, Zeile) für die Plausibilität
+        # (loch_befund); None = gleichverteiltes Raster
+        z_th, z_bh = [], []
         m_th = 0
-        for cnt, r_pcd in self._th_rings:
+        for i, ((cnt, r_pcd), ph) in enumerate(zip(self._th_rings,
+                                                   self._th_phase)):
             if cnt > 0 and r_pcd is not None:
+                start = 20.0 * m_th if ph is None else ph
                 for k in range(cnt):
-                    th.append((r_pcd, 20.0 * m_th + 360.0 * k / cnt,
-                               180.0 / cnt))
+                    th.append((r_pcd, start + 360.0 * k / cnt, 180.0 / cnt))
+                    z_th.append(("th", i))
                 m_th += 1
         m_bh = 0
-        for cnt, r_pcd in self._bh_rings:
+        for i, ((cnt, r_pcd), ph) in enumerate(zip(self._bh_rings,
+                                                   self._bh_phase)):
             if cnt > 0 and r_pcd is not None:
+                start = 15.0 + 20.0 * m_bh if ph is None else ph
                 for k in range(cnt):
-                    bh.append((r_pcd, 15.0 + 20.0 * m_bh + 360.0 * k / cnt,
-                               180.0 / cnt))
+                    bh.append((r_pcd, start + 360.0 * k / cnt, 180.0 / cnt))
+                    z_bh.append(("bh", i))
                 m_bh += 1
         u_th = sum(c for c, r in self._th_rings if r is None and c > 0)
         u_bh = sum(c for c, r in self._bh_rings if r is None and c > 0)
@@ -5263,8 +5451,111 @@ class MicrophoneCapsule:
                     # Bresenham-Verteilung: t von c_k Plätzen gleichmäßig
                     is_th = ((j + 1) * t) // c_k - (j * t) // c_k == 1
                     (th if is_th else bh).append((r_k, deg, turn))
-        self._hole_pos_cache = {"th": th, "bh": bh}
+                    (z_th if is_th else z_bh).append(None)
+        self._hole_pos_cache = {"th": th, "bh": bh,
+                                "zeile_th": z_th, "zeile_bh": z_bh}
         return self._hole_pos_cache
+
+    def _loch_befund(self):
+        """Plausibilität der Lochlage (Gegenprobe 73), Lage wie im 3D-Löser
+        (_hole_positions) auf beiden Elektroden: Mündungen, die eine
+        Mündung einer ANDEREN Zeile schneiden (die Löcher einer Zeile
+        dürfen sich zum Ringschlitz schließen, Gegenprobe 60), über den
+        Plattenrand oder unter den Mittenpfosten reichen. Das Modell
+        rechnet solche Löcher weiter — sich schneidende als getrennte
+        Mündungen, überstehende nur mit dem Teil auf der Platte —, meldet
+        es aber. Rückgabe: dict (leer = unauffällig) mit
+          'ueberlappung': (Paare, größte Überdeckung [m]),
+          'rand': (Mündungen, größter Überstand [m]),
+          'pfosten': (Mündungen, größter Überstand [m])."""
+        hp = self._hole_positions()
+        r_m = {"th": self.r_bh if self.stepped else self.r_th,
+               "bh": self.r_bh}
+        # Rückseite wie im 3D-Löser (_feet): K67 mit Zwischenspalt dreht
+        # beide Lochtypen (kreisweise oder global um half_rotation_deg),
+        # 'dual' beide kreisweise; die einteilige Platte trägt hinten
+        # dasselbe Bild wie vorn, 'single' hat keine Rückseite
+        rot = None
+        if self.architecture == "dual_diaphragm" and self.h_center > 0.0:
+            rueck = ("th", "bh")
+            rot = None if self._half_rot_auto else self.half_rotation_deg
+        elif self.architecture == "dual":
+            rueck = ("th", "bh")
+        else:
+            rueck = None
+        seiten = [{}] + ([{t: True for t in rueck}] if rueck else [])
+        befund = {}
+        ueb, tief = 0, 0.0
+        tol = 1e-9
+        for gedreht in seiten:
+            R, x, y, r, z = [], [], [], [], []
+            for typ in ("th", "bh"):
+                for (rr, deg, turn), zeile in zip(hp[typ], hp["zeile_" + typ]):
+                    if gedreht.get(typ):
+                        deg = deg + (turn if rot is None else rot)
+                    a = np.deg2rad(deg)
+                    R.append(rr)
+                    x.append(rr * np.cos(a))
+                    y.append(rr * np.sin(a))
+                    r.append(r_m[typ])
+                    z.append(zeile)
+            if not R:
+                continue
+            x, y, r = np.array(x), np.array(y), np.array(r)
+            ids = np.array([-1 if q is None else
+                            (0 if q[0] == "th" else 1) * 100000 + q[1]
+                            for q in z])
+            # Kandidaten: Paare näher als zwei größte Radien (k-d-Baum,
+            # O(N log N) — die GUI erlaubt bis 2·32·2000 Löcher)
+            if _HAS_SCIPY:
+                from scipy.spatial import cKDTree
+                paare = cKDTree(np.column_stack([x, y])).query_pairs(
+                    2.0 * float(r.max()) + tol, output_type="ndarray")
+                ia, ib = paare[:, 0], paare[:, 1]
+            else:
+                ia, ib = np.triu_indices(x.size, 1)
+            if ia.size:
+                d = np.hypot(x[ia] - x[ib], y[ia] - y[ib]) - r[ia] - r[ib]
+                gleich = (ids[ia] == ids[ib]) & (ids[ia] >= 0)
+                m = ~gleich & (d < -tol)
+                ueb += int(m.sum())
+                if m.any():
+                    tief = max(tief, float(-d[m].min()))
+            if gedreht:
+                continue                  # Rand und Pfosten: Radien gleich
+            R = np.array(R)
+            raus = R + r - self.a_bp
+            if np.any(raus > tol):
+                befund["rand"] = (int(np.sum(raus > tol)), float(raus.max()))
+            if self.r_post > 0.0:
+                rein = np.where(R > 0.0, self.r_post - (R - r), -np.inf)
+                if np.any(rein > tol):
+                    befund["pfosten"] = (int(np.sum(rein > tol)),
+                                         float(rein.max()))
+        if ueb:
+            befund["ueberlappung"] = (ueb, tief)
+        return befund
+
+    def _loch_befund_text(self):
+        """Warnungstext zu loch_befund (deutsch wie alle Modellwarnungen;
+        die App zeigt eigene, zweisprachige Texte)."""
+        b, teile = self.loch_befund, []
+        if "ueberlappung" in b:
+            n, t = b["ueberlappung"]
+            teile.append(f"{n} Mündungspaare verschiedener Lochkreise "
+                         f"überlappen (bis {1e3 * t:.3f} mm); das Modell "
+                         f"rechnet sie als getrennte Mündungen.")
+        if "rand" in b:
+            n, t = b["rand"]
+            teile.append(f"{n} Mündungen reichen bis {1e3 * t:.3f} mm über "
+                         f"den Plattenrand; gerechnet wird nur der Teil auf "
+                         f"der Platte.")
+        if "pfosten" in b:
+            n, t = b["pfosten"]
+            teile.append(f"{n} Mündungen reichen bis {1e3 * t:.3f} mm unter "
+                         f"den Mittenpfosten; gerechnet wird nur der Teil "
+                         f"außerhalb.")
+        return "Lochlage: " + " ".join(teile)
 
     def _drain_coverage_radius(self):
         """Überdeckungsradius der Durchgangslöcher [m]: der größte Abstand,
@@ -5300,12 +5591,21 @@ class MicrophoneCapsule:
         rs = np.linspace(r0, self.a_bp, 121)
         ph = np.linspace(0.0, 2.0 * np.pi, 361)[:-1]
         best = 0.0
+        # sehr viele Bohrungen: nächste Nachbarn über einen k-d-Baum statt
+        # aller Paare (64 000 Bohrungen: 21 s); bis 4000 wie bisher
+        baum = None
+        if hx.size > 4000 and _HAS_SCIPY:
+            from scipy.spatial import cKDTree
+            baum = cKDTree(np.column_stack([hx, hy]))
         for r_s in rs:
             px = r_s * np.cos(ph)
             py = r_s * np.sin(ph)
-            d2 = ((px[:, None] - hx[None, :]) ** 2
-                  + (py[:, None] - hy[None, :]) ** 2)
-            dmin = np.sqrt(np.min(d2, axis=1))
+            if baum is not None:
+                dmin = baum.query(np.column_stack([px, py]))[0]
+            else:
+                d2 = ((px[:, None] - hx[None, :]) ** 2
+                      + (py[:, None] - hy[None, :]) ** 2)
+                dmin = np.sqrt(np.min(d2, axis=1))
             if self.ring_vent_w > 0.0:
                 dmin = np.minimum(dmin, self.a_bp - r_s)
             best = max(best, float(np.max(dmin)))
@@ -5581,8 +5881,9 @@ class MicrophoneCapsule:
     def _lochband_layout(self, r_f, dr, r0, N):
         """Lochbänder des 2D-Felds (Gegenprobe 60, s. _lochband_makro).
 
-        Je expliziter Lochkreis eine Gruppe, Lage wie im 3D-Löser
-        (Durchgangskreis m um 20°·m, Sacklochkreis m um 15° + 20°·m
+        Je expliziter Lochkreis eine Gruppe, Lage wie im 3D-Löser (das
+        erste Loch beim angegebenen Winkel, Gegenprobe 73, sonst
+        Durchgangskreis m um 20°·m, Sacklochkreis m um 15° + 20°·m
         verdreht; filmseitig zählt bei Stufenbohrung die weite Senkung);
         ein Kreis mit R < r ist ein Mittelloch. Kreise, deren Lochspannen
         [R − r, R + r] sich berühren, teilen sich ein Band. Jedes Band
@@ -5603,17 +5904,19 @@ class MicrophoneCapsule:
         grp = []
         rw_th = self.r_bh if self.stepped else self.r_th
         m = 0
-        for cnt, R in self._th_rings:
+        for (cnt, R), ph in zip(self._th_rings, self._th_phase):
             if cnt > 0 and R is not None:
                 grp.append(dict(typ="th", n=int(cnt), R=float(R), r=rw_th,
-                                phase=math.radians(20.0 * m)))
+                                phase=math.radians(20.0 * m if ph is None
+                                                   else ph)))
                 m += 1
         m = 0
-        for cnt, R in self._bh_rings:
+        for (cnt, R), ph in zip(self._bh_rings, self._bh_phase):
             if cnt > 0 and R is not None:
                 grp.append(dict(typ="bh", n=int(cnt), R=float(R),
                                 r=self.r_bh,
-                                phase=math.radians(15.0 + 20.0 * m)))
+                                phase=math.radians(15.0 + 20.0 * m
+                                                   if ph is None else ph)))
                 m += 1
         for G in grp:
             G["mitte"] = G["R"] - G["r"] < 0.5 * dr
@@ -5810,6 +6113,8 @@ class MicrophoneCapsule:
                                   w=A_film[cells], kappa=kap_cell[cells],
                                   faces=(f1, f2), rand=rand,
                                   ids=list(c["ids"])))
+        except ParameterFehler:              # Gitter zu groß: melden
+            raise
         except ValueError as exc:            # Band ganz ohne Film
             self._fld_band_note = str(exc)
             return
@@ -6119,10 +6424,14 @@ class MicrophoneCapsule:
         th_f = th_r = th_cf = th_cr = None
         if arch == "dual_diaphragm" and n_films == 2:
             # Einteilige Platte: Durchgangsloch verbindet beide Filme an
-            # DENSELBEN Zellen; Rück-Sacklöcher um eine halbe Teilung
-            # versetzt (Konvention).
+            # DENSELBEN Zellen; die Rück-Sacklöcher liegen deckungsgleich
+            # mit den vorderen (dasselbe Lochmuster je Seite, wie in der
+            # Debenham-Zeichnung). Bis Gegenprobe 73 waren sie um eine
+            # halbe Sacklochteilung versetzt (Konvention) — auf Kreisen,
+            # die Durchgangs- und Sacklöcher teilen, saßen sie so
+            # konzentrisch auf Durchgangslöchern (Debenham: 9 der 46).
             th_cells = _feet(hp["th"], self.r_th)
-            bhr_cells = _feet(hp["bh"], self.r_bh, rear=True)
+            bhr_cells = _feet(hp["bh"], self.r_bh)
         elif arch == "dual_diaphragm":
             # K67: je Hälfte ein eigenes Lochbild; die Rückhälfte ist
             # verdreht (automatisch kreisweise um die halbe Durchgangs-
@@ -6516,6 +6825,40 @@ class MicrophoneCapsule:
             eintrag = (zustand, {})
             self._g3d["_loesungen"] = eintrag
         return eintrag[1]
+
+    def loesungen_3d(self):
+        """Der Lösungsspeicher der 3D-Feldlösung als Kopie {ω: Ausgaben}
+        (Gegenprobe 75): je gelöster Kreisfrequenz die Ausgaben aller
+        Gewichte, die Reziprozitäts-Diagnose und die Knotengrößen, ~1 kB.
+        Leer ohne 3D-Modell oder ohne Wiederverwendung."""
+        if self.squeeze_model != "3d":
+            return {}
+        speicher = self._solve_3d_cache()
+        return dict(speicher) if speicher else {}
+
+    def loesungen_3d_einsetzen(self, loesungen):
+        """Gespeicherte 3D-Lösungen {ω: Ausgaben} in den Lösungsspeicher
+        übernehmen (Gegenprobe 75) — etwa aus Arbeiterprozessen
+        (_arbeiter_loese_3d) oder aus der gespeicherten Voreinstellung der
+        App. Gültig NUR für eine Kapsel mit denselben Bauparametern und
+        demselben Modellstand; das prüft der Aufrufer (die App über den
+        Fingerabdruck von Modellquelle und Baufunktionen). Schon gelöste
+        Frequenzen bleiben unberührt. Rückgabe: Zahl der neuen Einträge."""
+        if self.squeeze_model != "3d":
+            return 0
+        speicher = self._solve_3d_cache()
+        if speicher is None:
+            return 0
+        neu = 0
+        for om, e in loesungen.items():
+            om = float(om)
+            if om in speicher:
+                continue
+            speicher[om] = {
+                k: (None if v is None else tuple(complex(x) for x in v))
+                for k, v in e.items()}
+            neu += 1
+        return neu
 
     def _lu_solve_3d(self, S, rhs):
         """Löst das 3D-System S·x = rhs (Gegenprobe 57).
@@ -8756,12 +9099,19 @@ class MicrophoneCapsule:
     # ======================================================================
     @staticmethod
     def _ring_note(rings, lang="de"):
-        """Kurzform eines Lochmusters für summary(): Anzahl je Lochkreis."""
+        """Kurzform eines Lochmusters für summary(): Anzahl je Lochkreis
+        (Zeilen auf demselben Kreis — etwa Lochpaare mit eigenem Winkel,
+        Gegenprobe 73 — zusammengefasst)."""
         en = str(lang).strip().lower() == "en"
+        je_kreis = {}
+        for cnt, r in rings:
+            if cnt > 0:
+                k = None if r is None else round(r, 10)
+                je_kreis[k] = je_kreis.get(k, 0) + cnt
         parts = [((f"{cnt} even" if en else f"{cnt} gleichmäßig") if r is None
                   else (f"{cnt} on PCD ⌀{2e3 * r:.1f} mm" if en
                         else f"{cnt} auf LK ⌀{2e3 * r:.1f} mm"))
-                 for cnt, r in rings if cnt > 0]
+                 for r, cnt in je_kreis.items()]
         return "; ".join(parts) if parts else ("none" if en else "keine")
 
     def _homogenization_note(self, lang="de"):
@@ -9030,6 +9380,51 @@ class MicrophoneCapsule:
                  f"({20 * np.log10(abs(sens)):.1f} dB re 1 V/Pa)"),
         ]
         return "\n".join(lines)
+
+
+# ===========================================================================
+# 3D-Frequenzen in Arbeiterprozessen (Gegenprobe 75)
+# ===========================================================================
+# Jede Frequenz der 3D-Feldlösung ist ein eigenes, unabhängiges System
+# (Aufbau + LU-Zerlegung, beim feinen K67-Gitter ~12 s und ~2,1 GB). Ein
+# Arbeiterprozess baut die Kapsel EINMAL aus ihren Bauparametern und löst
+# die ihm zugeteilten Frequenzen; zurück gehen nur die Einträge des
+# Lösungsspeichers (~1 kB je Frequenz), die der Aufrufer mit
+# loesungen_3d_einsetzen übernimmt. Gleiche Bauparameter und gleicher
+# Modellstand ergeben dasselbe System; die Arbeiter rechnen mit einem
+# BLAS-Faden (sonst überbuchen sie die Kerne), was die Ergebnisse gegen
+# eine Rechnung mit vier Fäden um ~1e-8 relativ verschiebt (Kondition
+# ~1e8, s. Gegenprobe 63 f).
+_ARBEITER_KAPSEL = {}
+
+
+def _arbeiter_init():
+    """Initialisierer der Arbeiterprozesse: ein BLAS-Faden je Prozess."""
+    try:
+        import threadpoolctl
+        threadpoolctl.threadpool_limits(limits=1)
+    except Exception:              # ohne threadpoolctl: Fäden wie vorgegeben
+        pass
+
+
+def _arbeiter_loese_3d(bau_json, f_hz):
+    """Arbeiter: 3D-Lösungen der Frequenzen ``f_hz`` [Hz] für die Kapsel mit
+    den Bauparametern ``bau_json`` (JSON der Konstruktor-Argumente).
+    Rückgabe: {ω: Eintrag des Lösungsspeichers}. Die Kreisfrequenz wird
+    wie in allen Methoden als 2.0·π·f gebildet, damit die Schlüssel denen
+    der späteren Aufrufe bitgleich entsprechen."""
+    import json as _json
+    kapsel = _ARBEITER_KAPSEL.get(bau_json)
+    if kapsel is None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            kapsel = MicrophoneCapsule(**_json.loads(bau_json))
+        _ARBEITER_KAPSEL.clear()
+        _ARBEITER_KAPSEL[bau_json] = kapsel
+    omega = 2.0 * np.pi * np.asarray(f_hz, dtype=float)
+    kapsel._solve_3d(omega)
+    alle = kapsel.loesungen_3d()
+    return {float(om): alle[float(om)] for om in omega}
 
 
 # ===========================================================================

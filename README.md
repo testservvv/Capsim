@@ -685,34 +685,35 @@ Messungen der realen Kapsel.
   zweisprachig (`ParameterFehler`); seine Warnungen (`UserWarning`)
   bleiben deutsch. Die App zeigt deren Inhalt mit eigenen, zweisprachigen
   Texten: Homogenisierung und Lochkreis-Grenze, BEM-Rückeinlass,
-  3D-Gitter und seit Gegenprobe 63 i die biegesteife Folie. Nicht
+  3D-Gitter, seit Gegenprobe 63 i die biegesteife Folie und seit
+  Gegenprobe 73 die Lochlage (Überlappung als Warnung, Überstand über
+  Plattenrand oder Pfosten als Notiz). Nicht
   gezeigt wird der Zusatz „body_length passt nicht dazu“ der
   BEM-Warnung.
-- **Offen aus dem App-Audit (2191 Zufalls- und Grenzwertfälle durch alle
+- **Aus dem App-Audit (2191 Zufalls- und Grenzwertfälle durch alle
   Eingabefelder, 1D/2D/3D; kein falscher Zahlenwert, jede Ablehnung ein
-  `ParameterFehler` — bis auf den ersten Punkt):**
-  - **Speicher des Lochkreis-Makroelements (2D):** das Sektorgitter
-    wächst mit 1/Mündungsradius² ohne Obergrenze. Voreinstellung in 2D
-    0,66 GB; „Stufenbohrung“ aus 2,25 GB; Kern 0,4 mm ohne Stufe 5 GB;
-    ≤ 0,3 mm über 10 GB (ein Fall 13,5 GB, vom System beendet). Die App
-    zeigt dann einen `MemoryError` oder stirbt.
-  - **Lochgeometrie ohne Plausibilitätsprüfung:** überlappende Löcher
-    (40 × ⌀1,3 mm auf einem 10-mm-Kreis), Löcher halb außerhalb der
-    Platte oder unter dem Mittenpfosten rechnet das Modell ohne Meldung
-    (geprüft wird nur die Gesamtfläche ≥ 90 %).
-  - **Gespeicherte Voreinstellung nur für exakt einen Parametersatz:**
-    schon eine weitere Richtfrequenz oder eine andere Punktzahl rechnet
-    alles neu (~85 min). Je Frequenz gespeicherte 3D-Lösungen würden
-    das auf eine Lösung (~10 s) verkürzen.
-  - **Feines 3D live:** 2,1 GB Spitzenspeicher und ~10–13 s je Frequenz,
-    ohne Zeitschätzung oder Rückfrage vor dem Start. Frequenzen parallel
-    in Prozessen: gemessen 3,0 statt 10,4 s je Frequenz auf 4 Kernen
-    (je Prozess 2,1 GB).
-  - **Ergebnisse nur in der Browser-Sitzung:** ein Neuladen der Seite
-    verwirft sie.
-  - **BEM-Außenfeld je Kapsel neu:** ~8 s je 100 Frequenzpunkte bei jeder
-    Parameteränderung, obwohl es nur von der Körperform abhängt (auf
-    derselben Kapsel wiederholt 0,08 s).
+  `ParameterFehler` — bis auf den Speicher des Lochbands).** Erledigt
+  in Paket 2: Speicher des Lochkreis-Makroelements (Gegenprobe 72),
+  Plausibilität der Lochgeometrie samt exaktem K67-Raster (73), BEM-
+  Außenfeld je Kontur statt je Kapsel (74), 3D-Lösungen je Frequenz in
+  der gespeicherten Voreinstellung und über Sitzungen, Frequenzen
+  parallel in Prozessen (75). Offen:
+  - **Feines 3D live in der Cloud:** ~10–13 s je Frequenz ohne
+    Zeitschätzung oder Rückfrage vor dem Start; parallel rechnet die
+    App nur, wo Kerne und Speicher reichen (lokal, nicht in der
+    Streamlit Cloud).
+  - **Ergebnisse der 1D/2D-Rechnungen nur in der Browser-Sitzung:** ein
+    Neuladen der Seite rechnet sie neu (Sekunden). Die teuren 3D-
+    Lösungen überstehen es seit Gegenprobe 75 im Serverprozess.
+  - **Gaußband-Rückfall ohne Meldung:** reicht eine Mündung unter den
+    Mittenpfosten oder sitzt dort ein Mittelloch, rechnet das 2D-Feld
+    die Lochkreise ohne Makroelement (`_fld_band_note`). Die Lochlage
+    meldet den Pfosten-Überstand jetzt (Gegenprobe 73), den Rückfall
+    selbst nennt die App nicht.
+  - **Rückversatz bei 'dual'** (zwei getrennte Backplates): die zweite
+    Platte ist kreisweise um eine halbe Teilung verdreht (Konvention,
+    ohne direkte Kopplung der Filme); Überlappungen dort meldet die
+    Lochlage.
   - **Mindestversionen** (`requirements.txt`) sind von Hand geprüft
     (alle App-Proben mit NumPy 2.0.2, SciPy 1.13.1, Streamlit 1.49.0,
     Plotly 5.20.0, pandas 2.2.2), aber nicht Teil des Testlaufs.
@@ -792,33 +793,38 @@ aus einem Foto zweier Backplate-Hälften (s. „K67-Bohrbild aus dem Foto
 und Freistich in der Elektrostatik (Gegenprobe 71)“), und den realen
 Spalten: 40 µm zwischen den Hälften, ~50 µm Membran–Backplate. Gegenüber
 `u87_k67_projekt.json` geändert: 108 Senkungen auf dem quadratischen
-2-mm-Raster als 13 Lochkreise (54 durchgebohrt, Mitte frei), Elektrode
+2-mm-Raster (54 durchgebohrt, Mitte frei; seit Gegenprobe 73 exakt als
+27 + 27 Lochpaare mit Winkel, vorher 13 Kreise nach Konvention, deren
+Senkungen sich schnitten), Elektrode
 25,4 mm, Membran 27,2 mm, Mittenterminierung 1 mm, 5-mm-Aussparung in
 der Mitte, Spalte 50/40 µm, Hälfte 4,07 mm, Senkung 3,75 mm und — damit
 die Membran bei 60 V nicht kollabiert — 1700 Hz Membranresonanz
 (Annahme: derselbe Pull-in-Abstand wie zuvor). Ergebnis bei 1 kHz
-(90/135/180°): 3D −3,0/−5,4/−6,6 dB (feines Gitter, Kugel als
-Außenweg), mit dem freien Kopf −4,6/−10,1/−12,7 dB; 2D −3,2/−6,0/
-−7,5 dB — s. „Offene Punkte“ 9. Voreingestellt ist 2D; den Referenzwert liefert
+(90/135/180°): 3D −2,9/−5,3/−6,4 dB (feines Gitter, Kugel als
+Außenweg), mit dem freien Kopf −4,5/−9,9/−12,4 dB; 2D −3,2/−6,1/
+−7,6 dB — s. „Offene Punkte“ 9. Voreingestellt ist 2D; den Referenzwert liefert
 das 3D-Feldmodell (in der App ~6 min bei 100 Punkten).
 
 `examples/k67_experimentell_zwischenspalt45.json` — **Variante mit
 Anpassung, kein Messwert**: wie oben, aber wirksamer Zwischenspalt
 45 µm statt der 40 µm des Spacers und als Außenweg der freie Kopf (BEM
-ohne Körper). Damit trifft die interne Laufzeit den Außenweg (3D 35,1
-gegen 35,0 mm). Ob die Hälften wirklich so weit auseinander stehen oder
-eine andere Größe die ~20 % trägt, ist nicht belegt. 180° bei
-125/250/500/1000 Hz: 3D −12,1/−15,0/−17,1/−17,3 dB, 2D −15,1/−19,4/
-−22,0/−21,7 dB, real (U87 Ai) −11/−12/−19/−23 dB; 1 kHz 90/135°: 3D
-−5,6/−13,9 dB, real −6,7/−15,5 dB; 2 kHz Minimum bei 148° (real 142°).
-Bei 1 kHz fehlen in 3D noch ~6 dB Tiefe (s. „Offene Punkte“ 9). Auf
-Achse (3D, fein): 20,9 mV/Pa bei 1 kHz (40 µm: 18,6), Überhöhung bei
-9 kHz +4,9 dB (40 µm: +6,1 dB). Mit eingeschaltetem feinem 3D-Modell
-ist dieser Parametersatz die **Voreinstellung beim App-Start**.
+ohne Körper). Damit trifft die interne Laufzeit den Außenweg (3D 35,6
+gegen 35,0 mm; mit den 13 Kreisen nach Konvention 35,1). Ob die Hälften
+wirklich so weit auseinander stehen oder eine andere Größe die ~20 %
+trägt, ist nicht belegt. 180° bei 125/250/500/1000 Hz: 3D
+−12,4/−15,5/−17,6/−17,5 dB, 2D −15,1/−19,3/−21,8/−21,1 dB, real (U87 Ai)
+−11/−12/−19/−23 dB; 1 kHz 90/135°: 3D −5,6/−13,7 dB, real
+−6,7/−15,5 dB; 2 kHz Minimum −15,6 dB bei 149° (real −24 dB bei 142°).
+Bei 1 kHz fehlen in 3D noch ~5,5 dB Tiefe (s. „Offene Punkte“ 9). Auf
+Achse (3D, fein): 20,8 mV/Pa bei 1 kHz (40 µm: 18,4), bei 9 kHz +5,7 dB
+gegen 1 kHz (mit den 13 Kreisen +4,9 dB). Mit eingeschaltetem feinem
+3D-Modell ist dieser Parametersatz die **Voreinstellung beim
+App-Start**.
 
 **Gespeicherte Voreinstellung (Gegenprobe 63 f).** Die Voreinstellung
 kostet im feinen 3D-Modell ~13 s je Frequenzpunkt, mit 400 Punkten also
-~1,5 h. Ihre Ergebnisse liegen deshalb fertig in
+~1,5 h (`python voreinstellung.py` rechnet die 3D-Frequenzen seit
+Gegenprobe 75 parallel: auf 4 Kernen 20 min). Ihre Ergebnisse liegen deshalb fertig in
 `assets/voreinstellung.json`: Frequenzgang, Richtdiagramme, Diagnose und
 Summary in beiden Sprachen und die Kennwerte der Kapsel für die Anzeige
 (Resonanz, C0, Pull-in …). Die App setzt sie NUR für genau diesen
@@ -858,6 +864,12 @@ Die Probe prüft:
 - d) den Start der echten App: Hinweis sichtbar, keine Rechnung, keine
   Kapsel gebaut, Kennwerte gleich denen einer frisch gebauten Kapsel;
 - e) bei unpassender Datei: Grund und Knopf, keine Rechnung.
+
+Seit Gegenprobe 75 (Format 3) trägt die Datei auch die 406 3D-Lösungen
+je Frequenz, mit eigenem Fingerabdruck aus Physik-Schlüssel (ohne
+Punktzahl und Richtfrequenzen), Modellquelle und Baufunktionen. Eine
+weitere Richtfrequenz kostet damit eine Zerlegung (~12 s) statt der
+ganzen Voreinstellung.
 
 ### Nierenbildung: interne trifft externe Laufzeit — beides hergeleitet
 
@@ -2327,7 +2339,10 @@ bis zur logarithmischen Mitte zum Nachbarband. Klingen die Harmonischen
 bis dorthin nicht ab, teilen sich die Kreise ein Band, solange das
 Sektorgitter höchstens 30 000 Knoten hat. Getrennt verlöre die B&K 4146
 1,5 % Filmwiderstand; die Debenham-Platte mit teilerfremden Lochzahlen
-bleibt an zwei Stellen getrennt (dokumentierte Näherung).
+bleibt an zwei Stellen getrennt (dokumentierte Näherung). *Seit
+Gegenprobe 72* ist das Gitter je Mündung kleiner, und dieselbe Grenze
+vereinigt mehr: Debenham ist nur noch an einer Stelle getrennt, die fünf
+Grinnip-Kreise (Gegenprobe 41) liegen in einem Band statt in zweien.
 
 **Gegenproben:**
 
@@ -3090,6 +3105,177 @@ Punkte“ 9). *Nachtrag:* mit den realen Spalten (40 µm zwischen den
 Hälften, ~50 µm Membran–Backplate, Membran dafür 1700 Hz) steigt die
 interne Laufzeit auf 42,0 mm, und bei 1 kHz bleiben −3,0/−5,4/−6,6 dB
 (90/135/180°, 3D fein).
+
+*Korrektur (Gegenprobe 73):* die 13 Kreise nach Radius lagen nach der
+Lagekonvention, und so schnitten sich 40 Paare der 1,3-mm-Senkungen
+(bis 0,69 mm). Die Probe mit der exakten Rasterlage oben hatte das
+übersehen. Seit Gegenprobe 73 ist das Raster exakt eingegeben.
+
+### Lochband speichersparend und je Mündung verfeinert (Gegenprobe 72)
+
+Das Lochband-Makroelement (Gegenprobe 60) rechnet auf einem Tensorgitter
+in der log-Ebene. Bis hier bestimmte die KLEINSTE Mündung die
+Gitterweite im ganzen Sektor (h = min r/R / n_fein). Zwischen den 54
+weiten Senkungen und den 54 engen Kernen der K67 ohne Stufenbohrung lag
+damit das ganze Band im feinen Gitter, und der Speicher wuchs mit 1/r².
+Dazu hielt der Löser drei dichte Felder Knoten × Bandzellen (Gewichte,
+rechte Seiten, Lösung), etwa 2 KB je Knoten neben 0,7 KB für die
+LU-Faktoren.
+
+Jetzt verfeinert jede Mündung das Gitter nur um sich, mit n_fein Zellen
+auf IHREN Radius. Das Schurkomplement wird spaltenblockweise mit dünnen
+Gewichten gelöst, und SuperLU zerlegt symmetrisch (MMD auf A + Aᵀ,
+Diagonal-Pivots; die Matrix ist eine symmetrisch positiv definite
+M-Matrix). Über 2 Mio. Knoten (`_MAKRO_GITTER_MAX`, ~1,7 GB) meldet das
+Modell einen `ParameterFehler`, auch durch den Bau der Kapsel hindurch.
+Es gibt keinen stillen Rückfall auf das Gaußband. Die Lochmasken
+entstehen nur noch im umschreibenden Fenster jedes Lochs (bitgleich),
+und der Überdeckungsradius der Homogenisierungsgrenze sucht bei über 4000
+Bohrungen die nächste über einen k-d-Baum. Der Bau mit der GUI-
+Höchstzahl (je Lochtyp 32 Kreise à 2000 Löcher) dauerte 86 s, jetzt 9 s.
+
+| Fall (K67, 2D) | Knoten vorher | Spitzenspeicher vorher | Knoten jetzt | Spitzenspeicher jetzt |
+|---|---|---|---|---|
+| Stufenbohrung (Voreinstellung) | 154 760 | 0,66 GB | 83 293 | 0,32 GB |
+| ohne Stufe (Kern 0,6 mm) | 683 640 | 2,25 GB | 219 000 | 0,38 GB |
+| ohne Stufe, Kern 0,4 mm | 1,5 Mio. | 5 GB | 308 000 | 0,44 GB |
+| ohne Stufe, Kern 0,2 mm | 5,9 Mio. | > 10 GB | 464 000 | 0,56 GB |
+| ohne Stufe, Kern 0,1 mm | nicht rechenbar | — | 602 000 | 0,68 GB |
+
+(„vorher“ mit den 13 Kreisen nach Konvention, „jetzt“ ab der zweiten
+Zeile ebenso; mit dem exakten Raster sind es 83 293 und 216 900 Knoten.)
+Gleich genau, gegen eine feine Referenz (je Mündung, n_fein 20 bzw. 30):
+
+| Band | je Mündung (n_fein 10) | global fein (n_fein 10) |
+|---|---|---|
+| K67 mit Stufe: Filmwiderstand / Lochknoten-Netz | +0,28 % / 0,09 % | +0,28 % / 0,05 % |
+| K67 ohne Stufe | +0,06 % / 0,03 % | +0,04 % / 0,02 % |
+| K67 ohne Stufe, Kern 0,3 mm (398 000 gegen 2,49 Mio. Knoten, 5 gegen 64 s) | −0,01 % / 0,05 % | +0,03 % / 0,02 % |
+
+Beide liegen weit unter der Schranke 0,5 % von Gegenprobe 60. Am
+einzelnen Lochkreis (Gegenprobe 60 a) ist das Gitter unverändert. Mit
+der alten, überlappenden Lochlage konvergierte das Band nur langsam: der
+180°-Pegel bei 1 kHz wanderte von n_fein 10 bis 28 um 0,13 dB, nicht
+monoton. Die schmalen Stege zwischen sich fast berührenden Mündungen
+waren nicht aufgelöst. Mit dem exakten Raster fällt der Filmwiderstand
+monoton auf 0,25 % bei n_fein 10.
+
+Mit dem kleineren Gitter vereinigt dieselbe Kostengrenze für Bänder
+(`_MAKRO_KNOTEN`, 30 000 Knoten) mehr Kreise. Die Trennung war eine
+dokumentierte Näherung (Gegenprobe 60), jetzt koppeln diese Kreise exakt:
+- Debenham (2D): 4 → 3 Bänder. Laufzeitverhältnis bei 250 Hz ohne
+  Freistich 6,48 → 6,68, mit Rand-Freistich 5,33 → 5,38, interne Resonanz
+  3016 → 3079 Hz;
+- Grinnip-Prototyp (Gegenprobe 41): 2 → 1 Band. Der Rest bei 90° gegen
+  Fig. 6 steigt um 0,04 dB RMS (bei 14 kHz um 0,09 dB, in der Toleranz
+  der Sperrklinke);
+- B&K 4146 (Gegenprobe 38): Spaltwiderstand −0,07 %.
+
+### Lochlage: Winkel je Lochkreis und Plausibilität (Gegenprobe 73)
+
+Lochkreise lagen bis hier nach einer Konvention: Durchgangskreis m um
+20°·m verdreht, Sacklochkreis m um 15° + 20°·m. Das K67-Raster aus dem
+Foto war als 13 Kreise nach Radius eingegeben. Durchgangs- und
+Sacklöcher eines Kreises lagen so nur 15° auseinander, und die Kreise
+liegen 0,4–0,8 mm auseinander. Dadurch schnitten sich 40 Paare der
+1,3-mm-Senkungen (bis 0,69 mm tief), auf der um den Rückversatz
+gedrehten zweiten Hälfte weitere 54. Im realen Raster ist der kleinste
+Steg 0,70 mm. Auch mit gleichmäßigem Wechsel auf gemeinsamen Kreisen
+blieben 40 Überlappungen: die Kreisnäherung eines dichten Rasters
+kollidiert grundsätzlich. Niemand merkte es, weil das Modell
+Überlappungen still rechnete (Audit-Befund).
+
+- **Winkel je Lochkreis:** eine Zeile darf als dritten Wert den Winkel
+  ihres ersten Lochs tragen (`(Anzahl, Ø, Winkel)`, in der App die
+  Spalte „Winkel“, leer = Konvention). Jede Rasterlage zerfällt in
+  180°-symmetrische Lochpaare; das K67-Raster ist jetzt EXAKT
+  eingegeben: 27 + 27 Paare (Voreinstellung und beide K67-Projekte).
+  Bei Stufenbohrung sind Sacklochzeilen MIT Winkel rein blinde
+  Senkungen; die alte Zählweise (Senkungen insgesamt) gilt für die
+  Zeilen ohne Winkel unter sich. Ohne Winkel ändert sich nichts.
+- **Plausibilität (`loch_befund`):** Lage wie im 3D-Löser, auf beiden
+  Elektroden. Gemeldet werden Mündungen, die eine Mündung einer ANDEREN
+  Zeile schneiden (die Löcher einer Zeile dürfen sich zum Ringschlitz
+  schließen, Gegenprobe 60), sowie Überstand über den Plattenrand und
+  unter den Mittenpfosten. Das Modell rechnet weiter und warnt
+  (`UserWarning`). Die App zeigt Überlappungen als Warnung, Überstand
+  als Notiz, beides zweisprachig. Die Voreinstellung zeigt die Notiz:
+  die 8 äußeren Senkungen (R = 12,08 mm) reichen 0,033 mm über die
+  25,4-mm-Elektrode (Foto: 25,1–25,8 mm).
+- **Debenham:** die Rück-Sacklöcher der einteiligen Platte waren um
+  eine halbe Sacklochteilung versetzt (Konvention). Auf Kreisen, die
+  Durchgangs- und Sacklöcher teilen, saßen so 9 der 46 konzentrisch auf
+  Durchgangslöchern; das wäre eine rückseitige Senkung. Jetzt liegen sie
+  deckungsgleich mit den vorderen, wie das 2D-Modell sie ohnehin rechnet
+  (dasselbe Bild je Seite wie in der Zeichnung). Im feinen 3D ändert das
+  0° um −0,4 bis −0,7 dB, 180° gegen 0° um bis zu 0,6 dB, die interne
+  Laufzeit von 41,6 auf 43,1 mm.
+
+Die exakte Lage ändert die K67 wenig (BEM, freier Kopf):
+
+| 45 µm, 180° gegen 0° | 125 Hz | 250 Hz | 500 Hz | 1 kHz | 2 kHz | Laufzeit intern |
+|---|---|---|---|---|---|---|
+| 3D fein, 13 Kreise | −12,1 | −15,0 | −17,1 | −17,3 | −14,9 dB | 35,1 mm |
+| 3D fein, exaktes Raster | −12,4 | −15,5 | −17,6 | −17,5 | −14,5 dB | 35,6 mm |
+| 2D, 13 Kreise | −15,1 | −19,3 | −21,9 | −21,7 | −18,0 dB | 34,4 mm |
+| 2D, exaktes Raster | −15,1 | −19,3 | −21,8 | −21,1 | −17,0 dB | 33,5 mm |
+
+Für den Phasenschieber zählen die Durchgangslöcher, und die lagen auch
+vorher gleichmäßig; die Sacklöcher sind Seitenvolumina. Gegenprobe 71
+hatte 0,1 dB gemessen. Oberhalb von 5 kHz wirkt die Lage stärker (3D
+fein, 45 µm, auf 1 kHz bezogen): auf Achse 5 kHz +0,4 → +1,1 dB,
+9 kHz +4,9 → +5,7 dB, 12 kHz +5,5 → +6,8 dB; bei 180° 9 kHz
+−7,9 → −7,0 dB. Der statische Filmwiderstand ALLER Mündungen
+(alle Lochknoten auf Masse) halbiert sich dagegen: überlappende Paare
+wirkten wie je eine Senke.
+
+### BEM-Randlösung je Kontur (Gegenprobe 74)
+
+Die Randintegralgleichung des Außenfelds hängt nur an der Kontur (Kopf,
+Körper, Elementteilung, CHIEF-Punkte) und an k = ω/c. Ihr Ergebnis lag
+bis hier am Geometrie-Objekt der Kapsel. Jede Parameteränderung baute
+eine neue Kapsel und löste alles neu (~8 s je 100 Frequenzpunkte), auch
+wenn sich nur Spalt, Löcher oder Folie änderten. Jetzt liegt die
+Randlösung u(ω, θ) je Konturfingerabdruck im Modul
+(`_bem_randspeicher`, höchstens 64 MB), ebenso der statische Kern. Die
+Projektion auf Membranmode und Rückeinlass bildet jede Kapsel mit ihren
+eigenen Gewichten. Geprüft:
+- gleiche Kontur, andere Löcher und Spannung: kein Lösungsgang,
+  bitgleich zur Rechnung mit leerem Speicher (der Luftspalt geht über
+  die Kopflänge in die Kontur ein);
+- andere Kontur (Kopf mit Körper): eigener Speicher, löst neu;
+- andere Folie (Modenquelle mit drei Moden): dieselbe Randlösung, die
+  eigene Projektion bitgleich.
+
+### 3D-Lösungen je Frequenz: gespeichert und parallel (Gegenprobe 75)
+
+Jede Frequenz der 3D-Feldlösung ist ein eigenes System (Aufbau +
+LU-Zerlegung; feines K67-Gitter ~12 s, ~2,1 GB). Die Kapsel bewahrt ihre
+Lösungen seit Gegenprobe 56 auf, ~1 kB je Frequenz, aber nur solange das
+Objekt lebt. Die gespeicherte Voreinstellung (400 Punkte, 6
+Richtfrequenzen, 1 kHz: 407 Lösungen) rechnete deshalb schon bei einer
+weiteren Richtfrequenz alles neu (~85 min). Neu:
+- `loesungen_3d()` / `loesungen_3d_einsetzen()` geben den Speicher
+  heraus und nehmen ihn auf (bitgleich, auch durch die JSON-Form).
+- Die gespeicherte Voreinstellung trägt ihre 3D-Lösungen, mit eigenem
+  Fingerabdruck aus Physik-Schlüssel (ohne Punktzahl und
+  Richtfrequenzen), Modellquelle und Baufunktionen. Unterscheidet sich
+  eine Einstellung nur in Punktzahl oder Richtfrequenzen, setzt die App
+  sie ein. Eine weitere Richtfrequenz kostet dann eine Zerlegung
+  (~12 s); eine andere Punktzahl ergibt ein neues Raster und braucht
+  alle Punkte neu.
+- Über Sitzungen hinweg merkt sich der Serverprozess die 3D-Lösungen je
+  Kapsel (40 Kapseln): ein Neuladen der Seite rechnet sie nicht neu.
+- Parallel: `_vorrechnen_3d` verteilt die fehlenden Frequenzen des
+  Frequenzplans auf Arbeiterprozesse (`spawn`, ein BLAS-Faden je
+  Prozess), so viele wie CPU-Quote und freier Speicher erlauben (je
+  Prozess 2,5 GB fein, 1,2 GB grob, aus MemAvailable und den
+  cgroup-Grenzen). In der Streamlit Cloud (2 Kerne, ≤ 2,7 GB) bleibt es
+  bei einem Prozess, dort rechnet die App wie bisher. Gemessen (Audit):
+  3,0 statt 10,4 s je Frequenz auf 4 Kernen. Die Arbeiter rechnen mit
+  einem Faden: gegen vier Fäden ~1e-8 relativ (Gegenprobe 63 f). Ein
+  Abbruch (neue Eingabe) wartet nicht auf die restlichen Aufträge.
+  Fertige Lösungen bleiben in der Kapsel.
 
 ## Verlustmechanismen (vollständig erfasst)
 

@@ -24,7 +24,17 @@ Stundenrechnung startet nie von selbst (in der Streamlit Cloud drosselte
 das die App). Beim Start baut die App die Kapsel nicht: ihre Kennwerte
 für die Anzeige stehen mit in der Datei.
 
-Neu erzeugen (nach jeder Modelländerung; ~1,5 h):
+Seit Format 3 (Gegenprobe 75) trägt die Datei auch die 3D-Lösungen je
+Frequenz, mit eigenem Fingerabdruck aus dem Physik-Schlüssel (ohne
+Punktzahl und Richtfrequenzen), der Modellquelle und den Baufunktionen.
+Unterscheidet sich eine Einstellung nur in Punktzahl oder
+Richtfrequenzen, setzt die App sie ein und rechnet nur die neuen
+Frequenzen. Hier liegt auch der Prozess-Speicher, mit dem 3D-Lösungen
+eine neue Sitzung (Neuladen der Seite) überstehen.
+
+Neu erzeugen (nach jeder Modelländerung; seriell ~1,5 h, die
+3D-Frequenzen rechnen parallel in Arbeiterprozessen, soweit Kerne und
+Speicher reichen):
 
     python voreinstellung.py
 """
@@ -41,7 +51,8 @@ import time
 _WURZEL = os.path.dirname(os.path.abspath(__file__))
 DATEI = os.path.join(_WURZEL, "assets", "voreinstellung.json")
 _MODELL = os.path.join(_WURZEL, "microphone_capsule.py")
-FORMAT = 2          # 2: mit den Kennwerten der Kapsel (Start ohne Bau)
+FORMAT = 3          # 2: mit den Kennwerten der Kapsel (Start ohne Bau)
+                    # 3: mit den 3D-Lösungen je Frequenz (Gegenprobe 75)
 
 
 def _ohne_docstrings(baum):
@@ -149,7 +160,8 @@ def _dekodieren(x):
 
 
 def speichern(schluessel, abdruck, ergebnis, zusammenfassungen,
-              kennwerte, rechenzeit_s, datei=DATEI, erzeugt=None):
+              kennwerte, rechenzeit_s, datei=DATEI, erzeugt=None,
+              physik=None, abdruck_3d=None, loesungen=None):
     daten = {
         "format": FORMAT,
         "erzeugt": erzeugt or _dt.datetime.now().isoformat(
@@ -160,6 +172,13 @@ def speichern(schluessel, abdruck, ergebnis, zusammenfassungen,
         "kennwerte": _kodieren(kennwerte),
         "zusammenfassung": zusammenfassungen,
         "ergebnis": _kodieren(ergebnis),
+        # 3D-Lösungen je Frequenz (Gegenprobe 75): gültig für denselben
+        # Physik-Schlüssel (ohne Punktzahl und Richtfrequenzen) und
+        # dieselbe Modellquelle samt Baufunktionen — unabhängig davon, wie
+        # die App die Ergebnisse auswertet
+        "physik": physik,
+        "abdruck_3d": abdruck_3d,
+        "loesungen_3d": _kodieren(loesungen or {}),
     }
     tmp = datei + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -184,6 +203,60 @@ def laden(schluessel, abdruck, datei=DATEI):
     meta = {"erzeugt": daten["erzeugt"], "rechenzeit_s": daten["rechenzeit_s"],
             "kennwerte": _dekodieren(daten["kennwerte"])}
     return _dekodieren(daten["ergebnis"]), daten["zusammenfassung"], meta
+
+
+_LOESUNGEN = {}
+
+# 3D-Lösungen je Kapsel über Sitzungen hinweg, solange der Serverprozess
+# lebt (Gegenprobe 75): Schlüssel ist der Fingerabdruck aus Physik-Schlüssel,
+# Modellquelle und Baufunktionen. Hier und nicht in app.py, weil Streamlit
+# das App-Skript bei jedem Lauf neu ausführt (seine Globals überleben
+# nicht); höchstens _PROZESS_MAX Kapseln, die zuletzt benutzte am Ende.
+_PROZESS_3D = {}
+_PROZESS_MAX = 40
+
+
+def prozess_holen(abdruck_3d):
+    """Die im Prozess gemerkten 3D-Lösungen dieser Kapsel ({} ohne)."""
+    loes = _PROZESS_3D.pop(abdruck_3d, None)
+    if loes is None:
+        return {}
+    _PROZESS_3D[abdruck_3d] = loes
+    return dict(loes)
+
+
+def prozess_merken(abdruck_3d, loesungen):
+    """3D-Lösungen dieser Kapsel im Prozess merken (zu den vorhandenen)."""
+    if not loesungen:
+        return
+    alt = _PROZESS_3D.pop(abdruck_3d, {})
+    alt.update(loesungen)
+    _PROZESS_3D[abdruck_3d] = alt
+    while len(_PROZESS_3D) > _PROZESS_MAX:
+        _PROZESS_3D.pop(next(iter(_PROZESS_3D)))
+
+
+def laden_loesungen(physik, abdruck_3d, datei=DATEI):
+    """Die gespeicherten 3D-Lösungen {ω: Eintrag} bei passendem Physik-
+    Schlüssel und Fingerabdruck, sonst None (Gegenprobe 75). Einmal je
+    Prozess und Dateistand gelesen."""
+    try:
+        st_ = os.stat(datei)
+    except OSError:
+        return None
+    marke = (datei, st_.st_mtime_ns, st_.st_size)
+    if marke not in _LOESUNGEN:
+        with open(datei, encoding="utf-8") as fh:
+            daten = json.load(fh)
+        _LOESUNGEN.clear()
+        _LOESUNGEN[marke] = (
+            daten.get("format"), daten.get("physik"),
+            daten.get("abdruck_3d"),
+            _dekodieren(daten.get("loesungen_3d") or {"__dict__": []}))
+    fmt, phys, abdr, loes = _LOESUNGEN[marke]
+    if fmt != FORMAT or phys != physik or abdr != abdruck_3d or not loes:
+        return None
+    return loes
 
 
 def _gleich(a, b):
@@ -218,21 +291,36 @@ def erzeugen(datei=DATEI):
             print(f"  {100 * anteil:5.1f} %  {text}  "
                   f"({(time.time() - t0) / 60:.1f} min)", flush=True)
     kapsel = A.build_capsule(p)
+    # die 3D-Frequenzen parallel in Arbeiterprozessen, soweit Kerne und
+    # Speicher reichen (Gegenprobe 75); compute_results findet sie dann
+    n_par, n_proz = A._vorrechnen_3d(p, kapsel, fortschritt)
+    if n_par:
+        print(f"  {n_par} Frequenzen in {n_proz} Prozessen vorgerechnet "
+              f"({(time.time() - t0) / 60:.1f} min)", flush=True)
     ergebnis = A.compute_results(schluessel, kapsel, fortschritt)
     zusammenfassungen = {sp: kapsel.summary(lang=sp) for sp in ("de", "en")}
     kennwerte = A._kennwerte(kapsel)
+    physik = A._physik_schluessel(schluessel)
+    abdruck_3d = fingerabdruck(physik, A._BAU_FUNKTIONEN)
+    loesungen = kapsel.loesungen_3d()
     dauer = time.time() - t0
     speichern(schluessel, abdruck, ergebnis, zusammenfassungen, kennwerte,
-              dauer, datei)
+              dauer, datei, physik=physik, abdruck_3d=abdruck_3d,
+              loesungen=loesungen)
     zurueck, zus, meta = laden(schluessel, abdruck, datei)
+    loes_zurueck = laden_loesungen(physik, abdruck_3d, datei) or {}
     if zurueck is None or not _gleich(ergebnis, zurueck) \
             or zus != zusammenfassungen \
-            or not _gleich(kennwerte, meta["kennwerte"]):
+            or not _gleich(kennwerte, meta["kennwerte"]) \
+            or not _gleich({k: {w: list(v) if v is not None else None
+                                for w, v in e.items()}
+                            for k, e in loesungen.items()}, loes_zurueck):
         raise RuntimeError("Gespeicherte Voreinstellung liest sich nicht "
                            "bitgleich zurück")
     print(f"Voreinstellung gespeichert: {datei} "
           f"({os.path.getsize(datei) / 1e3:.0f} kB, {dauer / 60:.1f} min "
-          f"gerechnet, bitgleich zurückgelesen)")
+          f"gerechnet, {len(loesungen)} 3D-Lösungen, bitgleich "
+          f"zurückgelesen)")
 
 
 if __name__ == "__main__":
